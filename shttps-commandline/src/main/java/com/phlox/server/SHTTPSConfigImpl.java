@@ -129,26 +129,6 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     }
 
     @Override
-    public boolean getAutostart() {
-        return json.optBoolean(KEY_AUTOSTART, false);
-    }
-
-    @Override
-    public void setAutostart(boolean value) {
-        throw new UnsupportedOperationException("Not implemented in commandline");
-    }
-
-    @Override
-    public boolean getRunningState() {
-        return false;
-    }
-
-    @Override
-    public void setRunningState(boolean value) {
-        //do nothing, its useless for commandline version
-    }
-
-    @Override
     public boolean getRedirectToIndex() {
         return json.optBoolean(KEY_REDIRECT_TO_INDEX, true);
     }
