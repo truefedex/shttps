@@ -1,10 +1,6 @@
 name: Make android example and commandline app artifacts
 
-on:
-  push:
-    branches: [ "develop" ]
-  pull_request:
-    branches: [ "develop" ]
+on: push
 
 jobs:
   build:
