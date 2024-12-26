@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="/shttps-static-public/common.css">
+  <link rel="stylesheet" href="/shttps-static-public/file-browser/file-browser.css">
+  <link rel="icon" type="image/png" href="/shttps-static-public/icon.png">
+  <script src="/shttps-static-public/common.js"></script>
+  <script src="/shttps-static-public/file-browser/file-browser.js"></script>
+</head>
+
+<body id="root" onload="onPageLoad();" onresize="onPageResize();" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
+  <div class="header">
+    <div id="loader" class="loader"></div>
+    <div id="path">{{current_path}}</div>
+    <div id="view-mode" class="form_radio_group">
+      <div class="form_radio_group-item">
+        <input id="radioList" type="radio" name="radio" value="list" onchange="viewModeChange(this);">
+        <label for="radioList">☷</label>
+      </div>
+      <div class="form_radio_group-item">
+        <input id="radioTable" type="radio" name="radio" value="table" onchange="viewModeChange(this);">
+        <label for="radioTable">☰</label>
+      </div>
+      {{#thumbnails_support}}
+      <div class="form_radio_group-item">
+        <input id="radioGrid" type="radio" name="radio" value="grid" onchange="viewModeChange(this);">
+        <label for="radioGrid">▦</label>
+      </div>
+      {{/thumbnails_support}}
+    </div>
+  </div>
+  {{#allowEditing}}
+  <div id="actionbar" class="actionbar" style="display: none;">
+    <button id="select-button" class="action-button" onclick="onSelectModeClick(this);">SELECT MODE</button>
+    <button class="action-button" onclick="onNewFolderClick();">NEW FOLDER</button>
+    <button class="action-button" onclick="onNewFileClick();">NEW FILE</button>
+    <button id="upload-button" class="action-button" onclick="doUpload();">
+      <div class="button__progress"></div>
+      <span class="button__text">UPLOAD FILES</span>
+    </button>
+    <button id="rename-button" class="action-button" onclick="onRenameClick();" disabled>RENAME</button>
+    <button id="cut-button" class="action-button" onclick="onPushToClipboardClick('move');" disabled>CUT</button>
+    <button id="copy-button" class="action-button" onclick="onPushToClipboardClick('copy');" disabled>COPY</button>
+    <button id="delete-button" class="action-button" onclick="onDeleteClick();" disabled>DELETE</button>
+    <button id="paste-button" class="action-button" onclick="onPasteClick();" disabled>PASTE</button>
+    <button id="zip-button" class="action-button" onclick="onZipClick();" disabled>DOWNLOAD AS ZIP</button>
+  </div>
+  <input style="visibility: hidden;" id="files" type="file" name="files" onchange="onUploadFilesSelected(this);"
+    multiple>
+  <div id="drop-hint" class="drop-hint">Drop Files And Folders Here</div>
+  {{/allowEditing}}
+  <div id="files-container">
+    {{#list_no_script}}<a href="{{path}}" class="file-item">
+      <div class="{{#isFolder}}folder{{/isFolder}}">{{name}}</div>
+    </a>{{/list_no_script}}
+  </div>
+
+  <div class="menu" id="context-menu">
+    <div class="menu-close-btn" onclick="hideContextMenu()">&times;</div>
+    <ul class="menu-options">
+      <li class="menu-option" id="mo-open-in-new-tab">Open in new tab</li>
+      <li class="menu-option" id="mo-edit-as-text">Open in text editor</li>
+      <li class="menu-option" id="mo-rename">Rename</li>
+      <li class="menu-option" id="mo-delete">Delete</li>
+      <li class="menu-option" id="mo-download">Download</li>
+      <li class="menu-option" id="mo-zip">Download as ZIP</li>
+      <li class="menu-option" id="mo-copy-link">Copy link</li>
+    </ul>
+  </div>
+</body>
+
+</html>

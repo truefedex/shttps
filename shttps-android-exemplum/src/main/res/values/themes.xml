@@ -1,0 +1,24 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.SimpleServer" parent="android:Theme.Material.NoActionBar">
+        <item name="android:textViewStyle">@style/RobotoTextViewStyle</item>
+        <item name="android:buttonStyle">@style/RobotoButtonStyle</item>
+        <item name="android:checkboxStyle">@style/RobotoCheckBoxStyle</item>
+    </style>
+
+    <style name="RobotoTextViewStyle" parent="android:Widget.TextView">
+        <item name="android:fontFamily">casual</item>
+        <item name="android:textSize">@dimen/default_text_size</item>
+        <item name="android:textColor">@color/color_default_text</item>
+    </style>
+
+    <style name="RobotoButtonStyle" parent="android:Widget.Material.Button">
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:textSize">@dimen/default_text_size</item>
+    </style>
+
+    <style name="RobotoCheckBoxStyle" parent="android:Widget.Material.CompoundButton.CheckBox">
+        <item name="android:fontFamily">casual</item>
+        <item name="android:textSize">@dimen/default_text_size</item>
+        <item name="android:textColor">@color/color_default_text</item>
+    </style>
+</resources>

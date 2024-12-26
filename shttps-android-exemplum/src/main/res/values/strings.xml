@@ -1,0 +1,26 @@
+<resources>
+    <string name="app_name">SHTTPS Exemplum</string>
+    <string name="error">Error</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="general">General</string>
+    <string name="status">Status:</string>
+    <string name="not_running">not running</string>
+    <string name="running">running</string>
+    <string name="unknown">unknown</string>
+    <string name="ip">IP:</string>
+    <string name="root_folder">Root folder:</string>
+    <string name="notifications_channel_general_description">Notifications from service that handles http requests</string>
+    <string name="http_service_running">HTTP Service running</string>
+    <string name="http_service_description">HTTP Server service</string>
+    <string name="errorf">Error: %s</string>
+    <string name="app_internal_files">App\'s internal files</string>
+    <string name="external_storage">External storage</string>
+    <string name="permission_required">Permission required</string>
+    <string name="notifications_permission_message">This permission is required to show notification when server is running.</string>
+    <string name="notification_permission_denied">Notification permission denied</string>
+    <string name="open_in_local_browser">Open in local browser</string>
+    <string name="access_external_storage">Access external storage</string>
+    <string name="external_storage_permission_message">This permission is required to access external storage.</string>
+    <string name="err_not_supported_on_this_system">Not supported on this system</string>
+</resources>

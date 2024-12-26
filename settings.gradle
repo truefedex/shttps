@@ -1,0 +1,6 @@
+rootProject.name = "shttps-oss"
+include ':server-lib'
+include ':shttps-common'
+include ':shttps-commandline'
+include ':shttps-android-common'
+include ':shttps-android-exemplum'

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="color_success">#55dd00</color>
+    <color name="color_section_caption">#ffaa00</color>
+    <color name="color_focused_link_bg">#888</color>
+    <color name="color_default_text">#ccc</color>
+    <color name="color_default_text_inactive">#777</color>
+    <color name="color_connected">#77dd77</color>
+    <color name="color_error">#dd7777</color>
+</resources>

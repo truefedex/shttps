@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="/shttps-static-public/common.css">
+  <link rel="stylesheet" href="/shttps-static-public/db-browser/table-data.css">
+  <link rel="icon" type="image/png" href="/shttps-static-public/icon.png">
+  <script src="/shttps-static-public/common.js" defer></script>
+  <script src="/shttps-static-public/db-browser/table-data.js" defer></script>
+</head>
+<body onload="onPageLoad();" style="overflow: hidden;">
+  <div id="mainUI">
+    <div class="header"></div>
+    <div id="actionbar" class="actionbar" style="padding: 15px;">
+      <h3 id="table-name" class="table-name"></h3>
+      <button id="new-record-button" class="action-button">NEW RECORD</button>
+      <button id="delete-rows-button" class="action-button" disabled>DELETE</button>
+      <button id="edit-row-button" class="action-button" disabled>EDIT</button>
+    </div>
+    <div id="table-data-container">
+      <table id="table-data" class="db-table-data">
+        <thead>
+          <tr id="table-header" class="db-header"></tr>
+        </thead>
+        <tbody id="table-body" class="db-table-body"></tbody>
+      </table>
+    </div>
+    <div id="pager" class="pagination">
+      <div id="pageInfo" class="pageInfo"></div>
+      <div id="firstPage" class="page-link">&lt;&lt;</div>
+      <div id="prevPage" class="page-link">&lt;</div>
+      <div id="currentPage" class="currentPage">1</div>
+      <div id="nextPage" class="page-link">&gt;</div>
+      <div id="lastPage" class="page-link">&gt;&gt;</div>
+      <div class="loader" id="loader"></div>
+    </div>
+    <div id="editRowModal" class="modal">
+      <div id="modal-content" class="modal-content">
+      </div>
+    </div>
+  </div>
+</body>
+</html>
