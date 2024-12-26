@@ -34,3 +34,4 @@ jobs:
         files: |
           shttps-android-exemplum/build/outputs/apk/debug/shttps-android-exemplum-debug.apk
           shttps-commandline/build/libs/shttps-commandline-1.0-all.jar
+
