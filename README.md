@@ -16,3 +16,4 @@ This is a multi-module cross-platform Gradle project with sources mostly in Java
 - **shttps-commandline**: command line server version for J2SE platform
 
 All sources are almost not documented yet due to my lack of time for this. I hope with time I will be able to improve the quality of documentation, code and maybe even add some tests 🤔 ...
+
