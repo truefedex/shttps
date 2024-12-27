@@ -119,7 +119,8 @@ public class Main implements Callable<Integer> {
 
         try {
             app.startServer();
-            System.out.println("Server started at http://localhost:" + config.getPort());
+            String scheme = config.getUseTLS() ? "https" : "http";
+            System.out.println(String.format("Server started at %s://localhost:%d", scheme, config.getPort()));
         } catch (IOException | CertificateException | NoSuchAlgorithmException | KeyStoreException | UnrecoverableKeyException | KeyManagementException e) {
             e.printStackTrace();
         }

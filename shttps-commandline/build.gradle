@@ -16,7 +16,7 @@ application {
 sourceSets {
     main {
         resources {
-            srcDirs "src/main/resources", "../app-common/shared-assets"
+            srcDirs "src/main/resources", "../shttps-common/shared-assets"
         }
     }
 }
