@@ -42,7 +42,7 @@ public class DBInsertRequestHandler extends BaseDBRequestHandler {
             return StandardResponses.BAD_REQUEST("Invalid JSON data: " + e.getMessage());
         }
         try {
-            long id = database.insert(table, rowJson.toMap());
+            long id = database.insert(table, rowJson);
             JSONObject responseJson = new JSONObject();
             responseJson.put("generated_id", id);
             return StandardResponses.OK(responseJson.toString());

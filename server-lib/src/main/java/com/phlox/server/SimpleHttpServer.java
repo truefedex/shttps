@@ -194,8 +194,7 @@ public class SimpleHttpServer {
 			while (!shouldStopListen) {
 				try {
 					Socket soket = serverSocket.accept();
-					logger.i("New connection from " + soket.getInetAddress().getHostAddress() + "\n" +
-							"Local address: " + soket.getLocalAddress().getHostAddress());
+					logger.i("New connection from " + soket.getInetAddress().getHostAddress());
 
 					if (callback != null) {
 						callback.onNewConnection(soket);

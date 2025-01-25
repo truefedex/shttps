@@ -7,18 +7,18 @@ import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.database.Database;
-import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.utils.Holder;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-public class DBTableDataRequestHandler extends BaseDBRequestHandler {
-    public DBTableDataRequestHandler(Holder<Database> database, SHTTPSConfig config) {
+public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
+    public DBSingleCellDataRequestHandler(Holder<Database> database, SHTTPSConfig config) {
         super(database, config);
     }
 
@@ -43,13 +43,7 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
         if (table == null) {
             return StandardResponses.BAD_REQUEST("table parameter is required");
         }
-        String columns = params.get("columns");
-        String offset = params.get("offset");
-        String limit = params.get("limit");
-        String sort = params.get("sort");
-        String sortDir = params.get("sort-order");
-        String includeRowIdStr = params.get("includeRowId");
-
+        String column = params.get("column");
         List<String> filters = new ArrayList<>();
         List<Object> filtersArgs = new ArrayList<>();
         String filtersJsonStr = params.get("filters");
@@ -64,21 +58,25 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
                 filtersArgs.add(filtersArgsJsonArray.get(i));
             }
         }
-        TableData tableData;
+
+        InputStream stream = null;
         try {
-            tableData = database.getTableDataSecure(table, columns != null ? columns.split(",") : null,
-                    offset != null ? Long.parseLong(offset) : null, limit != null ? Long.parseLong(limit) : null,
-                    filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]),
-                    sort, sortDir != null && sortDir.equalsIgnoreCase("desc"),
-                    includeRowIdStr != null && includeRowIdStr.equalsIgnoreCase("true"));
-        } catch (SecurityException e) {
-            return StandardResponses.FORBIDDEN(e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return StandardResponses.BAD_REQUEST(e.getMessage());
+            Database.CellDataStreamInfo cellDataStreamInfo = database.getSingleCellDataStream(table, column, filters, filtersArgs);
+            if (cellDataStreamInfo == null) {
+                return StandardResponses.NOT_FOUND();
+            }
+            stream = cellDataStreamInfo.inputStream;
+            if (stream == null) {
+                return StandardResponses.NO_CONTENT();//cell value is null or wrong type (only string or binary is supported)
+            }
+
+            return new Response(cellDataStreamInfo.mimeType, cellDataStreamInfo.length, stream);
         } catch (Exception e) {
             return StandardResponses.INTERNAL_SERVER_ERROR(e.getMessage());
+        } finally {
+            if (stream != null) {
+                stream.close();
+            }
         }
-
-        return StandardResponses.OK(tableData.toJson().toString(), "application/json");
     }
 }

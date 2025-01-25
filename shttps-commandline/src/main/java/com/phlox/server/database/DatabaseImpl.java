@@ -8,13 +8,19 @@ import com.phlox.simpleserver.database.model.Table;
 import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.database.utils.DBUtils;
 
+import org.json.JSONObject;
+
 import java.io.File;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import javax.sql.DataSource;
@@ -230,7 +236,56 @@ public class DatabaseImpl implements Database {
     }
 
     @Override
-    public long insert(String tableName, Map<String, Object> values) throws Exception {
+    public CellDataStreamInfo getSingleCellDataStream(String table, String column, List<String> filters, List<Object> filtersArgs) throws Exception {
+        if (!DBUtils.isValidTableName(table)) {
+            throw new SecurityException("Invalid table name: " + table);
+        }
+        if (!DBUtils.isValidColumnName(column)) {
+            throw new SecurityException("Invalid column name: " + column);
+        }
+        Connection connection = dataSource.getConnection();
+        StringBuilder sql = new StringBuilder("SELECT typeof(")
+                .append(column).append("), length(")
+                .append(column).append("), ")
+                .append(column).append(" FROM ").append(table);
+        if (filters != null && !filters.isEmpty()) {
+            String where = DBUtils.buildSimpleWhereStatement(filters.toArray(new String[0]));
+            sql.append(" WHERE ").append(where);
+        }
+
+        sql.append(" LIMIT 1");
+
+        logger.d("SQL: " + sql);
+
+        PreparedStatement statement = connection.prepareStatement(sql.toString());
+        if (filtersArgs != null) {
+            for (int i = 0; i < filtersArgs.size(); i++) {
+                Object value = filtersArgs.get(i);
+                setStatementValue(statement, i + 1, value);
+            }
+        }
+
+        ResultSet rs = statement.executeQuery();
+        if (rs.next()) {
+            CellDataStreamInfo cellDataStreamInfo = new CellDataStreamInfo();
+            cellDataStreamInfo.type = rs.getString(1);
+            if (cellDataStreamInfo.type.equals("text") || cellDataStreamInfo.type.equals("blob")) {
+                cellDataStreamInfo.length = rs.getLong(2);
+                cellDataStreamInfo.inputStream = rs.getBinaryStream(3);
+                cellDataStreamInfo.mimeType = cellDataStreamInfo.type.equals("text") ? "text/plain" : "application/octet-stream";
+                return cellDataStreamInfo;
+            } else if (cellDataStreamInfo.type.equals("null")) {
+                return cellDataStreamInfo;
+            } else {
+                throw new IllegalArgumentException("Invalid column type: " + cellDataStreamInfo.type + ", only text and blob are supported");
+            }
+        } else {
+            return null;
+        }
+    }
+
+    @Override
+    public long insert(String tableName, JSONObject values) throws Exception {
         try (Connection connection = dataSource.getConnection()) {
             StringBuilder sql = new StringBuilder("INSERT INTO ");
             if (!DBUtils.isValidTableName(tableName)) {
@@ -239,8 +294,8 @@ public class DatabaseImpl implements Database {
             sql.append(tableName).append(" (");
             int columnsCount = 0;
             StringBuilder valuesSql = new StringBuilder(") VALUES (");
-            for (Map.Entry<String, Object> entry : values.entrySet()) {
-                String column = entry.getKey();
+            for (Iterator<String> it = values.keys(); it.hasNext();) {
+                String column = it.next();
                 if (!DBUtils.isValidColumnName(column)) {
                     throw new SecurityException("Invalid column name: " + column);
                 }
@@ -257,23 +312,9 @@ public class DatabaseImpl implements Database {
 
             PreparedStatement statement = connection.prepareStatement(sql.toString(), Statement.RETURN_GENERATED_KEYS);
             int i = 1;
-            for (Map.Entry<String, Object> entry : values.entrySet()) {
-                Object value = entry.getValue();
-                if (value instanceof Long) {
-                    statement.setLong(i, (Long) value);
-                } else if (value instanceof Integer) {
-                    statement.setInt(i, (Integer) value);
-                } else if (value instanceof Short) {
-                    statement.setShort(i, (Short) value);
-                } else if (value instanceof Float) {
-                    statement.setFloat(i, (Float) value);
-                } else if (value instanceof Double) {
-                    statement.setDouble(i, (Double) value);
-                } else if (value instanceof Boolean) {
-                    statement.setBoolean(i, (Boolean) value);
-                } else {
-                    statement.setString(i, value.toString());
-                }
+            for (Iterator<String> it = values.keys(); it.hasNext();) {
+                Object value = values.get(it.next());
+                setStatementValue(statement, i, value);
                 i++;
             }
 
@@ -289,15 +330,15 @@ public class DatabaseImpl implements Database {
     }
 
     @Override
-    public int update(String tableName, Map<String, Object> values, String[] whereFilters, Object[] whereArgs) throws Exception {
+    public int update(String tableName, JSONObject values, String[] whereFilters, Object[] whereArgs) throws Exception {
         try (Connection connection = dataSource.getConnection()) {
             StringBuilder sql = new StringBuilder("UPDATE ");
             if (!DBUtils.isValidTableName(tableName)) {
                 throw new SecurityException("Invalid table name: " + tableName);
             }
             sql.append(tableName).append(" SET ");
-            for (Map.Entry<String, Object> entry : values.entrySet()) {
-                String column = entry.getKey();
+            for (Iterator<String> it = values.keys(); it.hasNext();) {
+                String column = it.next();
                 if (!DBUtils.isValidColumnName(column)) {
                     throw new SecurityException("Invalid column name: " + column);
                 }
@@ -314,8 +355,8 @@ public class DatabaseImpl implements Database {
 
             PreparedStatement statement = connection.prepareStatement(sql.toString());
             int i = 1;
-            for (Map.Entry<String, Object> entry : values.entrySet()) {
-                Object value = entry.getValue();
+            for (Iterator<String> it = values.keys(); it.hasNext();) {
+                Object value = values.get(it.next());
                 setStatementValue(statement, i, value);
                 i++;
             }
@@ -367,7 +408,9 @@ public class DatabaseImpl implements Database {
     }
 
     private static void setStatementValue(PreparedStatement statement, int i, Object value) throws Exception {
-        if (value instanceof Long) {
+        if (value == null) {
+            statement.setNull(i, java.sql.Types.NULL);
+        } else if (value instanceof Long) {
             statement.setLong(i, (Long) value);
         } else if (value instanceof Integer) {
             statement.setInt(i, (Integer) value);
@@ -379,6 +422,11 @@ public class DatabaseImpl implements Database {
             statement.setDouble(i, (Double) value);
         } else if (value instanceof Boolean) {
             statement.setBoolean(i, (Boolean) value);
+        } else if (value instanceof HashMap<?,?> && ((HashMap<?, ?>) value).containsKey("type") &&
+                ((HashMap<?, ?>) value).get("type").equals("blob") &&
+                ((HashMap<?, ?>) value).containsKey("value")) {
+            String base64 = ((HashMap<?, ?>) value).get("value").toString();
+            statement.setBytes(i, Base64.getDecoder().decode(base64));
         } else {
             statement.setString(i, value.toString());
         }

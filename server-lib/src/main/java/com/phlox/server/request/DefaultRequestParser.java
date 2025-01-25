@@ -41,10 +41,13 @@ public class DefaultRequestParser implements RequestParser {
                 parts = line.split(" ");
                 if (parts.length >= 2) {
                     request.method = parts[0].toUpperCase();
-                    parts = parts[1].split("\\?");
-                    request.path = URLDecoder.decode(parts[0], "UTF-8");
-                    if (parts.length > 1) {
-                        HTTPUtils.decodeURLEncodedNameValuePairs(parts[1], request.queryParams);
+                    String pathAndQuery = parts[1];
+                    int q = pathAndQuery.indexOf("?");
+                    if (q != -1) {
+                        request.path = URLDecoder.decode(pathAndQuery.substring(0, q), "UTF-8");
+                        HTTPUtils.decodeURLEncodedNameValuePairs(pathAndQuery.substring(q + 1), request.queryParams);
+                    } else {
+                        request.path = URLDecoder.decode(pathAndQuery, "UTF-8");
                     }
                 }
             } else {

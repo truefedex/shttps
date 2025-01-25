@@ -60,7 +60,7 @@ public class DBUpdateRequestHandler extends BaseDBRequestHandler {
             return StandardResponses.BAD_REQUEST("Invalid JSON data: " + e.getMessage());
         }
         try {
-            int updatedRows = database.update(table, rowJson.toMap(),
+            int updatedRows = database.update(table, rowJson,
                     filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]));
             JSONObject responseJson = new JSONObject();
             responseJson.put("updated_rows", updatedRows);

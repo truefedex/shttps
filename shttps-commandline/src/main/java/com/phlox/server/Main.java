@@ -142,7 +142,7 @@ public class Main implements Callable<Integer> {
                     terminal.flush();
                 }
             } catch (UserInterruptException | EndOfFileException e) {
-                break;
+                //break;
             }
         }
 

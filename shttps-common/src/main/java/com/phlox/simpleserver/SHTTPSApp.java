@@ -14,6 +14,7 @@ import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.SHTTPSDatabaseFabric;
 import com.phlox.simpleserver.handlers.MainRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBSchemaRequestHandler;
+import com.phlox.simpleserver.handlers.database.DBSingleCellDataRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBTableDataRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBInsertRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBUpdateRequestHandler;
@@ -138,6 +139,7 @@ public class SHTTPSApp {
         routingRequestHandler.addRoute("/api/db/update", new HashSet<>(Collections.singletonList("PUT")), new DBUpdateRequestHandler(database, config));
         routingRequestHandler.addRoute("/api/db/delete", new HashSet<>(Collections.singletonList("DELETE")), new DBDeleteRequestHandler(database, config));
         routingRequestHandler.addRoute("/api/db/sql", new HashSet<>(Collections.singletonList("POST")), new DBCustomSQLRequestHandler(database, config));
+        routingRequestHandler.addRoute("/api/db/cell-data", new HashSet<>(Arrays.asList("GET", "POST")), new DBSingleCellDataRequestHandler(database, config));
 
         routingRequestHandler.addRoute("/shttps-static-public", new HashSet<>(Arrays.asList("GET", "HEAD")), new StaticAssetsRequestHandler("shttps-static-public"));
 

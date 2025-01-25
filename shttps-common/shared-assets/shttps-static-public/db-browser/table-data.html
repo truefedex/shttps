@@ -39,6 +39,24 @@
       <div id="modal-content" class="modal-content">
       </div>
     </div>
+    <div class="context-menu" id="input-menu">
+      <div class="menu-close-btn" onclick="hideContextMenu()">&times;</div>
+      <ul class="menu-options">
+        <li class="menu-option" id="mo-set-default">Set default value</li>
+        <li class="menu-option" id="mo-set-null">Set null</li>
+        <li class="menu-divider">Data representation:</li>
+        <li class="menu-option" id="mo-single-line-text">Single line text</li>
+        <li class="menu-option" id="mo-multi-line-text">Multi line text</li>
+        <li class="menu-option" id="mo-int">Integer number</li>
+        <li class="menu-option" id="mo-float">Floating point number</li>
+        <li class="menu-option" id="mo-boolean">Boolean</li>
+        <li class="menu-option" id="mo-date-str">Date (as string)</li>
+        <li class="menu-option" id="mo-time-str">Time (as string)</li>
+        <li class="menu-option" id="mo-date-time-str">Date and time (as string)</li>
+        <li class="menu-option" id="mo-unix-timestamp">Unix timestamp</li>
+        <li class="menu-option" id="mo-blob">Binary blob data</li>
+      </ul>
+    </div>
   </div>
 </body>
 </html>

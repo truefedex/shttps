@@ -4,7 +4,9 @@ import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.simpleserver.database.model.TableData;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
+import java.io.InputStream;
 import java.sql.Blob;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -194,19 +196,28 @@ public class TableDataImpl implements TableData {
                                 break;
 
                             case java.sql.Types.BLOB:
-                                Blob blob = resultSet.getBlob(i);
-                                String b64 = Base64.getEncoder().encodeToString(blob.getBytes(1, (int) blob.length()));
-                                row.put(b64);
+                                //noinspection EmptyTryBlock
+                                try (InputStream is = resultSet.getBinaryStream(i)) {
+                                    //just to test for null
+                                }
+                                if (resultSet.wasNull()) {
+                                    row.put((Object) null);
+                                } else {
+                                    JSONObject blobJson = new JSONObject();
+                                    blobJson.put("type", "blob");
+                                    row.put(blobJson);
+                                }
                                 break;
                             case java.sql.Types.DOUBLE: case java.sql.Types.FLOAT: case java.sql.Types.REAL:
                                 row.put(resultSet.getDouble(i));
                                 break;
 
                             default:
+                                String strValue = resultSet.getString(i);
                                 if (resultSet.wasNull()) {
                                     row.put((Object) null);
                                 } else {
-                                    row.put(resultSet.getString(i));
+                                    row.put(strValue);
                                 }
                                 break;
                         }

@@ -10,7 +10,7 @@ body {
 }
 
 /* Context Menu */
-.menu {
+.context-menu {
     width: auto;
     height: auto;
     z-index: 1;
@@ -20,6 +20,9 @@ body {
     visibility: hidden;
     transition: 0.2s display ease-in;
     background-color: #555;
+    color: black;
+    overflow-x: auto;
+    overflow-y: auto;
 }
 .menu-fullscreen {
     left: 0px;
@@ -32,14 +35,14 @@ body {
     text-align: center;
     padding-top: 20%;
 }
-.menu .menu-options {
+.context-menu .menu-options {
     list-style: none;
     padding: 0;
     z-index: 1;
     margin-block-start: 0.5em;
     margin-block-end: 0.5em;
 }
-.menu .menu-options .menu-option {
+.context-menu .menu-options .menu-option {
     font-weight: 500;
     z-index: 1;
     font-size: 14px;
@@ -47,11 +50,33 @@ body {
     cursor: pointer;
     white-space: nowrap;
 }
-.menu .menu-options .menu-option:hover {
+.context-menu .menu-options .menu-option:hover {
     background: rgba(0, 0, 0, 0.2);
 }
+.context-menu .menu-options .menu-option::before {
+    content: "●";
+    color: transparent;
+    margin-right: 10px;
+}
+.context-menu .menu-options .menu-option.menu-option-mark::before {
+    content: "✔";
+    color: black;
+    margin-right: 10px;
+}
+.context-menu .menu-options .menu-option.menu-option-circle-mark::before {
+    content: "●";
+    color: black;
+    margin-right: 10px;
+}
+.context-menu .menu-options .menu-divider {
+    background: #d3d3d36b;
+    color: black;
+    padding: 5px 10px;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
 
-.menu .menu-close-btn {
+.context-menu .menu-close-btn {
     position: fixed;
     top: 0px;
     right: 0px;

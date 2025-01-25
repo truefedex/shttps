@@ -7,6 +7,7 @@ import com.phlox.server.utils.SHTTPSLoggerProxy;
 
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 public class TableDataAndroid implements TableData {
     private Cursor cursor;
@@ -123,8 +124,11 @@ public class TableDataAndroid implements TableData {
                             }
                             break;
                         case Cursor.FIELD_TYPE_BLOB:
-                            String b64 = Base64.encodeToString(cursor.getBlob(i), Base64.DEFAULT);
-                            row.put(b64);
+                            JSONObject blobJson = new JSONObject();
+                            try {
+                                blobJson.put("type", "blob");
+                            } catch (JSONException ignored) {}
+                            row.put(blobJson);
                             break;
                         case Cursor.FIELD_TYPE_NULL:
                             row.put(null);

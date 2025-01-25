@@ -27,10 +27,10 @@ public final class HTTPUtils {
         String enc = "UTF-8";
         String[] params = string.split("&");
         for (int i = 0; i < params.length; i++) {
-            String[] keyValue = params[i].split("=");
-            if (keyValue.length == 2) {
+            int eq = params[i].indexOf("=");
+            if (eq != -1) {
                 try {
-                    out.put(URLDecoder.decode(keyValue[0], enc), URLDecoder.decode(keyValue[1], enc));
+                    out.put(URLDecoder.decode(params[i].substring(0, eq), enc), URLDecoder.decode(params[i].substring(eq + 1), enc));
                 } catch (UnsupportedEncodingException e) {
                     e.printStackTrace();
                 }

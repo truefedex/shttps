@@ -1,5 +1,3 @@
-let SMALL_UI_MAX_SCREEN_SIZE = 500;
-
 let files = [];
 let uploadInProgress = false;
 let selectMode = false;
@@ -7,7 +5,6 @@ let selectedFiles = [];
 let lastSelectedElement = null;
 let currentPath = decodeURIComponent(window.location.pathname);
 let touchscreen = window.matchMedia("(any-pointer: coarse)").matches;
-let smallScreen = window.innerWidth < SMALL_UI_MAX_SCREEN_SIZE;
 let allowEditing = false;
 
 let resizeTimer;
@@ -824,37 +821,7 @@ function showContextMenu(x, y, href, isFolder) {
     }
   }
 
-  if (smallScreen) {
-    contextMenu.classList.add("menu-fullscreen");
-    contextMenu.querySelector(".menu-close-btn").style.display = "block";
-  } else {
-    //now calculate width and height of context menu
-    let contextMenuWidth = 0;
-    let contextMenuHeight = 0;
-    let rct = contextMenu.getBoundingClientRect();
-    contextMenuWidth = rct.width;
-    contextMenuHeight = rct.height;
-    //now check if we need to show context menu on the left side of the cursor
-    if (x + contextMenuWidth > window.innerWidth) {
-      x -= contextMenuWidth;
-    }
-    //now check if we need to show context menu on the top side of the cursor
-    if (y + contextMenuHeight > window.innerHeight) {
-      y -= contextMenuHeight;
-    }
-
-    contextMenu.classList.remove("menu-fullscreen");
-    contextMenu.style.left = x + "px";
-    contextMenu.style.top = y + "px";
-    contextMenu.querySelector(".menu-close-btn").style.display = "none";
-  }
-
-  contextMenu.style.visibility = "visible";
-}
-
-function hideContextMenu() {
-  let contextMenu = document.getElementById("context-menu");
-  contextMenu.style.visibility = "hidden";
+  displayContextMenu(x, y, contextMenu);
 }
 
 function onPageLoad() {
@@ -881,12 +848,6 @@ function onPageLoad() {
   window.addEventListener("popstate", function (e) {
     if (e.state == null) return;
     loadPath(e.state.path);
-  });
-
-  window.addEventListener("click", e => {
-    if (e.target.id != "context-menu" && !e.target.classList.contains("context-menu-item")) {
-      hideContextMenu();
-    }
   });
 
   loadPath(currentPath);
