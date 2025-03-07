@@ -14,6 +14,7 @@ public class Column {
     //public long size;//for string type//no way to get this info from sqlite
     public String index;//index name
     //public String check;//no way to get this info from sqlite
+    public boolean autoIncrement;
 
     public JSONObject toJson() {
         JSONObject json = new JSONObject();
@@ -25,6 +26,7 @@ public class Column {
             json.put("primaryKey", primaryKey);
             json.put("foreignKey", foreignKey);
             json.put("index", index);
+            json.put("autoIncrement", autoIncrement);
         } catch (Exception e) {
             e.printStackTrace();
         }

@@ -12,7 +12,7 @@ import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.SHTTPSDatabaseFabric;
-import com.phlox.simpleserver.handlers.MainRequestHandler;
+import com.phlox.simpleserver.handlers.main.MainRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBSchemaRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBSingleCellDataRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBTableDataRequestHandler;
@@ -34,12 +34,13 @@ import com.phlox.simpleserver.utils.Holder;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
 
-
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.security.KeyManagementException;
+import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
@@ -64,13 +65,14 @@ public class SHTTPSApp {
     public final BasicAuthRequestHandler authRequestHandler;
     public final LoggingRequestHandler loggingRequestHandler;
     public Callback callback;
-    private SimpleHttpServer server;
+    private volatile SimpleHttpServer server;
 
     public static SHTTPSApp init(SHTTPSConfig config, SHTTPSPlatformUtils platformUtils, SHTTPSDatabaseFabric databaseFabric) {
         if (instance != null) {
             throw new IllegalStateException("App already initialized");
         }
         instance = new SHTTPSApp(config, platformUtils, databaseFabric);
+        config.runMigrations();
         return instance;
     }
 
@@ -91,17 +93,6 @@ public class SHTTPSApp {
         if (www == null) {
             www = platformUtils.getDefaultRootDir();
             config.setRootDir(www.getUri());
-        }
-
-        if (config.isDatabaseEnabled()) {
-            try {
-                Database database = databaseFabric.openDatabase(config.getDatabasePath());
-                Map<String, Object> bdStatus = database.getStatus();
-                logger.i("Database opened: " + bdStatus);
-                setDatabase(database);
-            } catch (Exception e) {
-                logger.e("Failed to open database", e);
-            }
         }
 
         loggingRequestHandler = new LoggingRequestHandler(1000);
@@ -138,7 +129,7 @@ public class SHTTPSApp {
         routingRequestHandler.addRoute("/api/db/insert", new HashSet<>(Collections.singletonList("POST")), new DBInsertRequestHandler(database, config));
         routingRequestHandler.addRoute("/api/db/update", new HashSet<>(Collections.singletonList("PUT")), new DBUpdateRequestHandler(database, config));
         routingRequestHandler.addRoute("/api/db/delete", new HashSet<>(Collections.singletonList("DELETE")), new DBDeleteRequestHandler(database, config));
-        routingRequestHandler.addRoute("/api/db/sql", new HashSet<>(Collections.singletonList("POST")), new DBCustomSQLRequestHandler(database, config));
+        routingRequestHandler.addRoute("/api/db/query", new HashSet<>(Collections.singletonList("POST")), new DBCustomSQLRequestHandler(database, config));
         routingRequestHandler.addRoute("/api/db/cell-data", new HashSet<>(Arrays.asList("GET", "POST")), new DBSingleCellDataRequestHandler(database, config));
 
         routingRequestHandler.addRoute("/shttps-static-public", new HashSet<>(Arrays.asList("GET", "HEAD")), new StaticAssetsRequestHandler("shttps-static-public"));
@@ -146,9 +137,21 @@ public class SHTTPSApp {
         routingRequestHandler.addRoute("/", new HashSet<>(Arrays.asList("GET", "HEAD")), mainRequestHandler);
     }
 
-    public SimpleHttpServer startServer() throws UnrecoverableKeyException, CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+    public synchronized void initIO() {
+        if (config.isDatabaseEnabled()) {
+            try {
+                Database database = databaseFabric.openDatabase(config.getDatabasePath());
+                Map<String, Object> bdStatus = database.getStatus();
+                logger.i("Database opened: " + bdStatus);
+                setDatabase(database);
+            } catch (Exception e) {
+                logger.e("Failed to open database", e);
+            }
+        }
+    }
 
-        server = new SimpleHttpServer.Builder()
+    public synchronized SimpleHttpServer startServer() throws UnrecoverableKeyException, CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+        SimpleHttpServer srv = new SimpleHttpServer.Builder()
                 .setRequestHandler(loggingRequestHandler)
                 .setCallback(new SimpleHttpServer.Callback() {
                     @Override
@@ -178,7 +181,7 @@ public class SHTTPSApp {
 
         String[] allowedInterfaces = config.getAllowedNetworkInterfaces();
         if (allowedInterfaces != null && allowedInterfaces.length > 0) {
-            getServer().allowedNetworkInterfaces = platformUtils.findInterfaces(allowedInterfaces);
+            srv.allowedNetworkInterfaces = platformUtils.findInterfaces(allowedInterfaces);
         }
 
         if (!config.getWhiteListMode().isEmpty()) {
@@ -193,39 +196,52 @@ public class SHTTPSApp {
                     }
                 }
             }
-            getServer().allowedClientAddresses = allowedClientAddressesParsed;
+            srv.allowedClientAddresses = allowedClientAddressesParsed;
         }
 
         String customResponseHeadersStr = config.getCustomHeaders();
         if (!customResponseHeadersStr.isEmpty()) {
             Map<String, String> customResponseHeadersMap = HTTPUtils.parseHttpHeaders(customResponseHeadersStr);
             if (!customResponseHeadersMap.isEmpty()) {
-                getServer().additionalResponseHeaders = customResponseHeadersMap;
+                srv.additionalResponseHeaders = customResponseHeadersMap;
             }
         }
 
         if (config.getUseTLS()) {
-            byte[] cert = config.getTLSCert();
+            KeyStore cert = config.getTLSCert();
             String certPassword = config.getTLSCertPassword();
-            if (cert == null || certPassword == null)  {
-                throw new IllegalStateException("Certificate or certificate password not set!");
+            if (cert == null)  {
+                //use default self-signed cert
+                String password = "z47x#vt6Rm$!y;LK";
+                try (InputStream certStream = platformUtils.openAssetStream("default_self_signed.pfx")) {
+                    cert = KeyStore.getInstance("PKCS12");
+                    cert.load(certStream, password.toCharArray());
+                    certPassword = password;
+                } catch (Exception e) {
+                    throw new IllegalStateException("Failed to load default self-signed certificate", e);
+                }
+            } else if (certPassword == null) {
+                throw new IllegalStateException("Certificate password not set!");
             }
-            getServer().startListen(config.getPort(), cert, certPassword);
+            srv.startListen(config.getPort(), cert, certPassword);
         } else {
-            getServer().startListen(config.getPort());
+            srv.startListen(config.getPort());
         }
-        return getServer();
+        this.server = srv;
+        return srv;
     }
 
-    public void stopServer() {
-        if (getServer() != null && getServer().isRunning()) {
-            getServer().stopListen();
+    public synchronized void stopServer() {
+        SimpleHttpServer srv = this.server;
+        if (srv != null && srv.isRunning()) {
+            srv.stopListen();
             server = null;
         }
     }
 
-    public boolean isServerRunning() {
-        return server != null && server.isRunning();
+    public synchronized boolean isServerRunning() {
+        SimpleHttpServer srv = this.server;
+        return srv != null && srv.isRunning();
     }
 
     public void notifyConfigChanged() {

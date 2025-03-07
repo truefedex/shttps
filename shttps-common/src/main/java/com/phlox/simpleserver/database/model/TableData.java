@@ -8,6 +8,8 @@ import org.json.JSONArray;
  */
 public interface TableData extends AutoCloseable {
     boolean next();
+    boolean skip(int count);
+    String[] getColumnNames();
     @Override void close();
     int getColumnIndex(String columnName);
     long count();
@@ -24,4 +26,5 @@ public interface TableData extends AutoCloseable {
     Boolean getBoolean(int columnIndex, Boolean defaultValue);
 
     JSONArray toJson();
+    JSONArray currentRowToJson();
 }

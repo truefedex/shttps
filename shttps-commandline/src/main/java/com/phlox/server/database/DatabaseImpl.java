@@ -99,13 +99,14 @@ public class DatabaseImpl implements Database {
                     CASE
                     	WHEN sql LIKE '%WITHOUT ROWID%' THEN 0
                     	ELSE 1
-                    END AS has_rowid
+                    END AS has_rowid, sql
                     FROM sqlite_master WHERE type='table' AND name!='android_metadata' AND name NOT LIKE 'sqlite_%'
                     """);
             while (rs.next()) {
                 Table table = new Table();
                 table.name = rs.getString(1);
                 table.hasRowId = rs.getInt(2) == 1;
+                table.sql = rs.getString(3);
                 tables.add(table);
             }
             rs.close();
@@ -120,6 +121,7 @@ public class DatabaseImpl implements Database {
                     column.notNull = rsColumns.getInt(4) == 1;
                     column.defaultValue = rsColumns.getString(5);
                     column.primaryKey = rsColumns.getInt(6) > 0;
+                    column.autoIncrement = column.primaryKey && table.sql.contains("AUTOINCREMENT");
                     columns.add(column);
                 }
                 rsColumns.close();
@@ -144,24 +146,19 @@ public class DatabaseImpl implements Database {
     }
 
     @Override
-    public TableData query(String query) throws Exception {
+    public TableData execute(String query) throws Exception {
         Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement();
-        ResultSet rs = statement.executeQuery(query);
-        return new TableDataImpl(connection, statement, rs);
-    }
-
-    @Override
-    public ExecuteResult execute(String query) throws Exception {
-        Connection connection = dataSource.getConnection();
-        Statement statement = connection.createStatement();
-        int updatedRows = statement.executeUpdate(query, Statement.RETURN_GENERATED_KEYS);
-        ResultSet rs = statement.getGeneratedKeys();
-        long generatedId = -1;
-        if (rs.next()) {
-            generatedId = rs.getLong(1);
+        try {
+            ResultSet resultSet = statement.executeQuery(query);
+            return new TableDataImpl(connection, statement, resultSet);
+        } catch (SQLException e) {
+            if (e.getErrorCode() == 101) {//SQLITE_DONE
+                return null;//no data
+            } else {
+                throw e;
+            }
         }
-        return new ExecuteResult(updatedRows, generatedId);
     }
 
     @Override
@@ -408,7 +405,7 @@ public class DatabaseImpl implements Database {
     }
 
     private static void setStatementValue(PreparedStatement statement, int i, Object value) throws Exception {
-        if (value == null) {
+        if (value == null || value.equals(JSONObject.NULL)) {
             statement.setNull(i, java.sql.Types.NULL);
         } else if (value instanceof Long) {
             statement.setLong(i, (Long) value);
@@ -422,10 +419,10 @@ public class DatabaseImpl implements Database {
             statement.setDouble(i, (Double) value);
         } else if (value instanceof Boolean) {
             statement.setBoolean(i, (Boolean) value);
-        } else if (value instanceof HashMap<?,?> && ((HashMap<?, ?>) value).containsKey("type") &&
-                ((HashMap<?, ?>) value).get("type").equals("blob") &&
-                ((HashMap<?, ?>) value).containsKey("value")) {
-            String base64 = ((HashMap<?, ?>) value).get("value").toString();
+        } else if (value instanceof JSONObject && ((JSONObject) value).has("type") &&
+                ((JSONObject) value).opt("type").equals("blob") &&
+                ((JSONObject) value).has("value")) {
+            String base64 = ((JSONObject) value).opt("value").toString();
             statement.setBytes(i, Base64.getDecoder().decode(base64));
         } else {
             statement.setString(i, value.toString());

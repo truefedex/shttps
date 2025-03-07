@@ -49,3 +49,13 @@
   text-overflow: ellipsis;
   overflow: hidden;
 }
+#editor>textarea {
+  color: rgb(0, 255, 0);
+  box-sizing: border-box;
+  resize: none;
+  flex-grow: 1;
+  outline: none;
+  border: none;
+  background: #303030;
+  font-family: monospace;
+}

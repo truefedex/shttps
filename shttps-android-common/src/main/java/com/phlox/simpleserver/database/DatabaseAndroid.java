@@ -86,7 +86,7 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
             "CASE\n" +
             "    WHEN sql LIKE '%WITHOUT ROWID%' THEN 0\n" +
             "    ELSE 1\n" +
-            "END AS has_rowid\n" +
+            "END AS has_rowid, sql\n" +
             "FROM sqlite_master WHERE type='table' AND name!='android_metadata' AND name NOT LIKE 'sqlite_%'\n",
  null);
         ArrayList<Table> tables = new ArrayList<>();
@@ -94,6 +94,7 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
             Table table = new Table();
             table.name = cursor.getString(0);
             table.hasRowId = cursor.getInt(1) > 0;
+            table.sql = cursor.getString(2);
             Cursor cursorColumns = database.rawQuery("PRAGMA table_info(" + table.name + ")", null);
             table.columns = new Column[cursorColumns.getCount()];
             int j = 0;
@@ -104,6 +105,7 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
                 column.notNull = cursorColumns.getInt(3) == 1;
                 column.defaultValue = cursorColumns.getString(4);
                 column.primaryKey = cursorColumns.getInt(5) > 0;
+                column.autoIncrement = column.primaryKey && table.sql.contains("AUTOINCREMENT");
                 table.columns[j++] = column;
             }
             cursorColumns.close();
@@ -132,34 +134,13 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
     }
 
     @Override
-    public TableData query(String query) throws Exception {
-        SQLiteDatabase database = getReadableDatabase();
-        Cursor cursor = database.rawQuery(query, null);
-        return new TableDataAndroid(cursor);
-    }
-
-    @Override
-    public ExecuteResult execute(String query) throws Exception {
+    public TableData execute(String query) throws Exception {
         SQLiteDatabase database = getWritableDatabase();
-        database.beginTransaction();
-        try {
-            Cursor cursor = database.rawQuery(query, null);
-            int updatedRows = -1;
-            if (cursor.moveToNext()) {
-                updatedRows = cursor.getInt(0);
-            }
-            cursor.close();
-            long generatedId = -1;
-            cursor = database.rawQuery("SELECT last_insert_rowid()", null);
-            if (cursor.moveToNext()) {
-                generatedId = cursor.getLong(0);
-            }
-            cursor.close();
-            database.setTransactionSuccessful();
-            return new ExecuteResult(updatedRows, generatedId);
-        } finally {
-            database.endTransaction();
+        Cursor cursor = database.rawQuery(query, null);
+        if (cursor == null || cursor.getCount() == 0) {
+            return null;
         }
+        return new TableDataAndroid(cursor);
     }
 
     @Override

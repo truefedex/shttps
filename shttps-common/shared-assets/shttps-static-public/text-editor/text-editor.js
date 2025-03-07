@@ -45,15 +45,15 @@ function onSaveClick(e) {
 }
 
 function onUndoClick(e) {
-    editor.session.getUndoManager().undo();
-    undoButton.disabled = !editor.session.getUndoManager().hasUndo();
-    redoButton.disabled = !editor.session.getUndoManager().hasRedo();
+    editor.undo();
+    undoButton.disabled = !editor.hasUndo();
+    redoButton.disabled = !editor.hasRedo();
 }
 
 function onRedoClick(e) {
-    editor.session.getUndoManager().redo();
-    undoButton.disabled = !editor.session.getUndoManager().hasUndo();
-    redoButton.disabled = !editor.session.getUndoManager().hasRedo();
+    editor.redo();
+    undoButton.disabled = !editor.hasUndo();
+    redoButton.disabled = !editor.hasRedo();
 }
 
 function onSettingsClick(e) {
@@ -62,25 +62,18 @@ function onSettingsClick(e) {
 
 function onTextContentLoaded(data) {
     textData = data;
-    editor = ace.edit("editor");
-    editor.setTheme("ace/theme/monokai");
-    ace.require('ace/ext/settings_menu').init(editor);
-    let aceModeList = ace.require("ace/ext/modelist");
-    let mode = aceModeList.getModeForPath(editedFilePath).mode;
-    editor.session.setMode(mode);
-    editor.setOptions({
-        enableBasicAutocompletion: true,
-        enableSnippets: true,
-        enableLiveAutocompletion: true
-    });
-    editor.setValue(data, -1);
-    editor.clearSelection();
-    editor.focus();
-    editor.session.getUndoManager().reset();
-    editor.session.on('change', function(delta) {
+    editor = new EditorWrapper(document.getElementById('editor'));
+    if (editor.tryToInitSettingsMenu()) {
+        document.getElementById('settings-button').style.display = 'block';
+    }
+    editor.selectModeForPath(editedFilePath);
+    
+    editor.setValue(data);
+    
+    editor.setOnChange(function() {
         saveButton.disabled = false;
-        undoButton.disabled = !editor.session.getUndoManager().hasUndo();
-        redoButton.disabled = !editor.session.getUndoManager().hasRedo();
+        undoButton.disabled = !editor.hasUndo();
+        redoButton.disabled = !editor.hasRedo();
     });
 }
 
@@ -89,4 +82,4 @@ function showToast(msg, duration = 3000) {
     snackbar.className = "show";
     snackbar.innerText = msg;
     setTimeout(function(){ snackbar.className = snackbar.className.replace("show", ""); }, duration);
-  }
+}

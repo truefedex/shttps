@@ -116,7 +116,7 @@ public class Main implements Callable<Integer> {
     private void startServer(SHTTPSConfig config, SHTTPSPlatformUtils platformUtils, DatabaseFabricImpl databaseFabric) {
         System.out.println("Starting server");
         SHTTPSApp app = SHTTPSApp.init(config, platformUtils, databaseFabric);
-
+        app.initIO();
         try {
             app.startServer();
             String scheme = config.getUseTLS() ? "https" : "http";

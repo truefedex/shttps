@@ -3,8 +3,7 @@ package com.phlox.simpleserver;
 import com.phlox.server.utils.docfile.DocumentFile;
 
 
-
-
+import java.security.KeyStore;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -31,6 +30,8 @@ public interface SHTTPSConfig {
     String KEY_DATABASE_PATH = "database_path";
     String KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API = "allow_database_table_data_editing_api";
     String KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API = "allow_database_custom_sql_remote_api";
+
+    void runMigrations();
 
     DocumentFile getRootDir();
 
@@ -68,7 +69,7 @@ public interface SHTTPSConfig {
 
     void setUseTLS(boolean value);
 
-    byte [] getTLSCert();
+    KeyStore getTLSCert();
 
     void setTLSCert(byte [] value);
 

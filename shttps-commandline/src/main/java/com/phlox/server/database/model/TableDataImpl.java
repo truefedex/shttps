@@ -46,11 +46,36 @@ public class TableDataImpl implements TableData {
     }
 
     @Override
+    public String[] getColumnNames() {
+        try {
+            int columnCount = resultSet.getMetaData().getColumnCount();
+            String[] columnNames = new String[columnCount];
+            for (int i = 1; i <= columnCount; i++) {
+                columnNames[i - 1] = resultSet.getMetaData().getColumnName(i);
+            }
+            return columnNames;
+        } catch (SQLException e) {
+            logger.e("Error getting column names", e);
+            return new String[0];
+        }
+    }
+
+    @Override
     public boolean next() {
         try {
             return resultSet.next();
         } catch (SQLException e) {
             logger.e("Error moving to next row", e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean skip(int count) {
+        try {
+            return resultSet.relative(count);
+        } catch (SQLException e) {
+            logger.e("Error skipping rows", e);
             return false;
         }
     }
@@ -183,54 +208,63 @@ public class TableDataImpl implements TableData {
     public JSONArray toJson() {
         JSONArray json = new JSONArray();
         try {
-            int columnCount = resultSet.getMetaData().getColumnCount();
             while (resultSet.next()) {
-                JSONArray row = new JSONArray();
-                for (int i = 1; i <= columnCount; i++) {
-                    try {
-                        switch (resultSet.getMetaData().getColumnType(i)) {
-                            case java.sql.Types.BIGINT: case java.sql.Types.BOOLEAN:
-                                case java.sql.Types.TINYINT: case java.sql.Types.SMALLINT:
-                                case java.sql.Types.INTEGER: case java.sql.Types.NUMERIC:
-                                row.put(resultSet.getLong(i));
-                                break;
-
-                            case java.sql.Types.BLOB:
-                                //noinspection EmptyTryBlock
-                                try (InputStream is = resultSet.getBinaryStream(i)) {
-                                    //just to test for null
-                                }
-                                if (resultSet.wasNull()) {
-                                    row.put((Object) null);
-                                } else {
-                                    JSONObject blobJson = new JSONObject();
-                                    blobJson.put("type", "blob");
-                                    row.put(blobJson);
-                                }
-                                break;
-                            case java.sql.Types.DOUBLE: case java.sql.Types.FLOAT: case java.sql.Types.REAL:
-                                row.put(resultSet.getDouble(i));
-                                break;
-
-                            default:
-                                String strValue = resultSet.getString(i);
-                                if (resultSet.wasNull()) {
-                                    row.put((Object) null);
-                                } else {
-                                    row.put(strValue);
-                                }
-                                break;
-                        }
-                    } catch (Exception e) {
-                        logger.e("Error converting column to JSON", e);
-                        row.put((Object) null);
-                    }
-                }
-                json.put(row);
+                json.put(currentRowToJson());
             }
         } catch (SQLException e) {
             logger.e("Error converting result set to JSON", e);
         }
         return json;
+    }
+
+    @Override
+    public JSONArray currentRowToJson() {
+        JSONArray row = new JSONArray();
+        try {
+            int columnCount = resultSet.getMetaData().getColumnCount();
+            for (int i = 1; i <= columnCount; i++) {
+                try {
+                    switch (resultSet.getMetaData().getColumnType(i)) {
+                        case java.sql.Types.BIGINT: case java.sql.Types.BOOLEAN:
+                            case java.sql.Types.TINYINT: case java.sql.Types.SMALLINT:
+                            case java.sql.Types.INTEGER: case java.sql.Types.NUMERIC:
+                            row.put(resultSet.getLong(i));
+                            break;
+
+                        case java.sql.Types.BLOB:
+                            //noinspection EmptyTryBlock
+                            try (InputStream is = resultSet.getBinaryStream(i)) {
+                                //just to test for null
+                            }
+                            if (resultSet.wasNull()) {
+                                row.put((Object) null);
+                            } else {
+                                JSONObject blobJson = new JSONObject();
+                                blobJson.put("type", "blob");
+                                row.put(blobJson);
+                            }
+                            break;
+                        case java.sql.Types.DOUBLE: case java.sql.Types.FLOAT: case java.sql.Types.REAL:
+                            row.put(resultSet.getDouble(i));
+                            break;
+
+                        default:
+                            String strValue = resultSet.getString(i);
+                            if (resultSet.wasNull()) {
+                                row.put((Object) null);
+                            } else {
+                                row.put(strValue);
+                            }
+                            break;
+                    }
+                } catch (Exception e) {
+                    logger.e("Error converting column to JSON", e);
+                    row.put((Object) null);
+                }
+            }
+        } catch (SQLException e) {
+            logger.e("Error converting result set to JSON", e);
+        }
+        return row;
     }
 }

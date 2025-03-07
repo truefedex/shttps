@@ -7,13 +7,17 @@ import android.net.Uri;
 import android.text.TextUtils;
 
 import com.phlox.server.platform.Base64;
+import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.utils.KeyStoreCrypt;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 import com.phlox.simpleserver.utils.docfile.MediaStoreFileCollectionFile;
 import com.phlox.simpleserver.utils.docfile.TreeDocumentFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.security.KeyStore;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -24,12 +28,18 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
 
     private final KeyStoreCrypt keyStoreCrypt;
 
+    private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
+
     private static final String ALIAS_CONFIG_PREFIX = "config_";
 
     public SHTTPSConfigAndroid(Context context, String prefName, SHTTPSPlatformUtils platformUtils) {
         this.context = context;
         this.keyStoreCrypt = new KeyStoreCrypt(context);
         prefs = context.getSharedPreferences(prefName, Context.MODE_PRIVATE);
+    }
+
+    @Override
+    public void runMigrations() {
     }
 
     @SuppressLint("NewApi")
@@ -126,7 +136,7 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
                 throw new Exception("Key alias not found");
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.e("Failed to get password", e);
             return "";
         }
     }
@@ -137,7 +147,7 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
             String encrypted = keyStoreCrypt.encrypt(value, ALIAS_CONFIG_PREFIX + KEY_PASSWORD);
             prefs.edit().putString(KEY_PASSWORD, encrypted).apply();
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.e("Failed to set password", e);
         }
     }
 
@@ -162,12 +172,16 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     }
 
     @Override
-    public byte[] getTLSCert() {
+    public KeyStore getTLSCert() {
         String encoded = prefs.getString(KEY_TLS_CERT, null);
         if (encoded == null) return null;
         try {
-            return Base64.decode(encoded);
+            byte[] cert = Base64.decode(encoded);
+            KeyStore ks = KeyStore.getInstance("PKCS12");
+            ks.load(new ByteArrayInputStream(cert), getTLSCertPassword().toCharArray());
+            return ks;
         } catch (Exception e) {
+            logger.e("Failed to get TLS cert", e);
             return null;
         }
     }
@@ -179,10 +193,10 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
             return;
         }
         try {
-            //do not encrypt the cert, it's already encrypted and due to its size we can get IllegalBlockSizeException: input must be under 256 bytes
+            //do not encrypt the cert, it's already encrypted
             prefs.edit().putString(KEY_TLS_CERT, Base64.encodeToString(value)).apply();
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.e("Failed to set TLS cert", e);
         }
     }
 
@@ -218,7 +232,7 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
             String encrypted = keyStoreCrypt.encrypt(value, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_PASS);
             prefs.edit().putString(KEY_TLS_CERT_PASS, encrypted).apply();
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.e("Failed to set TLS cert password", e);
         }
     }
 
@@ -340,18 +354,8 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     }
 
     @Deprecated
-    public void setAutostart(boolean value) {
-        prefs.edit().putBoolean(KEY_AUTOSTART, value).apply();
-    }
-
-    @Deprecated
     public boolean getRunningState() {
         return prefs.getBoolean(KEY_RUNNING_STATE, false);
-    }
-
-    @Deprecated
-    public void setRunningState(boolean value) {
-        prefs.edit().putBoolean(KEY_RUNNING_STATE, value).apply();
     }
 
     // End of Android-only settings

@@ -1,4 +1,4 @@
-package com.phlox.simpleserver.handlers;
+package com.phlox.simpleserver.handlers.main;
 
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;

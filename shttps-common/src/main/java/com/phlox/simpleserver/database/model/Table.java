@@ -8,6 +8,7 @@ public class Table {
     public Column[] columns;
     public long rowCount;
     public boolean hasRowId;
+    public String sql;
 
     public JSONObject toJson() {
         JSONObject json = new JSONObject();
@@ -20,6 +21,7 @@ public class Table {
             json.put("columns", jsonColumns);
             json.put("rowCount", rowCount);
             json.put("hasRowId", hasRowId);
+            //json.put("sql", sql);
         } catch (Exception e) {
             e.printStackTrace();
         }

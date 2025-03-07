@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.KeyStore;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -45,6 +46,10 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
                 throw new IOException("Failed to load config from file: " + file.getAbsolutePath());
             }
         }
+    }
+
+    @Override
+    public void runMigrations() {
     }
 
     @Override
@@ -151,13 +156,20 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     }
 
     @Override
-    public byte[] getTLSCert() {
+    public KeyStore getTLSCert() {
         String path = json.optString(KEY_TLS_CERT, null);
         if (path == null || path.isEmpty()) return null;
         try {
-            return Files.readAllBytes(Paths.get(path));
-        } catch (IOException e) {
-            logger.e("Failed to read TLS cert file: " + path, e);
+            KeyStore ks;
+            if (path.endsWith(".bks")) {
+                ks = KeyStore.getInstance("BKS");
+            } else {
+                ks = KeyStore.getInstance("PKCS12");
+            }
+            ks.load(new FileInputStream(path), getTLSCertPassword().toCharArray());
+            return ks;
+        } catch (Exception e) {
+            logger.e("Failed to read keystore file: " + path, e);
             return null;
         }
     }
@@ -166,6 +178,7 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     public void setTLSCert(byte[] value) {
         //on commandline we assume value is path to file
         json.put(KEY_TLS_CERT, new String(value));
+        save();
     }
 
     @Override

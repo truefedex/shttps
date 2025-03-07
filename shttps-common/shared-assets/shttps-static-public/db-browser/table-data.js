@@ -94,9 +94,20 @@ function fetchTableSchema(onDone) {
 }
 
 function detectTypesHints() {
+    let localHints = JSON.parse(localStorage.getItem('columnHints')) || {};
+
     //detect types by sqlite's type affinity (https://www.sqlite.org/datatype3.html)
     for (let column of tableSchema.columns) {
-        let columnHints = {};
+        let columnHints;
+
+        if (localHints[column.name]) {
+            columnHints = localHints[column.name];
+            column.hints = columnHints;
+            continue;
+        } else {
+            columnHints = {};
+        }
+
         let affinity = "NUMERIC";//can be INTEGER, REAL, TEXT, BLOB, NUMERIC
         let internalType = "TEXT";//can be TEXT, MULTILINE_TEXT, INTEGER, REAL, ENUM, BOOLEAN, DATE, TIME, DATETIME, UNIX_TIMESTAMP, BLOB
         if (column.type.includes("INT")) {
@@ -114,7 +125,7 @@ function detectTypesHints() {
         }
         columnHints['affinity'] = affinity;
         columnHints['internalType'] = internalType;
-        columnHints['useDefault'] = column.defaultValue !== undefined && column.defaultValue !== null;
+        columnHints['useDefault'] = (column.defaultValue !== undefined && column.defaultValue !== null) || column.autoIncrement;
         columnHints['useNull'] = !columnHints['useDefault'] && !column.notNull && !column.primaryKey;
 
         column.hints = columnHints;
@@ -297,7 +308,16 @@ function renderTableData(data) {
                 let date = new Date(column * 1000);
                 escapedHtml = date.toLocaleString();
             } else if (internalType === 'BLOB') {
-                escapedHtml = '<span style="color: #00f;">BLOB</span>';
+                if (tableSchema.hasRowId) {
+                    let filter = {};
+                    filter['clauses'] = ['rowid='];
+                    filter['args'] = [row[0]];
+                    let columnName = tableSchema.columns[schemaColumnIndex].name;
+                    let url = "/api/db/cell-data?table=" + tableName + "&column=" + columnName + "&filters=" + encodeURIComponent(JSON.stringify(filter));
+                    escapedHtml = '<a href="' + url + '" target="_blank" download="' + columnName + "-" + row[0] + '.bin">BLOB</a>';
+                } else {
+                    escapedHtml = '<span style="color: #00f;">BLOB</span>';
+                }
             } else {
                 escapedHtml = column.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             }
@@ -405,14 +425,21 @@ function showRowEditorDialog(row, forNewRow = false) {
         if (tableSchema.hasRowId && columnIndex === 0) {
             editedRow["rowid"] = {};
             editedRow["rowid"]["value"] = row[columnIndex];
+            editedRow["rowid"]["originalValue"] = row[columnIndex];
             editedRow["rowid"]["useDefault"] = true;
             columnIndex++;
         }
         editedRow[column.name] = {};
 
         let value;
-        if (!forNewRow && (row[columnIndex] !== null) && (row[columnIndex] !== undefined)) {
-            value = row[columnIndex];
+        if (!forNewRow) {
+            if (row[columnIndex] == null || row[columnIndex] == undefined) {
+                value = null;
+                editedRow[column.name]["useNull"] = true;
+            } else {
+                value = row[columnIndex] ? row[columnIndex] : column.defaultValue;
+                editedRow[column.name]["useDefault"] = true;
+            }
         } else if (column.hints.useNull) {
             value = null;
             editedRow[column.name]["useNull"] = true;
@@ -431,6 +458,7 @@ function showRowEditorDialog(row, forNewRow = false) {
             }
         }
         editedRow[column.name]["value"] = value;
+        editedRow[column.name]["originalValue"] = row[columnIndex];
 
         let label = document.createElement('label');
         label.innerHTML = (column.primaryKey ? '&#128273; ' : '') + column.name + ':' + column.type;
@@ -529,7 +557,7 @@ function showRowEditorDialog(row, forNewRow = false) {
     form.appendChild(closeButton);
 }
 
-function prepareColumnInput(column, container, editedRow, forNewRow) {
+function prepareColumnInput(column, container, editedRow, forNewRow, focusedColumn) {
     if (container.hasChildNodes()) {
         container.innerHTML = '';
     }
@@ -541,27 +569,33 @@ function prepareColumnInput(column, container, editedRow, forNewRow) {
         inputElement.type = 'text';
         inputElement.name = column.name;
         inputElement.placeholder = "[NULL]";
-        inputElement.disabled = true;
+        inputElement.onclick = (e) => {
+            editedRow[column.name].useNull = false;
+            prepareColumnInput(column, container, editedRow, forNewRow, column.name);
+        };
     } else if (editedRow[column.name].useDefault) {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'text';
         inputElement.name = column.name;
-        inputElement.placeholder = column.hints.defaultValue ? column.hints.defaultValue : 
-            (forNewRow ? "[DEFAULT]" : "[DON'T UPDATE]");
-        inputElement.disabled = true;
+        let defaultValue = forNewRow ? (column.defaultValue ? ('(default: ' + column.defaultValue + ')') : '(default)') : 
+            (editedRow[column.name].originalValue ? ('(leave unchanged: ' + editedRow[column.name].originalValue + ')') : '(leave unchanged)');
+        inputElement.placeholder =  
+            column.autoIncrement ? "(autoincrement)" : defaultValue;
+        inputElement.onclick = (e) => {
+            editedRow[column.name].useDefault = false;
+            prepareColumnInput(column, container, editedRow, forNewRow, column.name);
+        };
     } else if (column.hints.internalType === 'MULTILINE_TEXT') {
         inputElement = document.createElement('textarea');
         inputElement.className = 'input-field';
         inputElement.name = column.name;
-        inputElement.placeholder = column.name;
         inputElement.value = editedRow[column.name].value;
     } else if (column.hints.internalType === 'INTEGER') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'number';
         inputElement.name = column.name;
-        inputElement.placeholder = column.name;
         inputElement.value = editedRow[column.name].value;
     } else if (column.hints.internalType === 'REAL') {
         inputElement = document.createElement('input');
@@ -569,7 +603,6 @@ function prepareColumnInput(column, container, editedRow, forNewRow) {
         inputElement.type = 'number';
         inputElement.step = 'any';
         inputElement.name = column.name;
-        inputElement.placeholder = column.name;
         inputElement.value = editedRow[column.name].value;
     } else if (column.hints.internalType === 'BOOLEAN') {
         inputElement = document.createElement('input');
@@ -582,7 +615,6 @@ function prepareColumnInput(column, container, editedRow, forNewRow) {
         inputElement.className = 'input-field';
         inputElement.type = 'date';
         inputElement.name = column.name;
-        inputElement.placeholder = column.name;
         inputElement.value = editedRow[column.name].value;
     } else if (column.hints.internalType === 'TIME') {
         inputElement = document.createElement('input');
@@ -590,21 +622,18 @@ function prepareColumnInput(column, container, editedRow, forNewRow) {
         inputElement.type = 'time';
         inputElement.step = '1';
         inputElement.name = column.name;
-        inputElement.placeholder = column.name;
         inputElement.value = editedRow[column.name].value;
     } else if (column.hints.internalType === 'DATETIME') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'datetime-local';
         inputElement.name = column.name;
-        inputElement.placeholder = column.name;
         inputElement.value = editedRow[column.name].value;
     } else if (column.hints.internalType === 'UNIX_TIMESTAMP') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'datetime-local';
         inputElement.name = column.name;
-        inputElement.placeholder = column.name;
         let date = new Date(editedRow[column.name].value * 1000);
         inputElement.value = date.toISOString().slice(0, 16);
     } else if (column.hints.internalType === 'BLOB') {
@@ -631,7 +660,6 @@ function prepareColumnInput(column, container, editedRow, forNewRow) {
         inputElement.className = 'input-field';
         inputElement.type = 'file';
         inputElement.name = column.name;
-        inputElement.placeholder = column.name;
         inputElement.onchange = (e) => {
             let file = e.target.files[0];
             let reader = new FileReader();
@@ -651,10 +679,13 @@ function prepareColumnInput(column, container, editedRow, forNewRow) {
         inputElement.className = 'input-field';
         inputElement.type = 'text';
         inputElement.name = column.name;
-        inputElement.placeholder = column.name;
         inputElement.value = editedRow[column.name].value;
     }
     container.appendChild(inputElement);
+
+    if (focusedColumn === column.name) {
+        inputElement.focus();
+    }
 
     let inputMenuButton = document.createElement('div');
     inputMenuButton.classList = ['input-menu-button', 'context-menu-anchor'].join(' ');
@@ -695,42 +726,52 @@ function prepareColumnInput(column, container, editedRow, forNewRow) {
 
         setTypeSingleLineTextOption.onclick = () => {
             column.hints.internalType = 'TEXT';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
         setTypeMultiLineTextOption.onclick = () => {
             column.hints.internalType = 'MULTILINE_TEXT';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
         setTypeIntegerOption.onclick = () => {
             column.hints.internalType = 'INTEGER';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
         setTypeRealOption.onclick = () => {
             column.hints.internalType = 'REAL';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
         setTypeBooleanOption.onclick = () => {
             column.hints.internalType = 'BOOLEAN';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
         setTypeDateStringOption.onclick = () => {
             column.hints.internalType = 'DATE';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
         setTypeTimeStringOption.onclick = () => {
             column.hints.internalType = 'TIME';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
         setTypeDateTimeStringOption.onclick = () => {
             column.hints.internalType = 'DATETIME';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
         setTypeUnixTimestampOption.onclick = () => {
             column.hints.internalType = 'UNIX_TIMESTAMP';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
         setTypeBlobOption.onclick = () => {
             column.hints.internalType = 'BLOB';
+            saveColumnTypeHint(column);
             prepareColumnInput(column, container, editedRow, forNewRow);
         };
 
@@ -865,4 +906,11 @@ function addRow(tableName, valuesToInsert) {
         .catch(error => {
             alert('An error occurred while adding the row:\n' + error);
         });
+}
+
+function saveColumnTypeHint(column) {
+    //save column type hint in local storage
+    let columnHints = JSON.parse(localStorage.getItem('columnHints')) || {};
+    columnHints[column.name] = column.hints;
+    localStorage.setItem('columnHints', JSON.stringify(columnHints));
 }

@@ -45,3 +45,7 @@ function renderDatabaseSchema() {
     container.style.display = 'grid';
     document.getElementById('loader').style.display = 'none';
 }
+
+function onExecuteSQLClick() {
+    window.open('sql-editor.html', '_blank');
+}

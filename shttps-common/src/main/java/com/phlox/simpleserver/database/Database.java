@@ -20,8 +20,7 @@ public interface Database extends AutoCloseable {
     Table[] getTables() throws Exception;
 
     //interfaces to manipulate data
-    TableData query(String query) throws Exception;
-    ExecuteResult execute(String query) throws Exception;
+    TableData execute(String query) throws Exception;
     long insert(String tableName, JSONObject values) throws Exception;
     int update(String tableName, JSONObject values, String[] whereFilters, Object[] whereArgs) throws Exception;
     int delete(String tableName, String[] whereFilters, Object[] whereArgs) throws Exception;
@@ -29,16 +28,6 @@ public interface Database extends AutoCloseable {
                                  Object[] whereArgs, String orderBy, boolean desc, boolean includeRowId) throws Exception;
 
     CellDataStreamInfo getSingleCellDataStream(String table, String column, List<String> filters, List<Object> filtersArgs) throws Exception;
-
-    class ExecuteResult {
-        public final int updatedRows;
-        public final long generatedId;
-
-        public ExecuteResult(int updatedRows, long generatedId) {
-            this.updatedRows = updatedRows;
-            this.generatedId = generatedId;
-        }
-    }
 
     /**
      * This datatype is used for retrieving large string or binary data from a cell in a table.

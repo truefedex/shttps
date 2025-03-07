@@ -1,0 +1,127 @@
+#mainUI {
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    overflow-y: hidden;
+}
+
+.sizeable {
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    display: block;
+    padding: 0;
+}
+
+.resize-handler {
+    height: 20px;
+    padding: 0;
+    cursor: row-resize;
+    flex: 0 0 auto;
+  }
+
+#progress-dialog {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    justify-content: center;
+    align-items: center;
+}
+
+#table-data-container {
+    display: block;
+    width: 100vw;
+    overflow: auto;
+    height: 100%;
+}
+
+.db-table-data {
+    flex-grow: 1;
+    white-space: nowrap;
+}
+
+.db-table-data .db-row {
+    max-height: 50px;
+}
+
+.db-table-data .selected-row {
+    background-color: #555;
+}
+
+.db-table-data .db-header {
+    margin: 0;
+    height: 30px;
+    padding: 0 15px 0;
+    background-color: #29596a;
+}
+
+.db-table-data .db-header th {
+    padding: 0 15px 0;
+    color: #fff;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.db-table-data .column-name {
+    
+}
+
+.db-table-data .column-filter input {
+    width: 100%;
+    padding: 5px 10px;
+    margin: 5px 0;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background-color: #29596a;
+    color: #000;
+}
+
+.db-table-data .column-filter .active-input {
+    background-color: #f0f0f0;
+}
+
+.db-table-data .db-row td {
+    padding: 5px 15px;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    box-sizing: border-box;
+}
+
+.last-row-limit-hint {
+    padding: 5px 15px;
+    text-align: center;
+    font-style: italic;
+    color: #88754e;
+}
+
+#error-container {
+    color: red;
+    padding: 0 20px;
+}
+
+#success-but-no-data-container {
+    color: green;
+    padding: 0 20px;
+}
+
+#sql-editor-container>textarea {
+    background-color: rgb(34, 34, 34);
+    color: rgb(0, 255, 0);
+    height: 100%;
+    box-sizing: border-box;
+    width: 100%;
+    resize: none;
+}

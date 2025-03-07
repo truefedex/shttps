@@ -163,6 +163,18 @@ public class SimpleHttpServer {
 		SSLServerSocket serverSocket = (SSLServerSocket) ssf.createServerSocket(port);
 		startListen(serverSocket);
 	}
+
+	public void startListen(int port, KeyStore ks, String keyPassword) throws IOException, KeyStoreException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException {
+		KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+		kmf.init(ks, keyPassword.toCharArray());
+
+		SSLContext sc = SSLContext.getInstance("TLS");
+		sc.init(kmf.getKeyManagers(), null, null);
+
+		SSLServerSocketFactory ssf = sc.getServerSocketFactory();
+		SSLServerSocket serverSocket = (SSLServerSocket) ssf.createServerSocket(port);
+		startListen(serverSocket);
+	}
 	
 	public void stopListen() {
 		shouldStopListen = true;
