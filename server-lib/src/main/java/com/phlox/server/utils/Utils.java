@@ -10,6 +10,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
 
 public final class Utils {
     private Utils() {}
@@ -98,4 +99,35 @@ public final class Utils {
         }
     }
 
+    public static String readUntil(InputStream in, String delimiter, Charset charset) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] delimBytes = delimiter.getBytes(charset);
+        int matchPos = 0;
+
+        int b;
+        while ((b = in.read()) != -1) {
+            buffer.write(b);
+            if (b == delimBytes[matchPos]) {
+                matchPos++;
+                if (matchPos == delimBytes.length) {
+                    break;
+                }
+            } else {
+                matchPos = (b == delimBytes[0]) ? 1 : 0;
+            }
+        }
+
+        byte[] full = buffer.toByteArray();
+        int resultLen = full.length - ((matchPos == delimBytes.length) ? delimBytes.length : 0);
+        return new String(full, 0, resultLen, charset);
+    }
+
+    public static boolean isAndroid() {
+        try {
+            Class.forName("android.os.Build");
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
 }

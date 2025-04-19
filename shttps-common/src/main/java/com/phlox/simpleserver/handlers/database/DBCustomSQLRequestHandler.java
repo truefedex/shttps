@@ -1,8 +1,8 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.responses.TextResponse;
@@ -23,7 +23,7 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if (!request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_POST});
         }
@@ -41,7 +41,7 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
                 Integer.parseInt(request.queryParams.get("offset")) : 0;
         boolean includeColumnNames = request.queryParams.containsKey("include-names") &&
                 Boolean.parseBoolean(request.queryParams.get("include-names"));
-        requestParser.parseRequestBody(request);
+        requestBodyReader.readRequestBody(request);
         String sql = new String(request.body.asBytes(), StandardCharsets.UTF_8);
         try {
             TableData result = database.execute(sql);
@@ -72,35 +72,44 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
             this.limit = limit;
             this.includeColumnNames = includeColumnNames;
         }
+
         @Override
         protected void generateData(PipedOutputStream output) throws Exception {
-            long total = responseData.count();
-            String responsePrefix = "{\"offset\":" + offset +
-                    ",\"limit\":" + limit +
-                    ",\"total\":" + total + ",";
-            if (includeColumnNames) {
-                JSONArray columnNames = new JSONArray(responseData.getColumnNames());
-                responsePrefix += "\"columns\":" + columnNames + ",";
-            }
-            responsePrefix += "\"data\":[";
-            output.write(responsePrefix.getBytes(StandardCharsets.UTF_8));
+            try {
+                long total = responseData.count();
+                String responsePrefix = "{\"offset\":" + offset +
+                        ",\"limit\":" + limit +
+                        ",\"total\":" + total + ",";
+                if (includeColumnNames) {
+                    JSONArray columnNames = new JSONArray(responseData.getColumnNames());
+                    responsePrefix += "\"columns\":" + columnNames + ",";
+                }
+                responsePrefix += "\"data\":[";
+                output.write(responsePrefix.getBytes(StandardCharsets.UTF_8));
 
-            if (offset > 0) {
-                boolean canSkip = responseData.skip(offset);
-                if (!canSkip) {
-                    output.write("]}".getBytes(StandardCharsets.UTF_8));
-                    return;
+                if (offset > 0) {
+                    boolean canSkip = responseData.skip(offset);
+                    if (!canSkip) {
+                        output.write("]}".getBytes(StandardCharsets.UTF_8));
+                        return;
+                    }
+                }
+                int count = 0;
+                while (responseData.next() && count < limit) {
+                    if (count > 0) {
+                        output.write(",".getBytes(StandardCharsets.UTF_8));
+                    }
+                    output.write(responseData.currentRowToJson().toString().getBytes(StandardCharsets.UTF_8));
+                    count++;
+                }
+                output.write("]}".getBytes(StandardCharsets.UTF_8));
+            } finally {
+                try {
+                    responseData.close();
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
             }
-            int count = 0;
-            while (responseData.next() && count < limit) {
-                if (count > 0) {
-                    output.write(",".getBytes(StandardCharsets.UTF_8));
-                }
-                output.write(responseData.currentRowToJson().toString().getBytes(StandardCharsets.UTF_8));
-                count++;
-            }
-            output.write("]}".getBytes(StandardCharsets.UTF_8));
         }
     }
 }

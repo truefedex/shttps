@@ -1,8 +1,8 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
@@ -20,7 +20,7 @@ public class DBSchemaRequestHandler extends BaseDBRequestHandler {
     @Override
     public Response handleRequest(RequestContext context,
                                   Request request,
-                                  RequestParser requestParser) throws Exception {
+                                  RequestBodyReader requestBodyReader) throws Exception {
         if (!request.method.equals(Request.METHOD_GET)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
         }

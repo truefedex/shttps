@@ -3,8 +3,8 @@ package com.phlox.simpleserver.handlers.files;
 import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.platform.MimeTypeMap;
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.HTTPUtils;
@@ -28,7 +28,7 @@ public class StaticFileRequestHandler implements RequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         DocumentFile root = this.root;
         boolean isHead = request.method.equals(Request.METHOD_HEAD);
         if (!request.method.equals(Request.METHOD_GET) && !isHead) {
@@ -36,17 +36,10 @@ public class StaticFileRequestHandler implements RequestHandler {
         }
         String queryPath = request.queryParams.get("path");
         String destPath = queryPath != null ? queryPath : request.path;
+        if (!destPath.startsWith("/"))  {
+            destPath = "/"+destPath;
+        }
         DocumentFile file = DocumentFileUtils.findChildByPath(root, destPath);
-        if (file == null) {
-            return StandardResponses.NOT_FOUND();
-        }
-        if (file.isDirectory()) {
-            DocumentFile indexFile = file.findFile("index.html");
-            if (indexFile != null && !destPath.endsWith("/")) {
-                return StandardResponses.MOVED_PERMANENTLY(destPath + "/");
-            }
-            file = indexFile;
-        }
         if (file == null || file.isDirectory()) {
             return null;
         }

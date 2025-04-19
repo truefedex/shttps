@@ -41,10 +41,12 @@ public class RawDocumentFile extends DocumentFile {
     }
 
     @Override
-    
     public DocumentFile createDirectory(String displayName) {
         final File target = new File(mFile, displayName);
-        if (target.isDirectory() || target.mkdir()) {
+        if (target.exists() && target.isDirectory()) {
+            return null;
+        }
+        if (target.mkdirs()) {
             return new RawDocumentFile(this, target);
         } else {
             return null;
@@ -120,11 +122,33 @@ public class RawDocumentFile extends DocumentFile {
     @Override
     public DocumentFile[] listFiles() {
         final ArrayList<DocumentFile> results = new ArrayList<DocumentFile>();
-        final File[] files = mFile.listFiles();
-        if (files != null) {
-            for (File file : files) {
-                results.add(new RawDocumentFile(this, file));
+        File[] files = mFile.listFiles();
+        if (files == null) {
+            if (mFile.getAbsolutePath().equals("/") && Utils.isAndroid()) {
+                files = new File[]{
+                        new File(mFile, "system"),
+                        new File(mFile, "vendor"),
+                        new File(mFile, "data"),
+                        new File(mFile, "proc"),
+                        new File(mFile, "dev"),
+                        new File(mFile, "mnt"),
+                        new File(mFile, "storage"),
+                        new File(mFile, "sdcard"),
+                        new File(mFile, "acct"),
+                        new File(mFile, "apex"),
+                        new File(mFile, "cache"),
+                        new File(mFile, "config"),
+                        new File(mFile, "etc"),
+                        new File(mFile, "init"),
+                        new File(mFile, "odm"),
+                        new File(mFile, "product")
+                };
+            } else {
+                files = new File[]{};
             }
+        }
+        for (File file : files) {
+            results.add(new RawDocumentFile(this, file));
         }
         return results.toArray(new DocumentFile[results.size()]);
     }

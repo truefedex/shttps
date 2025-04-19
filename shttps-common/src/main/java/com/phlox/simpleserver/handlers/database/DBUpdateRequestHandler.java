@@ -1,8 +1,8 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
@@ -21,7 +21,7 @@ public class DBUpdateRequestHandler extends BaseDBRequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if (!request.method.equals(Request.METHOD_PUT)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_PUT});
         }
@@ -33,7 +33,7 @@ public class DBUpdateRequestHandler extends BaseDBRequestHandler {
             return StandardResponses.FORBIDDEN("Database table data editing API is disabled");
         }
         //TODO: check if user has permission to update data
-        requestParser.parseRequestBody(request);
+        requestBodyReader.readRequestBody(request);
         String table = request.urlEncodedPostParams.get("table");
         if (table == null) {
             return StandardResponses.BAD_REQUEST("table parameter is required");

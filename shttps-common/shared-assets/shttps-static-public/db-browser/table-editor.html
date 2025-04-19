@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/shttps-static-public/icon.png">
+    <title>Edit Table</title>
+    <link rel="stylesheet" href="table-constructor.css">
+</head>
+<body>
+    <div class="container">
+        <h1 id="pageTitle">Edit Table</h1>
+        <div class="form-container">
+            <div class="form-group">
+                <label for="tableName">Table Name:</label>
+                <div class="table-name-container">
+                    <input type="text" id="tableName" class="form-input" required>
+                    <div class="table-name-buttons" style="display: none;">
+                        <button class="apply-table-name" title="Apply changes">✓</button>
+                        <button class="cancel-table-name" title="Cancel changes">✕</button>
+                    </div>
+                </div>
+                <input type="hidden" id="originalTableName">
+            </div>
+            <div class="form-group">
+                <label>Columns:</label>
+                <div id="columnList" class="column-list"></div>
+                <button class="action-button" onclick="addColumn()">Add Column</button>
+            </div>
+        </div>
+    </div>
+    <div id="loader" class="loader" style="display: none;"></div>
+    <script src="table-editor.js"></script>
+</body>
+</html> 

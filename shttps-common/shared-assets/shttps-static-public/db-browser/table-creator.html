@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create New Table</title>
+    <link rel="stylesheet" href="table-constructor.css">
+</head>
+<body>
+    <div class="container">
+        <h1 id="pageTitle">Create New Table</h1>
+        <div class="form-container">
+            <div class="form-group">
+                <label for="tableName">Table Name:</label>
+                <input type="text" id="tableName" class="form-input" required>
+            </div>
+            <div class="form-group">
+                <label>Columns:</label>
+                <div id="columnList" class="column-list"></div>
+                <button class="action-button" onclick="addColumn()">Add Column</button>
+            </div>
+            <div class="warning-message">
+                <strong>Note:</strong> This editor supports basic table creation only. For advanced features like foreign keys, indices, or complex constraints, please use the SQL editor directly.
+            </div>
+            <div class="actions">
+                <button class="action-button" onclick="showSQLPreview()">SQL</button>
+                <button class="action-button primary" onclick="createTable()">Create Table</button>
+                <button class="action-button secondary" onclick="window.location.href='index.html'">Cancel</button>
+            </div>
+        </div>
+    </div>
+    <div id="loader" class="loader" style="display: none;"></div>
+    <script src="table-creator.js"></script>
+</body>
+</html> 

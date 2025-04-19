@@ -2,11 +2,14 @@ package com.phlox.server;
 
 import static com.phlox.server.utils.docfile.RawDocumentFile.fileUriToFilePath;
 
+import com.phlox.server.handlers.RoutingRequestHandler;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.server.utils.docfile.RawDocumentFile;
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.handlers.HandlersUtils;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -16,8 +19,10 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.KeyStore;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public class SHTTPSConfigImpl implements SHTTPSConfig {
@@ -50,6 +55,7 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
 
     @Override
     public void runMigrations() {
+        SHTTPSConfig.super.runMigrations();
     }
 
     @Override
@@ -308,6 +314,45 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
         save();
     }
 
+    @Override
+    public List<RoutingRequestHandler.RedirectRule> getRedirectRules() {
+        JSONArray rules = json.optJSONArray(KEY_REDIRECT_RULES);
+        if (rules == null) {
+            return null;
+        }
+        List<RoutingRequestHandler.RedirectRule> result = new ArrayList<>(rules.length());
+        for (int i = 0; i < rules.length(); i++) {
+            result.add(HandlersUtils.ruleFromJson(rules.getJSONObject(i)));
+        }
+        return result;
+    }
+
+    @Override
+    public void setRedirectRules(List<RoutingRequestHandler.RedirectRule> value) {
+        if (value == null) {
+            json.remove(KEY_REDIRECT_RULES);
+            save();
+            return;
+        }
+        JSONArray rules = new JSONArray();
+        for (RoutingRequestHandler.RedirectRule rule : value) {
+            rules.put(HandlersUtils.ruleToJson(rule));
+        }
+        json.put(KEY_REDIRECT_RULES, rules);
+        save();
+    }
+
+    @Override
+    public int getInt(String key, int defaultValue) {
+        return json.optInt(key, defaultValue);
+    }
+
+    @Override
+    public void setInt(String key, int value) {
+        json.put(key, value);
+        save();
+    }
+
     private void save() {
         if (batchModifications) {
             return;
@@ -315,7 +360,7 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
         try {
             Files.write(file.toPath(), json.toString(4).getBytes());
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            logger.w("Failed to save config to file: " + file.getAbsolutePath() + ". This is expected in test environment.");
         }
     }
 

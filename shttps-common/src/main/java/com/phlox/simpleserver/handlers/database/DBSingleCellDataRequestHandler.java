@@ -1,8 +1,8 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
@@ -23,7 +23,7 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if ((!request.method.equals(Request.METHOD_GET)) &&
                 !request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
@@ -36,7 +36,7 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
         if (request.method.equals(Request.METHOD_GET)) {
             params = request.queryParams;
         } else {
-            requestParser.parseRequestBody(request);
+            requestBodyReader.readRequestBody(request);
             params = request.urlEncodedPostParams;
         }
         String table = params.get("table");

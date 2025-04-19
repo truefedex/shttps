@@ -1,8 +1,8 @@
 package com.phlox.server.handlers;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.HTTPUtils;
@@ -15,7 +15,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -27,7 +26,7 @@ public class StaticFileRequestHandler implements RequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         File root = this.root;
         boolean isHead = request.method.equals(Request.METHOD_HEAD);
         if (!request.method.equals(Request.METHOD_GET) && !isHead) {

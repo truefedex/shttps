@@ -1,8 +1,8 @@
 package com.phlox.simpleserver.handlers.main;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.HTMLTemplateResponse;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
@@ -27,7 +27,6 @@ import java.util.Objects;
 
 public class MainRequestHandler extends StaticFileRequestHandler {
     final String template;
-    public boolean redirectToIndex = false;
     public boolean renderFolders = false;
     public boolean allowEditing = false;
 
@@ -44,14 +43,10 @@ public class MainRequestHandler extends StaticFileRequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         boolean isHead = request.method.equals(Request.METHOD_HEAD);
         if (!request.method.equals(Request.METHOD_GET) && !isHead) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_HEAD});
-        }
-
-        if (!renderFolders) {
-            return super.handleRequest(context, request, requestParser);
         }
 
         String destPath = request.path;
@@ -59,7 +54,7 @@ public class MainRequestHandler extends StaticFileRequestHandler {
         if (file == null) {
             return StandardResponses.NOT_FOUND();
         }
-        if (file.isDirectory() && !(redirectToIndex && file.findFile("index.html") != null)) {
+        if (file.isDirectory() && renderFolders) {
             JSONArray json = FileListRequestHandler.prepareFileListJson(destPath, null, null);
             ArrayList<FileModel> files = new ArrayList<>(Objects.requireNonNull(json).length());
             for (int i = 0; i < json.length(); i++) {
@@ -81,7 +76,24 @@ public class MainRequestHandler extends StaticFileRequestHandler {
             }
         }
 
-        return super.handleRequest(context, request, requestParser);
+        return super.handleRequest(context, request, requestBodyReader);
+    }
+
+    @Override
+    public boolean canHandle(String path, String method) {
+        boolean isHead = method.equals(Request.METHOD_HEAD);
+        if (!method.equals(Request.METHOD_GET) && !isHead) {
+            return false;
+        }
+
+        DocumentFile file = DocumentFileUtils.findChildByPath(root, path);
+        if (file == null) {
+            return false;
+        }
+        if (file.isDirectory()) {
+            return renderFolders;
+        }
+        return true;
     }
 
     private static class FileModel {

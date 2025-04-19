@@ -1,89 +1,28 @@
 package com.phlox.server.request;
 
 import com.phlox.server.utils.HTTPUtils;
-import com.phlox.server.utils.ScannerInputStream;
-import com.phlox.server.utils.Utils;
-import com.phlox.server.utils.SHTTPSLoggerProxy.Logger;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
+import com.phlox.server.utils.Utils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URLDecoder;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class DefaultRequestParser implements RequestParser {
-    static final Logger logger = SHTTPSLoggerProxy.getLogger(DefaultRequestParser.class);
+public class DefaultRequestBodyReader implements RequestBodyReader {
     public static final String DEFAULT_CHARSET_NAME = "UTF-8";
-    //(attachment|form-data);(?:\s*name\s*=\s*"([^"]*)")*;*(?:\s*filename\s*=\s*"([^"]*)")*
     private final Pattern CONTENT_DISPOSITION_PATTERN =
             Pattern.compile("(file|attachment|form-data);(?:\\s*name\\s*=\\s*\"([^\"]*)\")*;*(?:\\s*filename\\s*=\\s*\"([^\"]*)\")*");
-    //^([^;]*);*\s*(?:(?:boundary=(.*))|(?:charset=(.*)))?$
-    private final Pattern CONTENT_TYPE_PATTERN =
-            Pattern.compile("^([^;]*);*\\s*(?:(?:boundary=(.*))|(?:charset=(.*)))?$");
+
+    static final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(DefaultRequestBodyReader.class);
+
+    public boolean bodyWasRead = false;
 
     @Override
-    public Request parseRequestHeaders(InputStream input, String host) throws Exception {
-        Request request = new Request();
-        request.host = host;
-        request.input = new ScannerInputStream(input);
-
-        String line;
-        int i = 0;
-        while ((line = request.input.nextLine()) != null && !line.isEmpty()) {
-            //logger.d(line);
-            String[] parts;
-            if (i == 0) {
-                parts = line.split(" ");
-                if (parts.length >= 2) {
-                    request.method = parts[0].toUpperCase();
-                    String pathAndQuery = parts[1];
-                    int q = pathAndQuery.indexOf("?");
-                    if (q != -1) {
-                        request.path = URLDecoder.decode(pathAndQuery.substring(0, q), "UTF-8");
-                        HTTPUtils.decodeURLEncodedNameValuePairs(pathAndQuery.substring(q + 1), request.queryParams);
-                    } else {
-                        request.path = URLDecoder.decode(pathAndQuery, "UTF-8");
-                    }
-                }
-            } else {
-                int j = line.indexOf(":");
-                if (j != -1) {
-                    String name = line.substring(0, j);
-                    String value = line.substring(j + 2);
-                    request.headers.put(name, value);
-                }
-            }
-            i++;
-        }
-
-        if (request.headers.isEmpty()) {
-            return null;
-        }
-
-        String contentTypeHeader = request.headers.get(Request.HEADER_CONTENT_TYPE);
-        if (contentTypeHeader != null) {
-            Matcher matcher = CONTENT_TYPE_PATTERN.matcher(contentTypeHeader);
-            if (!matcher.find()) return request;
-            request.contentType = matcher.group(1);
-            request.boundary = matcher.group(2);
-            request.charset = matcher.group(3);
-        }
-
-        String contentLengthHeader = request.headers.get(Request.HEADER_CONTENT_LENGTH);
-        if (contentLengthHeader != null) {
-            request.contentLength = Long.parseLong(contentLengthHeader);
-        }
-
-        return request;
-    }
-
-    @Override
-    public void parseRequestBody(Request request, BinaryDataConsumer customBinaryDataConsumer) throws Exception {
+    public void readRequestBody(Request request, BinaryDataConsumer customBinaryDataConsumer) throws Exception {
         BinaryDataConsumer binaryDataConsumer = customBinaryDataConsumer != null ? customBinaryDataConsumer : new DefaultBinaryDataConsumer();
         if (Request.CONTENT_TYPE_MULTIPART_FORM.equals(request.contentType)) {
             loadMultipartFormData(request, binaryDataConsumer);
@@ -94,6 +33,7 @@ public class DefaultRequestParser implements RequestParser {
                 Utils.copyStream(request.input, os, request.contentLength);
             }
         }
+        bodyWasRead = true;
     }
 
     private void loadURLEncodedFormData(Request request) throws IOException {
@@ -111,29 +51,28 @@ public class DefaultRequestParser implements RequestParser {
         HTTPUtils.decodeURLEncodedNameValuePairs(data, request.urlEncodedPostParams);
     }
 
-    public void loadMultipartFormData(Request request, BinaryDataConsumer binaryDataConsumer) throws Exception {
+    private void loadMultipartFormData(Request request, BinaryDataConsumer binaryDataConsumer) throws Exception {
         String currentBoundary = "--" + request.boundary;
         Map<String, String> partHeaders = new HashMap<>();
 
-        String boundaryLine;
-        try {
-            boundaryLine = request.input.nextLine();
-        } catch (Exception e) {
-            return;
-        }
-        if (boundaryLine == null || !boundaryLine.equals(currentBoundary)) {
-            return;
-        }
+        // Read until we find the first boundary delimiter, ignoring any preamble
+        String line;
+        do {
+            line = request.input.nextLine();
+            if (line == null) {
+                return;
+            }
+        } while (!line.equals(currentBoundary));
 
         do {
             partHeaders.clear();
-            String line;
+            // Read headers until empty line
             while ((line = request.input.nextLine()) != null && !line.isEmpty()) {
                 logger.d(line);
                 int j = line.indexOf(":");
                 if (j != -1) {
-                    String name = line.substring(0, j);
-                    String value = line.substring(j + 2);
+                    String name = line.substring(0, j).trim().toLowerCase();
+                    String value = line.substring(j + 1).trim();
                     partHeaders.put(name, value);
                 }
             }
@@ -156,15 +95,17 @@ public class DefaultRequestParser implements RequestParser {
                 currentBoundary = "--" + contentType.substring(contentType.indexOf("=") + 1);
             }
 
-            //read binary body
+            // Read part body until next boundary
             byte[] boundaryBytes = ("\r\n" + currentBoundary).getBytes(DEFAULT_CHARSET_NAME);
             try (OutputStream output = binaryDataConsumer.prepareBinaryOutputForMultipartData(request, contentType, name, fileName, partHeaders)) {
                 boolean foundDelimiter = request.input.readUntilDelimiter(boundaryBytes, output);
                 if (!foundDelimiter) {
                     return;
                 }
+
+                // Check if this is the final boundary
                 line = request.input.nextLine();
-                if (line == null || "--".equals(line)) {
+                if (line == null || line.equals("--")) {
                     break;
                 }
             }

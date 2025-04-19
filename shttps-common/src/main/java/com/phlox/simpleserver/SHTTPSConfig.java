@@ -1,13 +1,17 @@
 package com.phlox.simpleserver;
 
+import com.phlox.server.handlers.RoutingRequestHandler;
 import com.phlox.server.utils.docfile.DocumentFile;
 
 
 import java.security.KeyStore;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public interface SHTTPSConfig {
+    int CONFIG_VERSION = 2;
+
     String KEY_LEGACY_TYPO_ROOT_DIR = "rot_dir";
     String KEY_ROOT_DIR = "root_dir";
     String KEY_RENDER_FOLDERS = "render_folders";
@@ -30,8 +34,37 @@ public interface SHTTPSConfig {
     String KEY_DATABASE_PATH = "database_path";
     String KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API = "allow_database_table_data_editing_api";
     String KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API = "allow_database_custom_sql_remote_api";
+    String KEY_REDIRECT_RULES = "redirect_rules";
+    String KEY_CONFIG_VERSION = "config_version";
 
-    void runMigrations();
+    default void runMigrations() {
+        if (getConfigVersion() == CONFIG_VERSION) return;
+        if (getConfigVersion() <= 0) {
+            List<RoutingRequestHandler.RedirectRule> redirects = getRedirectRules();
+            if (redirects != null) {
+                for (RoutingRequestHandler.RedirectRule rule : redirects) {
+                    if (rule.shttpsInternal && rule.from.equals("/(.*)/")) {
+                        rule.from = "/(.*)/?";
+                    }
+                }
+                setRedirectRules(redirects);
+            }
+            setConfigVersion(1);
+        }
+        if (getConfigVersion() == 1) {
+            List<RoutingRequestHandler.RedirectRule> redirects = getRedirectRules();
+            if (redirects != null) {
+                for (RoutingRequestHandler.RedirectRule rule : redirects) {
+                    if (rule.shttpsInternal && rule.from.equals("/(.*)/?")) {
+                        rule.from = "^((?:/.+/)|/)$";
+                        rule.to = "{1}index.html";
+                    }
+                }
+                setRedirectRules(redirects);
+            }
+            setConfigVersion(2);
+        }
+    }
 
     DocumentFile getRootDir();
 
@@ -61,8 +94,10 @@ public interface SHTTPSConfig {
 
     void setPassword(String value);
 
+    @Deprecated
     boolean getRedirectToIndex();
 
+    @Deprecated
     void setRedirectToIndex(boolean value);
 
     boolean getUseTLS();
@@ -108,6 +143,22 @@ public interface SHTTPSConfig {
     boolean isAllowDatabaseCustomSqlRemoteApi();
 
     void setAllowDatabaseCustomSqlRemoteApi(boolean value);
+
+    List<RoutingRequestHandler.RedirectRule> getRedirectRules();
+
+    void setRedirectRules(List<RoutingRequestHandler.RedirectRule> value);
+
+    default void setConfigVersion(int value) {
+        setInt(KEY_CONFIG_VERSION, value);
+    }
+
+    default int getConfigVersion() {
+        return getInt(KEY_CONFIG_VERSION, 0);
+    }
+
+    int getInt(String key, int defaultValue);
+
+    void setInt(String key, int value);
 
     enum WhiteListMode {
         ASK_AT_RUNTIME(1),

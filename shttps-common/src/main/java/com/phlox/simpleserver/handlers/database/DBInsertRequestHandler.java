@@ -1,8 +1,8 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
@@ -17,7 +17,7 @@ public class DBInsertRequestHandler extends BaseDBRequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if (!request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_POST});
         }
@@ -29,7 +29,7 @@ public class DBInsertRequestHandler extends BaseDBRequestHandler {
             return StandardResponses.FORBIDDEN("Database table data editing API is disabled");
         }
         //TODO: check if user has permission to insert data
-        requestParser.parseRequestBody(request);
+        requestBodyReader.readRequestBody(request);
         String table = request.urlEncodedPostParams.get("table");
         if (table == null) {
             return StandardResponses.BAD_REQUEST("table parameter is required");
@@ -45,7 +45,7 @@ public class DBInsertRequestHandler extends BaseDBRequestHandler {
             long id = database.insert(table, rowJson);
             JSONObject responseJson = new JSONObject();
             responseJson.put("generated_id", id);
-            return StandardResponses.OK(responseJson.toString());
+            return StandardResponses.OK(responseJson.toString(), "application/json");
         } catch (Exception e) {
             return StandardResponses.INTERNAL_SERVER_ERROR("Failed to insert data: " + e.getMessage());
         }

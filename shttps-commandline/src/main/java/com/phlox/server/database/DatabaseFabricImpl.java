@@ -24,6 +24,7 @@ public class DatabaseFabricImpl implements SHTTPSDatabaseFabric {
         SQLiteConfig config = new SQLiteConfig();
         SQLiteDataSource dataSource = new SQLiteDataSource(config);
         dataSource.setUrl("jdbc:sqlite:" + path);
+        dataSource.setBusyTimeout(50000);
         return new DatabaseImpl(dataSource, path);
     }
 

@@ -1,8 +1,8 @@
 package com.phlox.server.handlers;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 
@@ -17,7 +17,7 @@ public class FolderContentRenderingRequestHandler extends StaticFileRequestHandl
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if (!request.method.equals(Request.METHOD_GET)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
         }
@@ -26,13 +26,13 @@ public class FolderContentRenderingRequestHandler extends StaticFileRequestHandl
         if (file.isDirectory()) {
             File index = new File(file, "index.html");
             if (index.exists()) {
-                return super.handleRequest(context, request, requestParser);
+                return super.handleRequest(context, request, requestBodyReader);
             } else {
                 return renderDirContentPage(request, file);
             }
         }
 
-        return super.handleRequest(context, request, requestParser);
+        return super.handleRequest(context, request, requestBodyReader);
     }
 
     private String getPathRelativeToRoot(File file) {

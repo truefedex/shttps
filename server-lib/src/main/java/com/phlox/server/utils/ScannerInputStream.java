@@ -18,17 +18,13 @@ public class ScannerInputStream extends InputStream {
     @Override
     public int read() throws IOException {
         if (backBuffPosition == -1) {
-            try {
-                return base.read();
-            } catch (SocketTimeoutException e) {
-                return -1;
-            }
+            return base.read();
         } else {
             return backBuff[backBuffPosition--] & 0xff;
         }
     }
 
-    public void writeBack(byte[] buf, int offset, int len) {
+    private void writeBack(byte[] buf, int offset, int len) {
         int backBuffDataSize = backBuffPosition + 1;
         if (backBuff.length < (len + backBuffDataSize)) {
             byte[] newArray = new byte[len + backBuffDataSize];
@@ -74,7 +70,7 @@ public class ScannerInputStream extends InputStream {
     public String nextLine() throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         boolean boundaryFound = readUntilDelimiter(new byte[]{0x0D, 0x0A}, output);
-        String result = output.toString("utf-8");
+        String result = output.toString("ASCII");
         return ("".equals(result) && !boundaryFound) ? null : result;
     }
 }

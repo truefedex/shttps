@@ -1,8 +1,8 @@
 package com.phlox.server.handlers;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.platform.Base64;
 
@@ -31,10 +31,10 @@ public class BasicAuthRequestHandler implements RequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if (childHandler == null) return null;
         if (!authEnabled) {
-            return childHandler.handleRequest(context, request, requestParser);
+            return childHandler.handleRequest(context, request, requestBodyReader);
         }
         String authorization = request.headers.get(Request.HEADER_AUTHORIZATION);
         if ((maxAttempts == -1 || currentAttempts.get() < maxAttempts) &&
@@ -47,7 +47,7 @@ public class BasicAuthRequestHandler implements RequestHandler {
             if (values.length == 2 && values[0].equals(username) && values[1].equals(password)) {
                 currentAttempts.set(0);
                 context.data.put(CONTEXT_KEY_BASIC_AUTH_USERNAME, username);
-                return childHandler.handleRequest(context, request, requestParser);
+                return childHandler.handleRequest(context, request, requestBodyReader);
             } else {
                 synchronized (this) {
                     //wait for 3 seconds to prevent brute force attacks

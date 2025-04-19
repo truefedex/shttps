@@ -61,12 +61,24 @@
 
 .db-header-button {
   margin: 0;
-  padding: 0;
+  padding: 0 10px;
   border: none;
   color: #fff;
   font-size: 1.5em;
   cursor: pointer;
   align-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.db-header-button:hover {
+  background-color: #3a6b7f;
+}
+
+.db-header-button:active {
+  background-color: #1e4a5a;
 }
 
 .db-columns {
@@ -75,6 +87,7 @@
   row-gap: 5px;
   margin: 0;
   padding: 15px 5px 15px;
+  cursor: pointer;
 }
 
 .db-column {

@@ -1,6 +1,7 @@
 package com.phlox.server.database;
 
 import com.phlox.server.database.model.TableDataImpl;
+import com.phlox.server.utils.InputStreamWithDependency;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.model.Column;
@@ -152,8 +153,9 @@ public class DatabaseImpl implements Database {
         try {
             ResultSet resultSet = statement.executeQuery(query);
             return new TableDataImpl(connection, statement, resultSet);
-        } catch (SQLException e) {
-            if (e.getErrorCode() == 101) {//SQLITE_DONE
+        } catch (Exception e) {
+            connection.close();
+            if (e instanceof SQLException && ((SQLException)e).getErrorCode() == 101) {//SQLITE_DONE
                 return null;//no data
             } else {
                 throw e;
@@ -165,8 +167,6 @@ public class DatabaseImpl implements Database {
     public TableData getTableDataSecure(String tableName, String[] columns, Long offset, Long limit,
                                         String[] whereFilters, Object[] whereArgs, String orderBy,
                                         boolean desc, boolean includeRowId) throws Exception {
-        Connection connection = dataSource.getConnection();
-
         StringBuilder sql = new StringBuilder("SELECT ");
         if (includeRowId) {
             sql.append("rowid, ");
@@ -220,16 +220,27 @@ public class DatabaseImpl implements Database {
 
         logger.d("SQL: " + sql);
 
+        Connection connection = dataSource.getConnection();
         PreparedStatement statement = connection.prepareStatement(sql.toString());
         if (whereArgs != null) {
             for (int i = 0; i < whereArgs.length; i++) {
                 Object value = whereArgs[i];
-                setStatementValue(statement, i + 1, value);
+                try {
+                    setStatementValue(statement, i + 1, value);
+                } catch (Exception e) {
+                    connection.close();
+                    throw new RuntimeException(e);
+                }
             }
         }
 
-        ResultSet rs = statement.executeQuery();
-        return new TableDataImpl(connection, statement, rs);
+        try {
+            ResultSet rs = statement.executeQuery();
+            return new TableDataImpl(connection, statement, rs);
+        } catch (SQLException e) {
+            connection.close();
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -240,7 +251,7 @@ public class DatabaseImpl implements Database {
         if (!DBUtils.isValidColumnName(column)) {
             throw new SecurityException("Invalid column name: " + column);
         }
-        Connection connection = dataSource.getConnection();
+
         StringBuilder sql = new StringBuilder("SELECT typeof(")
                 .append(column).append("), length(")
                 .append(column).append("), ")
@@ -254,6 +265,7 @@ public class DatabaseImpl implements Database {
 
         logger.d("SQL: " + sql);
 
+        Connection connection = dataSource.getConnection();
         PreparedStatement statement = connection.prepareStatement(sql.toString());
         if (filtersArgs != null) {
             for (int i = 0; i < filtersArgs.size(); i++) {
@@ -268,15 +280,18 @@ public class DatabaseImpl implements Database {
             cellDataStreamInfo.type = rs.getString(1);
             if (cellDataStreamInfo.type.equals("text") || cellDataStreamInfo.type.equals("blob")) {
                 cellDataStreamInfo.length = rs.getLong(2);
-                cellDataStreamInfo.inputStream = rs.getBinaryStream(3);
+                cellDataStreamInfo.inputStream = new InputStreamWithDependency(rs.getBinaryStream(3), connection);
                 cellDataStreamInfo.mimeType = cellDataStreamInfo.type.equals("text") ? "text/plain" : "application/octet-stream";
                 return cellDataStreamInfo;
             } else if (cellDataStreamInfo.type.equals("null")) {
+                connection.close();
                 return cellDataStreamInfo;
             } else {
+                connection.close();
                 throw new IllegalArgumentException("Invalid column type: " + cellDataStreamInfo.type + ", only text and blob are supported");
             }
         } else {
+            connection.close();
             return null;
         }
     }

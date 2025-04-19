@@ -2,8 +2,8 @@ package com.phlox.simpleserver.handlers.files;
 
 import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.docfile.DocumentFileUtils;
@@ -21,11 +21,11 @@ public class DeleteFileRequestHandler implements RequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if (!request.method.equals(Request.METHOD_DELETE)) return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_DELETE});
         if (!config.getAllowEditing()) return StandardResponses.FORBIDDEN("Editing not allowed");
         if (!"application/json".equals(request.contentType)) return StandardResponses.BAD_REQUEST();
-        requestParser.parseRequestBody(request);
+        requestBodyReader.readRequestBody(request);
 
         JSONObject json = new JSONObject(request.body.toString());
         String destPath = json.getString("path");

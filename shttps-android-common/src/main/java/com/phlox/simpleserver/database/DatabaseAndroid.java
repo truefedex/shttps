@@ -137,7 +137,11 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
     public TableData execute(String query) throws Exception {
         SQLiteDatabase database = getWritableDatabase();
         Cursor cursor = database.rawQuery(query, null);
-        if (cursor == null || cursor.getCount() == 0) {
+        if (cursor == null) {
+            return null;
+        }
+        if (cursor.getCount() == 0) {
+            cursor.close();
             return null;
         }
         return new TableDataAndroid(cursor);
@@ -319,7 +323,7 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
     @Override
     public long insert(String tableName, JSONObject values) throws Exception {
         SQLiteDatabase database = getWritableDatabase();
-        return database.insert(tableName, null, toContentValues(values));
+        return database.insertOrThrow(tableName, null, toContentValues(values));
     }
 
     @Override

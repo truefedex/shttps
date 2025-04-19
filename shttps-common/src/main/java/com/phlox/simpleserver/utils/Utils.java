@@ -1,8 +1,5 @@
 package com.phlox.simpleserver.utils;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.util.Locale;
 
 public class Utils {
@@ -40,7 +37,7 @@ public class Utils {
         return null;
     }
 
-    public static boolean containts(String[] array, String value) {
+    public static boolean contains(String[] array, String value) {
         for (String s : array) {
             if (s.equals(value)) {
                 return true;

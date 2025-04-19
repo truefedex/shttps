@@ -14,6 +14,7 @@ public final class StandardResponses {
     public static final String MSG_MOVED_PERMANENTLY = "Moved Permanently";
 
     public static final String MSG_METHOD_NOT_ALLOWED = "Method Not Allowed";
+    public static final String MSG_REDIRECT = "Redirect";
 
     public StandardResponses() {
     }
@@ -30,6 +31,11 @@ public final class StandardResponses {
     public static Response FORBIDDEN(String msg) { return new TextResponse(HTTP_FORBIDDEN, MSG_FORBIDDEN, msg); }
     public static Response MOVED_PERMANENTLY(String newLocation) {
         Response response = new Response(HTTP_MOVED_PERM, MSG_MOVED_PERMANENTLY);
+        response.headers.put(Response.HEADER_LOCATION, newLocation);
+        return response;
+    }
+    public static Response REDIRECT(String newLocation, int code) {
+        Response response = new Response(code, MSG_REDIRECT);
         response.headers.put(Response.HEADER_LOCATION, newLocation);
         return response;
     }

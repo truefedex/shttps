@@ -2,8 +2,8 @@ package com.phlox.simpleserver.handlers.files;
 
 import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.docfile.DocumentFile;
@@ -21,11 +21,11 @@ public class MoveFileRequestHandler implements RequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if (!request.method.equals(Request.METHOD_POST)) return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_POST});
         if (!config.getAllowEditing()) return StandardResponses.FORBIDDEN("Editing not allowed");
         if (!"application/json".equals(request.contentType)) return StandardResponses.BAD_REQUEST();
-        requestParser.parseRequestBody(request);
+        requestBodyReader.readRequestBody(request);
 
         JSONObject json = new JSONObject(request.body.toString());
         String destPath = json.getString("path");
@@ -37,6 +37,9 @@ public class MoveFileRequestHandler implements RequestHandler {
             JSONArray jArr = json.getJSONArray("files");
             for (int i = 0; i < jArr.length(); i++) {
                 String path = jArr.getString(i);
+                if (!path.startsWith("/")) {
+                    path = "/" + path;
+                }
                 DocumentFile file = DocumentFileUtils.findChildByPath(root, path);
                 if (file == null) {
                     return StandardResponses.NOT_FOUND();

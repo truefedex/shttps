@@ -89,6 +89,9 @@ function renderFileList() {
     let a = document.createElement("a");
     a.dataset.directory = file.directory;
     let path = currentPath + (currentPath.endsWith("/") ? "" : "/") + file.name;
+    if (file.directory) {
+      path = path + "/";
+    }
     let href = encodeURI(path);
     a.setAttribute("href", href);
     a.addEventListener('click', onFileItemClick);
@@ -637,13 +640,17 @@ function onFileItemClick(e) {
   let href = e.currentTarget.getAttribute("href");
   if (e.currentTarget.dataset.directory == "true") {
     let path = decodeURI(href);
-    if (path.endsWith("/..")) {
+    if (path.endsWith("/../")) {
       let parts = path.split("/");
-      parts.pop();
-      parts.pop();
+      parts.pop(); // remove empty string after trailing slash
+      parts.pop(); // remove ".."
+      parts.pop(); // remove current folder
       path = parts.join("/");
       if (!path.startsWith("/")) {
         path = "/" + path;
+      }
+      if (!path.endsWith("/")) {
+        path = path + "/";
       }
     }
     loadPath(path);

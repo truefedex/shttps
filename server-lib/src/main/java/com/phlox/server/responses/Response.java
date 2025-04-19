@@ -32,7 +32,6 @@ public class Response {
 
     public Response(InputStream stream) {
         this.stream = stream;
-        addDefaultHeaders();
     }
 
     public Response() {
@@ -70,12 +69,6 @@ public class Response {
     public void setContentLength(long contentLength) {
         this.contentLength = contentLength;
         headers.put(HEADER_CONTENT_LENGTH, Long.toString(contentLength));
-    }
-
-    private void addDefaultHeaders() {
-        headers.put(HEADER_SERVER, SimpleHttpServer.class.getSimpleName());
-        headers.put(HEADER_CONNECTION, "Keep-Alive");
-        headers.put(HEADER_KEEP_ALIVE, "timeout=5, max=75");
     }
 
     public InputStream getStream() {

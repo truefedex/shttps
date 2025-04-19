@@ -1,8 +1,8 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
@@ -23,7 +23,7 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if ((!request.method.equals(Request.METHOD_GET)) &&
                 !request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
@@ -36,7 +36,7 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
         if (request.method.equals(Request.METHOD_GET)) {
             params = request.queryParams;
         } else {
-            requestParser.parseRequestBody(request);
+            requestBodyReader.readRequestBody(request);
             params = request.urlEncodedPostParams;
         }
         String table = params.get("table");
@@ -64,13 +64,13 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
                 filtersArgs.add(filtersArgsJsonArray.get(i));
             }
         }
-        TableData tableData;
-        try {
-            tableData = database.getTableDataSecure(table, columns != null ? columns.split(",") : null,
-                    offset != null ? Long.parseLong(offset) : null, limit != null ? Long.parseLong(limit) : null,
-                    filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]),
-                    sort, sortDir != null && sortDir.equalsIgnoreCase("desc"),
-                    includeRowIdStr != null && includeRowIdStr.equalsIgnoreCase("true"));
+
+        try (TableData tableData = database.getTableDataSecure(table, columns != null ? columns.split(",") : null,
+                offset != null ? Long.parseLong(offset) : null, limit != null ? Long.parseLong(limit) : null,
+                filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]),
+                sort, sortDir != null && sortDir.equalsIgnoreCase("desc"),
+                includeRowIdStr != null && includeRowIdStr.equalsIgnoreCase("true"))) {
+            return StandardResponses.OK(tableData.toJson().toString(), "application/json");
         } catch (SecurityException e) {
             return StandardResponses.FORBIDDEN(e.getMessage());
         } catch (IllegalArgumentException e) {
@@ -78,7 +78,5 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
         } catch (Exception e) {
             return StandardResponses.INTERNAL_SERVER_ERROR(e.getMessage());
         }
-
-        return StandardResponses.OK(tableData.toJson().toString(), "application/json");
     }
 }

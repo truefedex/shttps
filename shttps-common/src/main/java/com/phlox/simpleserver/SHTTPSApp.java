@@ -38,6 +38,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
@@ -45,9 +46,11 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 
 public class SHTTPSApp {
@@ -61,6 +64,7 @@ public class SHTTPSApp {
 
     public Holder<Database> database = new Holder<>(null);
 
+    public final RoutingRequestHandler routingRequestHandler;
     public final MainRequestHandler mainRequestHandler;
     public final BasicAuthRequestHandler authRequestHandler;
     public final LoggingRequestHandler loggingRequestHandler;
@@ -81,6 +85,13 @@ public class SHTTPSApp {
             throw new IllegalStateException("App not initialized");
         }
         return instance;
+    }
+
+    public static void destroy() {
+        if (instance == null) {
+            throw new IllegalStateException("App not initialized");
+        }
+        instance = null;
     }
 
     private SHTTPSApp(SHTTPSConfig config, SHTTPSPlatformUtils platformUtils, SHTTPSDatabaseFabric databaseFabric) {
@@ -104,11 +115,10 @@ public class SHTTPSApp {
         authRequestHandler.maxAttempts = config.getWhiteListMode().isEmpty() ? MAX_AUTH_ATTEMPTS_IF_IP_WHITELIST_NOT_SET : -1;
         loggingRequestHandler.childRequestHandler = authRequestHandler;
 
-        RoutingRequestHandler routingRequestHandler = new RoutingRequestHandler();
+        routingRequestHandler = new RoutingRequestHandler();
         authRequestHandler.childHandler = routingRequestHandler;
 
         mainRequestHandler = new MainRequestHandler(www);
-        mainRequestHandler.redirectToIndex = config.getRedirectToIndex();
         mainRequestHandler.renderFolders = config.getRenderFolders();
         mainRequestHandler.allowEditing = config.getAllowEditing();
 
@@ -132,9 +142,9 @@ public class SHTTPSApp {
         routingRequestHandler.addRoute("/api/db/query", new HashSet<>(Collections.singletonList("POST")), new DBCustomSQLRequestHandler(database, config));
         routingRequestHandler.addRoute("/api/db/cell-data", new HashSet<>(Arrays.asList("GET", "POST")), new DBSingleCellDataRequestHandler(database, config));
 
-        routingRequestHandler.addRoute("/shttps-static-public", new HashSet<>(Arrays.asList("GET", "HEAD")), new StaticAssetsRequestHandler("shttps-static-public"));
+        routingRequestHandler.addRouteByPathPrefix("/shttps-static-public", new StaticAssetsRequestHandler("shttps-static-public", "/shttps-static-public"));
 
-        routingRequestHandler.addRoute("/", new HashSet<>(Arrays.asList("GET", "HEAD")), mainRequestHandler);
+        routingRequestHandler.addRouteByPathPrefix("/", mainRequestHandler);
     }
 
     public synchronized void initIO() {
@@ -155,15 +165,28 @@ public class SHTTPSApp {
                 .setRequestHandler(loggingRequestHandler)
                 .setCallback(new SimpleHttpServer.Callback() {
                     @Override
-                    public void onServerStarted() {}
+                    public void onServerStarted() {
+                        logger.i("Server started");
+                    }
                     @Override
-                    public void onServerStopped() {}
+                    public void onServerStopped() {
+                        logger.i("Server stopped");
+                    }
                     @Override
-                    public void onNewConnection(Socket socket) {}
+                    public void onNewConnection(Socket socket, long connectionNumber) {
+                        SocketAddress address = socket.getRemoteSocketAddress();
+                        logger.i("New connection #" + connectionNumber + " from " + (address != null ? address.toString() : "unknown address"));
+                    }
                     @Override
-                    public void onConnectionClosed(Socket socket) {}
+                    public void onConnectionClosed(Socket socket) {
+                        SocketAddress address = socket.getRemoteSocketAddress();
+                        logger.i("Connection closed from " + (address  != null  ? address.toString()  : "unknown address"));
+                    }
                     @Override
-                    public void onConnectionError(Socket socket, Exception e) {}
+                    public void onConnectionError(Socket socket, Exception e) {
+                        SocketAddress address = socket.getRemoteSocketAddress();
+                        logger.e("Connection error from " + (address   != null   ? address.toString()    : "unknown address"));
+                    }
                     @Override
                     public void onConnectionRequest(RequestContext context, Request request) {}
                     @Override
@@ -178,6 +201,18 @@ public class SHTTPSApp {
                     }
                 })
                 .build();
+
+        List<RoutingRequestHandler.RedirectRule> redirectRules = config.getRedirectRules();
+        if (redirectRules == null) {
+            redirectRules = genPredefinedRedirectRules();
+            config.setRedirectRules(redirectRules);
+        }
+        routingRequestHandler.setRedirectRules(Collections.emptyList());
+        for (RoutingRequestHandler.RedirectRule rule : redirectRules) {
+            if (rule.enabled) {
+                routingRequestHandler.addRedirectRule(rule);
+            }
+        }
 
         String[] allowedInterfaces = config.getAllowedNetworkInterfaces();
         if (allowedInterfaces != null && allowedInterfaces.length > 0) {
@@ -231,9 +266,26 @@ public class SHTTPSApp {
         return srv;
     }
 
+    public List<RoutingRequestHandler.RedirectRule> genPredefinedRedirectRules() {
+        List<RoutingRequestHandler.RedirectRule> redirectRules = new ArrayList<>();
+
+        RoutingRequestHandler.RedirectRule rule = new RoutingRequestHandler.RedirectRule(
+                "^((?:/.+/)|/)$",
+                "{1}index.html",
+                0,
+                RoutingRequestHandler.RedirectMode.INTERNAL,
+                new RoutingRequestHandler.RedirectFlags[]{RoutingRequestHandler.RedirectFlags.IF_DEST_CAN_BE_PROCESSED},
+                config.getRedirectToIndex(),
+                "Redirect to index.html file inside the folder (only if index.html file exists)"
+        );
+        rule.shttpsInternal = true;
+        redirectRules.add(rule);
+        return redirectRules;
+    }
+
     public synchronized void stopServer() {
         SimpleHttpServer srv = this.server;
-        if (srv != null && srv.isRunning()) {
+        if (srv != null && srv.isListenThreadRunning()) {
             srv.stopListen();
             server = null;
         }
@@ -241,7 +293,7 @@ public class SHTTPSApp {
 
     public synchronized boolean isServerRunning() {
         SimpleHttpServer srv = this.server;
-        return srv != null && srv.isRunning();
+        return srv != null && srv.isListenThreadRunning();
     }
 
     public void notifyConfigChanged() {

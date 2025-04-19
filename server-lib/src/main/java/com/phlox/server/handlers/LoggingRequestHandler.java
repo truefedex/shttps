@@ -1,8 +1,8 @@
 package com.phlox.server.handlers;
 
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 
 import java.util.Date;
@@ -35,9 +35,9 @@ public class LoggingRequestHandler implements RequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if (childRequestHandler == null) return null;
-        Response response = childRequestHandler.handleRequest(context, request, requestParser);
+        Response response = childRequestHandler.handleRequest(context, request, requestBodyReader);
         if (context.data.containsKey(RoutingRequestHandler.ORIGINAL_PATH)) {
             request.path = (String) context.data.get(RoutingRequestHandler.ORIGINAL_PATH);
         }

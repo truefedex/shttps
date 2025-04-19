@@ -3,8 +3,8 @@ package com.phlox.simpleserver.handlers.files.upload;
 import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.request.FormDataPart;
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
-import com.phlox.server.request.RequestParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.docfile.DocumentFileUtils;
@@ -19,7 +19,7 @@ public class UploadFileRequestHandler implements RequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestParser requestParser) throws Exception {
+    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
         if (!config.getAllowEditing()) return StandardResponses.FORBIDDEN("Editing not allowed");
         if (!request.method.equals(Request.METHOD_PUT)) return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_PUT});
         if (!Request.CONTENT_TYPE_MULTIPART_FORM.equals(request.contentType)) {
@@ -33,7 +33,7 @@ public class UploadFileRequestHandler implements RequestHandler {
             return StandardResponses.INTERNAL_SERVER_ERROR("Not enough free space");
         }
         try {
-            requestParser.parseRequestBody(request, new DirectUploadRequestDataConsumer(config));//actual uploading
+            requestBodyReader.readRequestBody(request, new DirectUploadRequestDataConsumer(config));//actual uploading
         } catch (SecurityException e) {
             return StandardResponses.FORBIDDEN("Access denied");
         }
