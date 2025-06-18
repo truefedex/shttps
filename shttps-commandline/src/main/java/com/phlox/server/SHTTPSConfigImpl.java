@@ -2,12 +2,13 @@ package com.phlox.server;
 
 import static com.phlox.server.utils.docfile.RawDocumentFile.fileUriToFilePath;
 
-import com.phlox.server.handlers.RoutingRequestHandler;
+import com.phlox.server.handlers.RedirectsMiddleware;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.server.utils.docfile.RawDocumentFile;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.handlers.HandlersUtils;
+import com.phlox.simpleserver.auth.User;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -16,10 +17,12 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.KeyStore;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -45,7 +48,7 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
                 if (is.read(data) != data.length) {
                     throw new IOException("Failed to read config from file: " + file.getAbsolutePath());
                 }
-                json = new JSONObject(new String(data));
+                json = new JSONObject(new String(data, StandardCharsets.UTF_8));
             } catch (Exception e) {
                 logger.e("Failed to load config from file: " + file.getAbsolutePath(), e);
                 throw new IOException("Failed to load config from file: " + file.getAbsolutePath());
@@ -112,31 +115,13 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     }
 
     @Override
-    public void setUseBasicAuth(boolean value) {
-        json.put(KEY_USE_BASIC_AUTH, value);
-        save();
-    }
-
-    @Override
     public String getUsername() {
         return json.optString(KEY_USERNAME, "");
     }
 
     @Override
-    public void setUsername(String value) {
-        json.put(KEY_USERNAME, value);
-        save();
-    }
-
-    @Override
     public String getPassword() {
         return json.optString(KEY_PASSWORD, null);
-    }
-
-    @Override
-    public void setPassword(String value) {
-        json.put(KEY_PASSWORD, value);
-        save();
     }
 
     @Override
@@ -315,12 +300,12 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     }
 
     @Override
-    public List<RoutingRequestHandler.RedirectRule> getRedirectRules() {
+    public List<RedirectsMiddleware.RedirectRule> getRedirectRules() {
         JSONArray rules = json.optJSONArray(KEY_REDIRECT_RULES);
         if (rules == null) {
             return null;
         }
-        List<RoutingRequestHandler.RedirectRule> result = new ArrayList<>(rules.length());
+        List<RedirectsMiddleware.RedirectRule> result = new ArrayList<>(rules.length());
         for (int i = 0; i < rules.length(); i++) {
             result.add(HandlersUtils.ruleFromJson(rules.getJSONObject(i)));
         }
@@ -328,18 +313,51 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     }
 
     @Override
-    public void setRedirectRules(List<RoutingRequestHandler.RedirectRule> value) {
+    public void setRedirectRules(List<RedirectsMiddleware.RedirectRule> value) {
         if (value == null) {
             json.remove(KEY_REDIRECT_RULES);
             save();
             return;
         }
         JSONArray rules = new JSONArray();
-        for (RoutingRequestHandler.RedirectRule rule : value) {
+        for (RedirectsMiddleware.RedirectRule rule : value) {
             rules.put(HandlersUtils.ruleToJson(rule));
         }
         json.put(KEY_REDIRECT_RULES, rules);
         save();
+    }
+
+    @Override
+    public List<User> getUsers() {
+        JSONArray jsArr = json.optJSONArray(KEY_USERS);
+        if (jsArr == null) {
+            return new ArrayList<>();
+        }
+        List<User> users = new ArrayList<>();
+        for (int i = 0; i < jsArr.length(); i++) {
+            users.add(User.deserialize(jsArr.getJSONObject(i)));
+        }
+        return users;
+    }
+
+    @Override
+    public void setUsers(Collection<User> users) {
+        JSONArray jsArr = new JSONArray();
+        for (User user : users) {
+            jsArr.put(user.serialize());
+        }
+        json.put(KEY_USERS, jsArr);
+        save();
+    }
+
+    @Override
+    public AuthMode getAuthMode() {
+        return AuthMode.valueOf(json.optString(KEY_AUTH_MODE, AuthMode.NONE.name()));
+    }
+
+    @Override
+    public void setAuthMode(AuthMode value) {
+        json.put(KEY_AUTH_MODE, value.name());
     }
 
     @Override
@@ -358,7 +376,7 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
             return;
         }
         try {
-            Files.write(file.toPath(), json.toString(4).getBytes());
+            Files.writeString(file.toPath(), json.toString(4));
         } catch (IOException e) {
             logger.w("Failed to save config to file: " + file.getAbsolutePath() + ". This is expected in test environment.");
         }

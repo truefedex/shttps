@@ -97,15 +97,12 @@ public abstract class DocumentFile {
 
     public abstract OutputStream openOutputStream() throws FileNotFoundException;
 
-    public String getRelativePath(DocumentFile file) {
-        if (!isDirectory() || file == null) {
-            return null;
-        }
-        String baseUri = getUri();
-        String fileUri = file.getUri();
-        if (fileUri.startsWith(baseUri)) {
-            return fileUri.substring(baseUri.length());
-        }
-        return null;
+    public abstract String getRelativePath(DocumentFile file);
+
+    @Override
+    public boolean equals(Object o) {
+        return (o instanceof DocumentFile &&
+                getUri().equals(((DocumentFile) o).getUri()) &&
+                isDirectory() == ((DocumentFile) o).isDirectory());
     }
 }

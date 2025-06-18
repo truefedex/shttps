@@ -180,7 +180,7 @@ public class DatabaseImpl implements Database {
                 }
                 String column = columns[i];
                 if (DBUtils.isValidColumnName(column)) {
-                    sql.append(column);
+                    sql.append("\"").append(column).append("\"");
                 } else {
                     throw new SecurityException("Invalid column name: " + column);
                 }
@@ -200,9 +200,11 @@ public class DatabaseImpl implements Database {
             if (!DBUtils.isValidColumnName(orderBy)) {
                 throw new SecurityException("Invalid column name: " + orderBy);
             }
-            sql.append(" ORDER BY ").append(orderBy);
+            sql.append(" ORDER BY ").append("\"").append(orderBy).append("\"");
             if (desc) {
                 sql.append(" DESC");
+            } else {
+                sql.append(" ASC");
             }
         }
         if (limit != null) {
@@ -217,8 +219,6 @@ public class DatabaseImpl implements Database {
                 sql.append(" OFFSET ").append(offset);
             }
         }
-
-        logger.d("SQL: " + sql);
 
         Connection connection = dataSource.getConnection();
         PreparedStatement statement = connection.prepareStatement(sql.toString());
@@ -253,17 +253,15 @@ public class DatabaseImpl implements Database {
         }
 
         StringBuilder sql = new StringBuilder("SELECT typeof(")
-                .append(column).append("), length(")
+                .append("\"").append(column).append("\"").append("), length(")
                 .append(column).append("), ")
-                .append(column).append(" FROM ").append(table);
+                .append("\"").append(column).append("\"").append(" FROM ").append(table);
         if (filters != null && !filters.isEmpty()) {
             String where = DBUtils.buildSimpleWhereStatement(filters.toArray(new String[0]));
             sql.append(" WHERE ").append(where);
         }
 
         sql.append(" LIMIT 1");
-
-        logger.d("SQL: " + sql);
 
         Connection connection = dataSource.getConnection();
         PreparedStatement statement = connection.prepareStatement(sql.toString());
@@ -315,12 +313,10 @@ public class DatabaseImpl implements Database {
                     sql.append(", ");
                     valuesSql.append(", ");
                 }
-                sql.append(column);
+                sql.append("\"").append(column).append("\"");
                 valuesSql.append("?");
             }
             sql.append(valuesSql).append(")");
-
-            logger.d("SQL: " + sql);
 
             PreparedStatement statement = connection.prepareStatement(sql.toString(), Statement.RETURN_GENERATED_KEYS);
             int i = 1;
@@ -357,7 +353,7 @@ public class DatabaseImpl implements Database {
                 if (sql.charAt(sql.length() - 1) != ' ') {
                     sql.append(", ");
                 }
-                sql.append(column).append(" = ?");
+                sql.append("\"").append(column).append("\"").append(" = ?");
             }
 
             if (whereFilters != null && whereFilters.length > 0) {
@@ -380,8 +376,6 @@ public class DatabaseImpl implements Database {
                 }
             }
 
-            logger.d("SQL: " + statement.toString());
-
             return statement.executeUpdate();
         }
     }
@@ -399,8 +393,6 @@ public class DatabaseImpl implements Database {
                 String where = DBUtils.buildSimpleWhereStatement(whereFilters);
                 sql.append(" WHERE ").append(where);
             }
-
-            logger.d("SQL: " + sql);
 
             PreparedStatement statement = connection.prepareStatement(sql.toString());
             if (whereArgs != null && whereArgs.length > 0) {

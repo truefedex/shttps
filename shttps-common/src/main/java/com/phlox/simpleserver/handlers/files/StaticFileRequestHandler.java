@@ -1,45 +1,48 @@
 package com.phlox.simpleserver.handlers.files;
 
-import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.platform.MimeTypeMap;
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.HTTPUtils;
 import com.phlox.server.utils.docfile.DocumentFile;
-import com.phlox.server.utils.docfile.DocumentFileUtils;
 import com.phlox.simpleserver.SHTTPSApp;
+import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.auth.AuthManager;
+import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.List;
 
-public class StaticFileRequestHandler implements RequestHandler {
-    public DocumentFile root;
+public class StaticFileRequestHandler extends BaseFileRequestHandler {
 
-    public StaticFileRequestHandler(DocumentFile root) {
-        this.root = root;
+    public StaticFileRequestHandler(SHTTPSConfig config, AuthManager authManager) {
+        super(config, authManager);
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
-        DocumentFile root = this.root;
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         boolean isHead = request.method.equals(Request.METHOD_HEAD);
         if (!request.method.equals(Request.METHOD_GET) && !isHead) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_HEAD});
         }
+        User user = checkUser(context);
+        if (checkIsForbidden(user, User.FileSystemRights.READ)) return StandardResponses.FORBIDDEN("Insufficient rights");
         String queryPath = request.queryParams.get("path");
         String destPath = queryPath != null ? queryPath : request.path;
         if (!destPath.startsWith("/"))  {
             destPath = "/"+destPath;
         }
-        DocumentFile file = DocumentFileUtils.findChildByPath(root, destPath);
+        DocumentFile root = config.getRootDir();
+        DocumentFile file = DocumentFileUtils.findChildByPath(root, destPath, user);
         if (file == null || file.isDirectory()) {
             return null;
         }
@@ -119,7 +122,7 @@ public class StaticFileRequestHandler implements RequestHandler {
         public void writeOut(OutputStream output) throws IOException {
             String header = makeResponseHeader();
             try (InputStream input = getStream()) {
-                output.write(header.getBytes());
+                output.write(header.getBytes(StandardCharsets.UTF_8));
                 output.flush();
                 long skipped = input.skip(ranges.get(0).start);
                 if (skipped != ranges.get(0).start) {

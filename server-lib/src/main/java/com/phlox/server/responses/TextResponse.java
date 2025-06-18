@@ -1,6 +1,7 @@
 package com.phlox.server.responses;
 
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 
 public class TextResponse extends Response {
     public static final String MIME_TYPE_TEXT = "text/plain";
@@ -18,7 +19,7 @@ public class TextResponse extends Response {
     }
 
     public TextResponse(String text, String mimeType) {
-        this(text.getBytes(), mimeType);
+        this(text.getBytes(StandardCharsets.UTF_8), mimeType);
     }
 
     public TextResponse(String text) {
@@ -30,6 +31,6 @@ public class TextResponse extends Response {
     }
 
     public TextResponse(int code, String phrase, String text, String mimeType) {
-        this(text.getBytes(), mimeType, code, phrase);
+        this(text.getBytes(StandardCharsets.UTF_8), mimeType, code, phrase);
     }
 }

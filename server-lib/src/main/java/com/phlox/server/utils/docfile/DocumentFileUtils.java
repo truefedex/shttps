@@ -4,6 +4,13 @@ public final class DocumentFileUtils {
     public DocumentFileUtils() {}
 
     public static DocumentFile findChildByPath(DocumentFile root, String path) {
+        return findChildByPath(root, path, null);
+    }
+
+    public static DocumentFile findChildByPath(DocumentFile root, String path, String pathPrefix) {
+        if (pathPrefix != null) {
+            path = pathPrefix + path;
+        }
         if ("/".equals(path) || "".equals(path)) {
             return root;
         }

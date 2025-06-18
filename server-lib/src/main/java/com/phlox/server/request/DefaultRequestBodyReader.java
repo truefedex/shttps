@@ -7,6 +7,7 @@ import com.phlox.server.utils.Utils;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -43,7 +44,7 @@ public class DefaultRequestBodyReader implements RequestBodyReader {
             Utils.copyStream(request.input, baos, request.contentLength);
             data = baos.toString(DEFAULT_CHARSET_NAME);
         } else {
-            data = request.input.nextLine();
+            data = request.input.nextLine("UTF-8");
         }
         if (data == null) {
             return;
@@ -67,7 +68,7 @@ public class DefaultRequestBodyReader implements RequestBodyReader {
         do {
             partHeaders.clear();
             // Read headers until empty line
-            while ((line = request.input.nextLine()) != null && !line.isEmpty()) {
+            while ((line = request.input.nextLine("UTF-8")) != null && !line.isEmpty()) {
                 logger.d(line);
                 int j = line.indexOf(":");
                 if (j != -1) {

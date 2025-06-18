@@ -1,6 +1,7 @@
 package com.phlox.server.request;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 
 public class FormDataPart {
     public String name;
@@ -20,6 +21,6 @@ public class FormDataPart {
     }
 
     public String getDataAsString() {
-        return data.toString();
+        return new String(data.toByteArray(), StandardCharsets.UTF_8);
     }
 }

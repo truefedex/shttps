@@ -15,6 +15,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.List;
 
@@ -26,7 +27,7 @@ public class StaticFileRequestHandler implements RequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         File root = this.root;
         boolean isHead = request.method.equals(Request.METHOD_HEAD);
         if (!request.method.equals(Request.METHOD_GET) && !isHead) {
@@ -113,7 +114,7 @@ public class StaticFileRequestHandler implements RequestHandler {
         public void writeOut(OutputStream output) throws IOException {
             String header = makeResponseHeader();
             try (InputStream input = getStream()) {
-                output.write(header.getBytes());
+                output.write(header.getBytes(StandardCharsets.UTF_8));
                 output.flush();
                 input.skip(ranges.get(0).start);
                 long toRead = ranges.get(0).length;

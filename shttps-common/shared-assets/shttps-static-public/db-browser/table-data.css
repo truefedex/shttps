@@ -7,6 +7,7 @@
     flex-wrap: nowrap;
     align-items: stretch;
     overflow-y: hidden;
+    background: #1a1a1a;
 }
 
 .table-name {
@@ -15,6 +16,7 @@
     margin-top: 0;
     margin-bottom: 0;
     margin-right: 20px;
+    font-weight: 500;
 }
 
 #table-data-container {
@@ -23,26 +25,38 @@
     width: 100vw;
     overflow-x: auto;
     overflow-y: hidden;
+    background: #1a1a1a;
 }
 
 .db-table-data {
     flex-grow: 1;
     white-space: nowrap;
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
 }
 
 .db-table-data .db-row {
     max-height: 50px;
+    transition: background-color 0.2s ease;
+}
+
+.db-table-data .db-row:hover {
+    background-color: #2a2a2a;
 }
 
 .db-table-data .selected-row {
-    background-color: #555;
+    background-color: #306477 !important;
 }
 
 .db-table-data .db-header {
     margin: 0;
     height: 60px;
     padding: 0 15px 0;
-    background-color: #29596a;
+    background-color: #2d2d2d;
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 
 .db-table-data .db-header th {
@@ -52,116 +66,147 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: 500;
+    text-align: left;
+    border-bottom: 2px solid #306477;
 }
 
 .db-table-data .column-name {
     cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.db-table-data .column-name:hover {
+    color: #306477;
 }
 
 .db-table-data .column-filter input {
     width: 100%;
-    padding: 5px 10px;
+    padding: 8px 12px;
     margin: 5px 0;
     box-sizing: border-box;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    background-color: #29596a;
-    color: #000;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    transition: all 0.2s ease;
+}
+
+.db-table-data .column-filter input:focus {
+    outline: none;
+    border-color: #306477;
+    background-color: #363636;
 }
 
 .db-table-data .column-filter .active-input {
-    background-color: #f0f0f0;
+    background-color: #363636;
 }
 
 .db-table-data .db-row td {
-    padding: 5px 15px;
+    padding: 12px 15px;
     max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     box-sizing: border-box;
+    border-bottom: 1px solid #2a2a2a;
 }
 
 .pagination {
     display: flex;
-    height: 30px;
+    height: 40px;
     align-items: center;
-    margin-bottom: 5px;
-    margin-top: 5px;
+    margin: 10px 0;
+    padding: 0 15px;
+    background: #2d2d2d;
+    border-radius: 6px;
 }
 
 .pagination .pageInfo {
     margin: 0 5px;
     padding: 5px 10px;
-    color: #fff;
+    color: #e0e0e0;
+    font-size: 0.9em;
 }
 
 .pagination .currentPage {
     margin: 0 5px;
-    padding: 5px 10px;
-    background-color: #555;
+    padding: 5px 12px;
+    background-color: #306477;
     color: #fff;
+    border-radius: 4px;
+    font-weight: 500;
 }
 
 .pagination .page-link {
-    background-color: #555;
+    background-color: #363636;
     color: #fff;
-    width: 30px;
+    width: 32px;
     margin-left: 5px;
     margin-right: 5px;
     text-align: center;
-    height: 30px;
-    line-height: 30px;
+    height: 32px;
+    line-height: 32px;
     cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.pagination .page-link:hover {
+    background-color: #404040;
 }
 
 .disabled-link {
     pointer-events: none;
     cursor: default;
-    opacity: 0.6;
+    opacity: 0.5;
+    background-color: #2a2a2a !important;
 }
 
 .modal {
     display: none;
-    position: absolute;
+    position: fixed;
     padding: 0;
-    z-index: 1;
+    z-index: 1000;
     left: 0;
     top: 0;
     width: 100vw;
     height: 100vh;
     max-height: 100vh;
     overflow: hidden;
-    background-color: rgba(0, 0, 0, 0.4);
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
 }
 
 .modal-content {
     position: relative;
-    width: 80%;
+    width: 90%;
+    max-width: 600px;
     top: 5%;
     margin-left: auto;
     margin-right: auto;
-    padding: 20px;
+    padding: 24px;
     max-height: 80%;
     overflow: auto;
-    border: 1px solid #888;
-    color: #333;
-    background-color: #fefefe;
+    border: none;
+    color: #e0e0e0;
+    background-color: #2d2d2d;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .modal-content h2 {
-    margin-top: 0px;
-}
-
-.row-editor-form {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
+    margin-top: 0;
+    margin-bottom: 24px;
+    color: #fff;
+    font-weight: 500;
 }
 
 #row-editor-form label {
     width: 100%;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
+    color: #e0e0e0;
+    font-weight: 500;
 }
 
 #row-editor-form .input-container {
@@ -170,38 +215,68 @@
     flex-wrap: nowrap;
     justify-content: space-between;
     flex-direction: row;
+    margin-bottom: 16px;
 }
 
 #row-editor-form .input-container .input-field {
     width: 100%;
-    padding: 5px 10px;
-    margin: 5px 0;
+    padding: 10px 12px;
+    margin: 0;
     box-sizing: border-box;
-    border: 1px solid #ccc;
-    border-radius: 5px;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    background-color: #363636;
+    color: #e0e0e0;
+    transition: all 0.2s ease;
+}
+
+#row-editor-form .input-container .input-field:focus {
+    outline: none;
+    border-color: #306477;
+    background-color: #404040;
 }
 
 #row-editor-form .input-container .input-menu-button {
-    padding: 5px 10px;
+    padding: 10px 12px;
     margin-left: 10px;
-    margin-bottom: 5px;
-    margin-top: 5px;
     box-sizing: border-box;
-    border: 1px solid #ccc;
-    border-radius: 5px;
+    border: 1px solid #404040;
+    border-radius: 6px;
     cursor: pointer;
+    background-color: #363636;
+    color: #e0e0e0;
+    transition: all 0.2s ease;
+}
+
+#row-editor-form .input-container .input-menu-button:hover {
+    background-color: #404040;
+    border-color: #306477;
 }
 
 #row-editor-form button {
     width: 100%;
-    padding: 5px 10px;
-    margin: 5px 0;
+    padding: 12px;
+    margin: 8px 0;
     box-sizing: border-box;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    background-color: #555;
+    border: none;
+    border-radius: 6px;
+    background-color: #306477;
     color: #fff;
     cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+#row-editor-form button:hover {
+    background-color: #407487;
+}
+
+#row-editor-form button:last-child {
+    background-color: #404040;
+}
+
+#row-editor-form button:last-child:hover {
+    background-color: #505050;
 }
 
 .context-menu {

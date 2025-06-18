@@ -23,10 +23,10 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         if ((!request.method.equals(Request.METHOD_GET)) &&
                 !request.method.equals(Request.METHOD_POST)) {
-            return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
+            return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_POST});
         }
         Database database = this.database.get();
         if (database == null) {
@@ -36,7 +36,7 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
         if (request.method.equals(Request.METHOD_GET)) {
             params = request.queryParams;
         } else {
-            requestBodyReader.readRequestBody(request);
+            context.requestBodyReader.readRequestBody(request);
             params = request.urlEncodedPostParams;
         }
         String table = params.get("table");
@@ -49,6 +49,7 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
         String sort = params.get("sort");
         String sortDir = params.get("sort-order");
         String includeRowIdStr = params.get("includeRowId");
+        String rowsAsObjects = params.get("rowsAsObjects");
 
         List<String> filters = new ArrayList<>();
         List<Object> filtersArgs = new ArrayList<>();
@@ -70,7 +71,10 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
                 filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]),
                 sort, sortDir != null && sortDir.equalsIgnoreCase("desc"),
                 includeRowIdStr != null && includeRowIdStr.equalsIgnoreCase("true"))) {
-            return StandardResponses.OK(tableData.toJson().toString(), "application/json");
+            return StandardResponses.OK(
+                    tableData.toJson(
+                            rowsAsObjects != null && rowsAsObjects.equalsIgnoreCase("true")
+                    ).toString(), "application/json");
         } catch (SecurityException e) {
             return StandardResponses.FORBIDDEN(e.getMessage());
         } catch (IllegalArgumentException e) {

@@ -267,7 +267,7 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
     button.querySelector(".button__progress").style.width = percent + "%";
   };
 
-  xhr.upload.onloadend = function (e) {
+  xhr.onload = function () {
     textElement.textContent = "UPLOAD FILES";
     let progressElement = button.querySelector(".button__progress");
     progressElement.classList.add('notransition');
@@ -275,13 +275,30 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
     progressElement.offsetHeight; // Trigger a reflow, flushing the CSS changes
     progressElement.classList.remove('notransition');
     uploadInProgress = false;
-    setTimeout(() => {//wait for server to process files
+
+    if (xhr.status == 204) {
+      setTimeout(() => {//wait for server to process files
+        loadPath(basePath);
+      }, 500);
+    } else {
+      // Handle HTTP error status codes
+      alert('Error while uploading files: ' + xhr.status + ' ' + xhr.statusText + '\n' + xhr.responseText);
       loadPath(basePath);
-    }, 500);
+    }
   };
 
-  xhr.upload.onerror = function (e) {
-    alert('Error while uploading fires!');
+  xhr.onerror = function (e) {
+    textElement.textContent = "UPLOAD FILES";
+    let progressElement = button.querySelector(".button__progress");
+    progressElement.classList.add('notransition');
+    progressElement.style.width = "0%";
+    progressElement.offsetHeight;
+    progressElement.classList.remove('notransition');
+    uploadInProgress = false;
+    
+    // Handle network-level errors
+    alert('Network error while uploading files. Please check your connection.');
+    loadPath(basePath);
   };
 
   xhr.open("PUT", "/api/file/upload?path=" + encodeURIComponent(basePath));
@@ -419,7 +436,7 @@ function onNewFolderClick() {
     if (this.status == 204) {
       loadPath(currentPath);
     } else {
-      alert("Can not create new folder \"" + name + "\"");
+      alert("Can not create new folder \"" + name + "\": " + this.statusText + "\n" + this.responseText);
       loadPath(currentPath);
     }
   };
@@ -437,7 +454,7 @@ function onNewFileClick() {
     if (this.status == 204) {
       loadPath(currentPath);
     } else {
-      alert("Can not create new file \"" + name + "\"");
+      alert("Can not create new file \"" + name + "\": " + this.statusText + "\n" + this.responseText);
       loadPath(currentPath);
     }
   };
@@ -485,7 +502,7 @@ function onPasteClick() {
       }
       loadPath(currentPath);
     } else {
-      alert("Can not process command");
+      alert("Can not process command: " + this.statusText + "\n" + this.responseText);
       loadPath(currentPath);
     }
     updateButtonStates();
@@ -518,7 +535,7 @@ function onRenameClick() {
   xhr.send(urlEncodedDataPairs.join("&"));
   xhr.onload = function () {
     if (this.status != 204) {
-      alert("Can not rename file \"" + fileName + "\" to \"" + name + "\"");
+      alert("Can not rename file \"" + fileName + "\" to \"" + name + "\": " + this.statusText + "\n" + this.responseText);
     }
     loadPath(currentPath);
   };
@@ -557,7 +574,7 @@ function onDeleteClick() {
     if (this.status == 204) {
       loadPath(currentPath);
     } else {
-      alert("Can not process command");
+      alert("Error while deleting files: " + this.statusText + "\n" + this.responseText);
       loadPath(currentPath);
     }
   };
@@ -577,7 +594,7 @@ function onZipClick() {
   let form = document.createElement("form");
   form.setAttribute("method", "post");
   let currentFolderName = currentPath.split("/").pop();
-  form.setAttribute("action", "/api/file/zip/" + encodeURIComponent(currentFolderName));
+  form.setAttribute("action", "/api/file/zip");
   form.setAttribute("target", "_blank");
   let hiddenField = document.createElement("input");
   hiddenField.setAttribute("type", "hidden");
@@ -617,6 +634,10 @@ function loadPath(directoryPath) {
   req.overrideMimeType("application/json");
   req.open('GET', "/api/file/list?path=" + encodeURIComponent(directoryPath) + "&sort=" + sort + "&sort-reversed=" + currentSortReversed, true);
   req.onload = function () {
+    if (req.status != 200) {
+      alert("Error while loading list of files: " + req.statusText + "\n" + req.responseText);
+      return;
+    }
     files = JSON.parse(req.responseText);
     renderFileList();
   };
@@ -831,7 +852,45 @@ function showContextMenu(x, y, href, isFolder) {
   displayContextMenu(x, y, contextMenu);
 }
 
+function onMenuClick(e) {
+  let menuButton = document.getElementById("menu-button");
+  let mainMenu = document.getElementById("main-menu");
+  let mmLogin = document.getElementById("mm-login");
+  if (mmLogin) {
+    mmLogin.onclick = function () {
+      window.location.href = "/shttps-pages/login/";
+    }
+  }
+  let mmLogout = document.getElementById("mm-logout");
+  if (mmLogout) {
+    mmLogout.onclick = function () {
+      let xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/user/logout", true);
+      xhr.send();
+      xhr.onload = function () {
+        if (this.status == 204) {
+          window.location.href = "/";
+        } else {
+          alert("Error while logging out: " + this.statusText + "\n" + this.responseText);
+        }
+      };
+      xhr.onerror = function () {
+        alert("Error while logging out: " + this.statusText + "\n" + this.responseText);
+      };
+    }
+  }
+  let rect = menuButton.getBoundingClientRect();
+  displayContextMenuWithAnchorRect(rect, mainMenu);
+  e.stopPropagation();
+  e.preventDefault();
+}
+
 function onPageLoad() {
+  // Prevent native context menu on mobile
+  document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+  });
+
   updateButtonStates();
   updateScreenSizeAvareUI();
 

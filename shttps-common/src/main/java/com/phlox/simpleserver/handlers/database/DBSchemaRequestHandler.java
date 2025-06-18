@@ -19,8 +19,7 @@ public class DBSchemaRequestHandler extends BaseDBRequestHandler {
 
     @Override
     public Response handleRequest(RequestContext context,
-                                  Request request,
-                                  RequestBodyReader requestBodyReader) throws Exception {
+                                  Request request) throws Exception {
         if (!request.method.equals(Request.METHOD_GET)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
         }

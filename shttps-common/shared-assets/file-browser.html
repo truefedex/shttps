@@ -12,6 +12,9 @@
 
 <body id="root" onload="onPageLoad();" onresize="onPageResize();" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
   <div class="header">
+    {{#display_menu_button}}
+    <button id="menu-button" class="menu-button" onclick="onMenuClick(event);">☰</button>
+    {{/display_menu_button}}
     <div id="loader" class="loader"></div>
     <div id="path">{{current_path}}</div>
     <div id="view-mode" class="form_radio_group">
@@ -67,6 +70,14 @@
       <li class="menu-option" id="mo-download">Download</li>
       <li class="menu-option" id="mo-zip">Download as ZIP</li>
       <li class="menu-option" id="mo-copy-link">Copy link</li>
+    </ul>
+  </div>
+
+  <div class="context-menu" id="main-menu">
+    <div class="menu-close-btn" onclick="hideContextMenu()">&times;</div>
+    <ul class="menu-options">
+      {{^hasUser}}<li class="menu-option" id="mm-login">Login</li>{{/hasUser}}
+      {{#hasUser}}<li class="menu-option" id="mm-logout">Logout</li>{{/hasUser}}
     </ul>
   </div>
 </body>

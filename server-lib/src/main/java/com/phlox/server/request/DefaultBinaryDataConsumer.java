@@ -8,6 +8,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 public class DefaultBinaryDataConsumer implements BinaryDataConsumer {
@@ -47,7 +48,7 @@ public class DefaultBinaryDataConsumer implements BinaryDataConsumer {
 
         @Override
         public String toString() {
-            return baos.toString();
+            return new String(baos.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 }

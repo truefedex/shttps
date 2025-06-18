@@ -324,5 +324,20 @@ public class TreeDocumentFile extends DocumentFile {
     public OutputStream openOutputStream() throws FileNotFoundException {
         return mContext.getContentResolver().openOutputStream(mUri);
     }
+
+    @Override
+    public String getRelativePath(DocumentFile file) {
+        if (!isDirectory() || file == null) {
+            return null;
+        }
+        String baseUri = getUri();
+        String fileUri = file.getUri();
+        if (fileUri.startsWith(baseUri)) {
+            String relativeUriPart = fileUri.substring(baseUri.length());
+            //uri is url encoded, need to decode
+            return Uri.decode(relativeUriPart);
+        }
+        return null;
+    }
 }
 

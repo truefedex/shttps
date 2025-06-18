@@ -1,18 +1,33 @@
 package com.phlox.simpleserver;
 
 import com.phlox.server.SimpleHttpServer;
-import com.phlox.server.handlers.BasicAuthRequestHandler;
-import com.phlox.server.handlers.LoggingRequestHandler;
-import com.phlox.server.handlers.RoutingRequestHandler;
+import com.phlox.server.handlers.LoggingMiddleware;
+import com.phlox.server.handlers.RedirectsMiddleware;
+import com.phlox.server.handlers.RequestHandler;
+import com.phlox.server.handlers.Router;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
+import com.phlox.server.responses.TextResponse;
 import com.phlox.server.utils.HTTPUtils;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
+import com.phlox.server.utils.Utils;
 import com.phlox.server.utils.docfile.DocumentFile;
+import com.phlox.simpleserver.auth.AuthManager;
+import com.phlox.simpleserver.auth.DummyAuthManager;
+import com.phlox.simpleserver.auth.web.InMemorySessionManager;
+import com.phlox.simpleserver.auth.web.LoginRequestHandler;
+import com.phlox.simpleserver.auth.web.LogoutRequestHandler;
+import com.phlox.simpleserver.auth.web.SessionManager;
+import com.phlox.simpleserver.auth.web.WebAuthManager;
+import com.phlox.simpleserver.auth.web.WebAuthMiddleware;
 import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.SHTTPSDatabaseFabric;
-import com.phlox.simpleserver.handlers.main.MainRequestHandler;
+import com.phlox.simpleserver.auth.ConfigBasedUserStore;
+import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.auth.basic.BasicAuthManager;
+import com.phlox.simpleserver.auth.basic.BasicAuthMiddleware;
+import com.phlox.simpleserver.handlers.main.FilesRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBSchemaRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBSingleCellDataRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBTableDataRequestHandler;
@@ -40,34 +55,32 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class SHTTPSApp {
-
-    public static final int MAX_AUTH_ATTEMPTS_IF_IP_WHITELIST_NOT_SET = 10;
     private static SHTTPSApp instance;
     public final SHTTPSConfig config;
     public final SHTTPSPlatformUtils platformUtils;
     public final SHTTPSDatabaseFabric databaseFabric;
     private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
 
-    public Holder<Database> database = new Holder<>(null);
+    private final Holder<Database> database = new Holder<>(null);
 
-    public final RoutingRequestHandler routingRequestHandler;
-    public final MainRequestHandler mainRequestHandler;
-    public final BasicAuthRequestHandler authRequestHandler;
-    public final LoggingRequestHandler loggingRequestHandler;
+    private final Router router = new Router();
+    public LoggingMiddleware loggingMiddleware;
+    private UserStore userStore;
     public Callback callback;
     private volatile SimpleHttpServer server;
 
@@ -105,46 +118,6 @@ public class SHTTPSApp {
             www = platformUtils.getDefaultRootDir();
             config.setRootDir(www.getUri());
         }
-
-        loggingRequestHandler = new LoggingRequestHandler(1000);
-
-        authRequestHandler = new BasicAuthRequestHandler();
-        authRequestHandler.username = config.getUsername();
-        authRequestHandler.password = config.getPassword();
-        authRequestHandler.authEnabled = config.getUseBasicAuth();
-        authRequestHandler.maxAttempts = config.getWhiteListMode().isEmpty() ? MAX_AUTH_ATTEMPTS_IF_IP_WHITELIST_NOT_SET : -1;
-        loggingRequestHandler.childRequestHandler = authRequestHandler;
-
-        routingRequestHandler = new RoutingRequestHandler();
-        authRequestHandler.childHandler = routingRequestHandler;
-
-        mainRequestHandler = new MainRequestHandler(www);
-        mainRequestHandler.renderFolders = config.getRenderFolders();
-        mainRequestHandler.allowEditing = config.getAllowEditing();
-
-        //file handlers
-        routingRequestHandler.addRoute("/api/file/download", new HashSet<>(Collections.singletonList("GET")), new StaticFileRequestHandler(www));
-        routingRequestHandler.addRoute("/api/file/new-folder", new HashSet<>(Collections.singletonList("POST")), new NewFolderRequestHandler(config));
-        routingRequestHandler.addRoute("/api/file/rename", new HashSet<>(Collections.singletonList("POST")), new RenameFileRequestHandler(config));
-        routingRequestHandler.addRoute("/api/file/upload", new HashSet<>(Collections.singletonList("PUT")), new UploadFileRequestHandler(config));
-        routingRequestHandler.addRoute("/api/file/delete", new HashSet<>(Collections.singletonList("DELETE")), new DeleteFileRequestHandler(config));
-        routingRequestHandler.addRoute("/api/file/move", new HashSet<>(Collections.singletonList("POST")), new MoveFileRequestHandler(config));
-        routingRequestHandler.addRoute("/api/file/list", new HashSet<>(Collections.singletonList("GET")), new FileListRequestHandler(config));
-        routingRequestHandler.addRoute("/api/file/thumbnail", new HashSet<>(Collections.singletonList("GET")), new ThumbnailHandler(config));
-        routingRequestHandler.addRoute("/api/file/zip", new HashSet<>(Collections.singletonList("POST")), new ZipDownloadRequestHandler(config));
-
-        //database handlers
-        routingRequestHandler.addRoute("/api/db/schema", new HashSet<>(Collections.singletonList("GET")), new DBSchemaRequestHandler(database, config));
-        routingRequestHandler.addRoute("/api/db/table", new HashSet<>(Arrays.asList("GET", "POST")), new DBTableDataRequestHandler(database, config));
-        routingRequestHandler.addRoute("/api/db/insert", new HashSet<>(Collections.singletonList("POST")), new DBInsertRequestHandler(database, config));
-        routingRequestHandler.addRoute("/api/db/update", new HashSet<>(Collections.singletonList("PUT")), new DBUpdateRequestHandler(database, config));
-        routingRequestHandler.addRoute("/api/db/delete", new HashSet<>(Collections.singletonList("DELETE")), new DBDeleteRequestHandler(database, config));
-        routingRequestHandler.addRoute("/api/db/query", new HashSet<>(Collections.singletonList("POST")), new DBCustomSQLRequestHandler(database, config));
-        routingRequestHandler.addRoute("/api/db/cell-data", new HashSet<>(Arrays.asList("GET", "POST")), new DBSingleCellDataRequestHandler(database, config));
-
-        routingRequestHandler.addRouteByPathPrefix("/shttps-static-public", new StaticAssetsRequestHandler("shttps-static-public", "/shttps-static-public"));
-
-        routingRequestHandler.addRouteByPathPrefix("/", mainRequestHandler);
     }
 
     public synchronized void initIO() {
@@ -160,9 +133,97 @@ public class SHTTPSApp {
         }
     }
 
-    public synchronized SimpleHttpServer startServer() throws UnrecoverableKeyException, CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+    public synchronized void startServer() throws UnrecoverableKeyException, CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+        //Setup middlewares
+        Router.Middlewares authMiddlewares = new Router.Middlewares();
+        router.globalMiddlewares.reset();
+
+        final String loginFormPath = "/shttps-pages/login/";
+        AuthManager authManager;
+        SessionManager sessionManager = null;
+        switch (config.getAuthMode()) {
+            case BASIC_AUTH:
+                authManager = new BasicAuthManager(provideUserStore(true));
+                BasicAuthMiddleware authMiddleware = new BasicAuthMiddleware(authManager);
+                authMiddlewares.addPreMiddleware(authMiddleware);
+                break;
+            case WEB:
+                sessionManager = new InMemorySessionManager();
+                authManager = new WebAuthManager(provideUserStore(true), sessionManager);
+                WebAuthMiddleware authMiddleware1 = new WebAuthMiddleware(authManager, loginFormPath);
+                authMiddlewares.addPreMiddleware(authMiddleware1);
+                break;
+            default:
+                authManager = new DummyAuthManager();
+                break;
+        }
+
+        RedirectsMiddleware redirectsMiddleware = new RedirectsMiddleware();
+        List<RedirectsMiddleware.RedirectRule> redirectRules = config.getRedirectRules();
+        redirectsMiddleware.setRedirectRules(Collections.emptyList());
+        if (redirectRules != null) {
+            for (RedirectsMiddleware.RedirectRule rule : redirectRules) {
+                if (rule.enabled) {
+                    redirectsMiddleware.addRedirectRule(rule);
+                }
+            }
+        }
+        router.globalMiddlewares.addPreMiddleware(redirectsMiddleware);
+
+        loggingMiddleware = new LoggingMiddleware(1000);
+        router.globalMiddlewares.addPostMiddleware(loggingMiddleware);
+
+        //Setup routes
+        router.resetRoutes();
+        //file handlers
+        router.addRoute("/api/file/download", Set.of("GET"), new StaticFileRequestHandler(config, authManager), authMiddlewares);
+        router.addRoute("/api/file/new-folder", Set.of("POST"), new NewFolderRequestHandler(config, authManager), authMiddlewares);
+        router.addRoute("/api/file/rename", Set.of("POST"), new RenameFileRequestHandler(config, authManager), authMiddlewares);
+        router.addRoute("/api/file/upload", Set.of("PUT"), new UploadFileRequestHandler(config, authManager), authMiddlewares);
+        router.addRoute("/api/file/delete", Set.of("DELETE"), new DeleteFileRequestHandler(config, authManager), authMiddlewares);
+        router.addRoute("/api/file/move", Set.of("POST"), new MoveFileRequestHandler(config, authManager), authMiddlewares);
+        router.addRoute("/api/file/list", Set.of("GET"), new FileListRequestHandler(config, authManager), authMiddlewares);
+        router.addRoute("/api/file/thumbnail", Set.of("GET"), new ThumbnailHandler(config, authManager), authMiddlewares);
+        router.addRoute("/api/file/zip", Set.of("POST"), new ZipDownloadRequestHandler(config, authManager), authMiddlewares);
+
+        //database handlers
+        router.addRoute("/api/db/schema", Set.of("GET"), new DBSchemaRequestHandler(database, config), authMiddlewares);
+        router.addRoute("/api/db/table", Set.of("GET", "POST"), new DBTableDataRequestHandler(database, config), authMiddlewares);
+        router.addRoute("/api/db/insert", Set.of("POST"), new DBInsertRequestHandler(database, config), authMiddlewares);
+        router.addRoute("/api/db/update", Set.of("PUT"), new DBUpdateRequestHandler(database, config), authMiddlewares);
+        router.addRoute("/api/db/delete", Set.of("DELETE"), new DBDeleteRequestHandler(database, config), authMiddlewares);
+        router.addRoute("/api/db/query", Set.of("POST"), new DBCustomSQLRequestHandler(database, config), authMiddlewares);
+        router.addRoute("/api/db/cell-data", Set.of("GET", "POST"), new DBSingleCellDataRequestHandler(database, config), authMiddlewares);
+
+        //auth handlers (if any)
+        if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.WEB)) {
+            router.addRoute("/api/user/login", Set.of("POST"), new LoginRequestHandler(authManager, sessionManager));
+            router.addRoute("/api/user/logout", Set.of("POST"), new LogoutRequestHandler(authManager), authMiddlewares);
+        }
+
+        //build-in pages
+        if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.WEB)) {
+            router.addRoute(loginFormPath, Set.of("GET"), (context, request) -> {
+                try (InputStream is = platformUtils.openAssetStream("shttps-static-public/auth/login.html")) {
+                    String html = new String(Utils.readAllBytes(is), StandardCharsets.UTF_8);
+                    return new TextResponse(html, "text/html");
+                } catch (IOException e) {
+                    throw new RuntimeException("Can not read assets");
+                }
+            });
+        }
+
+        router.addRouteByPathPrefix("/shttps-static-public",
+                new StaticAssetsRequestHandler("shttps-static-public", "/shttps-static-public", config), authMiddlewares);
+
+        FilesRequestHandler filesRequestHandler = new FilesRequestHandler(config, authManager);
+        filesRequestHandler.renderFolders = config.getRenderFolders();
+        filesRequestHandler.allowEditing = config.getAllowEditing();
+        router.addRouteByPathPrefix("/", filesRequestHandler, authMiddlewares);
+
+
         SimpleHttpServer srv = new SimpleHttpServer.Builder()
-                .setRequestHandler(loggingRequestHandler)
+                .setRequestHandler(router)
                 .setCallback(new SimpleHttpServer.Callback() {
                     @Override
                     public void onServerStarted() {
@@ -176,6 +237,10 @@ public class SHTTPSApp {
                     public void onNewConnection(Socket socket, long connectionNumber) {
                         SocketAddress address = socket.getRemoteSocketAddress();
                         logger.i("New connection #" + connectionNumber + " from " + (address != null ? address.toString() : "unknown address"));
+                        Callback callback = SHTTPSApp.this.callback;
+                        if (callback != null) {
+                            callback.onNewConnection(socket);
+                        }
                     }
                     @Override
                     public void onConnectionClosed(Socket socket) {
@@ -201,18 +266,6 @@ public class SHTTPSApp {
                     }
                 })
                 .build();
-
-        List<RoutingRequestHandler.RedirectRule> redirectRules = config.getRedirectRules();
-        if (redirectRules == null) {
-            redirectRules = genPredefinedRedirectRules();
-            config.setRedirectRules(redirectRules);
-        }
-        routingRequestHandler.setRedirectRules(Collections.emptyList());
-        for (RoutingRequestHandler.RedirectRule rule : redirectRules) {
-            if (rule.enabled) {
-                routingRequestHandler.addRedirectRule(rule);
-            }
-        }
 
         String[] allowedInterfaces = config.getAllowedNetworkInterfaces();
         if (allowedInterfaces != null && allowedInterfaces.length > 0) {
@@ -263,24 +316,6 @@ public class SHTTPSApp {
             srv.startListen(config.getPort());
         }
         this.server = srv;
-        return srv;
-    }
-
-    public List<RoutingRequestHandler.RedirectRule> genPredefinedRedirectRules() {
-        List<RoutingRequestHandler.RedirectRule> redirectRules = new ArrayList<>();
-
-        RoutingRequestHandler.RedirectRule rule = new RoutingRequestHandler.RedirectRule(
-                "^((?:/.+/)|/)$",
-                "{1}index.html",
-                0,
-                RoutingRequestHandler.RedirectMode.INTERNAL,
-                new RoutingRequestHandler.RedirectFlags[]{RoutingRequestHandler.RedirectFlags.IF_DEST_CAN_BE_PROCESSED},
-                config.getRedirectToIndex(),
-                "Redirect to index.html file inside the folder (only if index.html file exists)"
-        );
-        rule.shttpsInternal = true;
-        redirectRules.add(rule);
-        return redirectRules;
     }
 
     public synchronized void stopServer() {
@@ -291,9 +326,35 @@ public class SHTTPSApp {
         }
     }
 
-    public synchronized boolean isServerRunning() {
+    public UserStore provideUserStore() {
+        return provideUserStore(false);
+    }
+
+    public UserStore provideUserStore(boolean invalidate) {
+        UserStore userStore = this.userStore;
+        if (invalidate || userStore == null) {
+            userStore = new ConfigBasedUserStore(config);
+            this.userStore = userStore;
+        }
+        return userStore;
+    }
+
+    public boolean isServerRunning() {
         SimpleHttpServer srv = this.server;
         return srv != null && srv.isListenThreadRunning();
+    }
+
+    public void restartServerIfRunning() {
+        SimpleHttpServer srv = this.server;
+        if (srv != null && srv.isListenThreadRunning()) {
+            srv.stopListen();
+            server = null;
+            try {
+                startServer();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     public void notifyConfigChanged() {
@@ -318,5 +379,7 @@ public class SHTTPSApp {
 
     public interface Callback {
         void onConnectionRejected(Socket socket, int reason);
+
+        void onNewConnection(Socket socket);
     }
 }

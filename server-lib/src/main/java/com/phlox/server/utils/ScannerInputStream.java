@@ -66,11 +66,14 @@ public class ScannerInputStream extends InputStream {
         return boundaryFound;
     }
 
-
     public String nextLine() throws IOException {
+        return nextLine("ASCII");
+    }
+
+    public String nextLine(String charset) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         boolean boundaryFound = readUntilDelimiter(new byte[]{0x0D, 0x0A}, output);
-        String result = output.toString("ASCII");
+        String result = output.toString(charset);
         return ("".equals(result) && !boundaryFound) ? null : result;
     }
 }

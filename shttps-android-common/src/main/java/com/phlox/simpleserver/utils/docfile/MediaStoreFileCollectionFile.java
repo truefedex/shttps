@@ -499,4 +499,5 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
     public String getRelativePath() {
         return relativePath;
     }
+
 }

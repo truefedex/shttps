@@ -1,13 +1,13 @@
 package com.phlox.server.handlers;
 
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
 
@@ -17,7 +17,7 @@ public class FolderContentRenderingRequestHandler extends StaticFileRequestHandl
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         if (!request.method.equals(Request.METHOD_GET)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
         }
@@ -26,13 +26,13 @@ public class FolderContentRenderingRequestHandler extends StaticFileRequestHandl
         if (file.isDirectory()) {
             File index = new File(file, "index.html");
             if (index.exists()) {
-                return super.handleRequest(context, request, requestBodyReader);
+                return super.handleRequest(context, request);
             } else {
                 return renderDirContentPage(request, file);
             }
         }
 
-        return super.handleRequest(context, request, requestBodyReader);
+        return super.handleRequest(context, request);
     }
 
     private String getPathRelativeToRoot(File file) {
@@ -70,7 +70,7 @@ public class FolderContentRenderingRequestHandler extends StaticFileRequestHandl
             }
         }
         String html = String.format(HTML_TEMPLATE, request.path, htmlList.toString());
-        return new Response("text/html", html.length(), new ByteArrayInputStream(html.getBytes()));
+        return new Response("text/html", html.length(), new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
     }
 
     private static final String HTML_TEMPLATE = "<!DOCTYPE html>\n" +

@@ -1,16 +1,14 @@
 package com.phlox.server.handlers;
 
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 
 import java.util.Date;
 import java.util.LinkedList;
 
-public class LoggingRequestHandler implements RequestHandler {
+public class LoggingMiddleware implements Middleware {
     final int maxLogSize;
-    public RequestHandler childRequestHandler;
     public final LinkedList<LogEntry> logs = new LinkedList<>();
     public Listener listener;
 
@@ -30,16 +28,18 @@ public class LoggingRequestHandler implements RequestHandler {
         }
     }
 
-    public LoggingRequestHandler(int maxLogSize) {
+    public LoggingMiddleware(int maxLogSize) {
         this.maxLogSize = maxLogSize;
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
-        if (childRequestHandler == null) return null;
-        Response response = childRequestHandler.handleRequest(context, request, requestBodyReader);
-        if (context.data.containsKey(RoutingRequestHandler.ORIGINAL_PATH)) {
-            request.path = (String) context.data.get(RoutingRequestHandler.ORIGINAL_PATH);
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
+        Response response = context.response;
+        if (response == null) {
+            return null;
+        }
+        if (context.data.containsKey(Router.ORIGINAL_PATH)) {
+            request.path = (String) context.data.get(Router.ORIGINAL_PATH);
         }
         LogEntry logEntry = new LogEntry(new Date(), request, response);
         synchronized (logs) {

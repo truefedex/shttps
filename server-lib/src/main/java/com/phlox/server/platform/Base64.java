@@ -16,14 +16,20 @@ public class Base64 {
         }
     }
 
-    @SuppressWarnings("NewApi")
     static public String encodeToString(byte[] input) {
+        return encodeToString(input, false);
+    }
+
+    @SuppressWarnings("NewApi")
+    static public String encodeToString(byte[] input, boolean urlSafe) {
         //check if java.util.Base64 is available. If not, use android.util.Base64 by reflection
         try {
-            return java.util.Base64.getEncoder().encodeToString(input);
+            return (urlSafe ? java.util.Base64.getUrlEncoder() : java.util.Base64.getEncoder()).encodeToString(input);
         } catch (Throwable e) {
             try {
-                return (String) Class.forName("android.util.Base64").getMethod("encodeToString", byte[].class, int.class).invoke(null, input, 0);
+                return (String) Class.forName("android.util.Base64")
+                        .getMethod("encodeToString", byte[].class, int.class)
+                        .invoke(null, input, urlSafe ? 8 : 0);
             } catch (Throwable e1) {
                 throw new RuntimeException(e1);
             }

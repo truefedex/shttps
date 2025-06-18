@@ -113,6 +113,21 @@ a:visited {
   align-items: center;
 }
 
+.menu-button {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5em;
+  padding: 5px 10px;
+  cursor: pointer;
+  margin-right: 5px;
+  user-select: none;
+}
+
+.menu-button:hover {
+  color: #306477;
+}
+
 #path {
   font-size: 1.2em;
   padding: 10px 0 10px;
@@ -197,4 +212,56 @@ a:visited {
   display: none;
   left: 50%;
   transform: translateX(-50%);
+}
+
+/* Context menu specific styles for file browser */
+#context-menu {
+  background-color: #2d2d2d;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+#context-menu .menu-options .menu-option {
+  color: #e0e0e0;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+#context-menu .menu-options .menu-option:hover {
+  background: rgba(48, 100, 119, 0.3);
+  color: #fff;
+}
+
+#context-menu .menu-options .menu-divider {
+  background: #404040;
+  color: #888;
+  padding: 8px 12px;
+  margin: 4px 0;
+  font-size: 0.9em;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+#context-menu .menu-close-btn {
+  color: #e0e0e0;
+  transition: color 0.2s ease;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+#context-menu .menu-close-btn:hover {
+  color: #fff;
 }

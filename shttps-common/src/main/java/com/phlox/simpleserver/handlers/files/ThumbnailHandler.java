@@ -1,41 +1,42 @@
 package com.phlox.simpleserver.handlers.files;
 
-import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.HTTPUtils;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
-import com.phlox.server.utils.docfile.DocumentFileUtils;
 import com.phlox.simpleserver.SHTTPSApp;
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.auth.AuthManager;
+import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.util.Date;
 
-public class ThumbnailHandler implements RequestHandler {
-    private final SHTTPSConfig config;
+public class ThumbnailHandler extends BaseFileRequestHandler {
     private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
 
-    public ThumbnailHandler(SHTTPSConfig config) {
-        this.config = config;
+    public ThumbnailHandler(SHTTPSConfig config, AuthManager authManager) {
+        super(config, authManager);
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         if (!request.method.equals(Request.METHOD_GET)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
         }
+        User user = checkUser(context);
+        if (checkIsForbidden(user, User.FileSystemRights.READ)) return StandardResponses.FORBIDDEN("Insufficient rights");
         if (!request.queryParams.containsKey("path"))
             return StandardResponses.BAD_REQUEST();
         String path = request.queryParams.get("path");
         DocumentFile root = config.getRootDir();
-        final DocumentFile destFile = DocumentFileUtils.findChildByPath(root, path);
+        final DocumentFile destFile = DocumentFileUtils.findChildByPath(root, path, user);
         if ((destFile == null) || destFile.isDirectory()) return StandardResponses.NOT_FOUND();
 
         String ifModifiedSinceStr = request.headers.get(Request.HEADER_IF_MODIFIED_SINCE);

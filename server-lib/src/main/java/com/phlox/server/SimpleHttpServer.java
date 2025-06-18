@@ -4,7 +4,6 @@ import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.request.DefaultRequestBodyReader;
 import com.phlox.server.request.DefaultRequestHeadersParser;
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.request.RequestHeadersParser;
 import com.phlox.server.responses.Response;
@@ -130,7 +129,7 @@ public class SimpleHttpServer {
 	private void init() {
 		this.requestHandler = new RequestHandler() {
 			@Override
-			public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+			public Response handleRequest(RequestContext context, Request request) throws Exception {
 				return new TextResponse(this.getClass().getSimpleName() + "working!");
 			}
 		};
@@ -187,14 +186,16 @@ public class SimpleHttpServer {
 		} catch (IOException e) {
 			logger.e("Error while closing server socket", e);
 		}
-		for (Socket client : trackedSockets) {
-			try {
-				client.close();
-			} catch (IOException e) {
-				logger.e("Error while closing client socket", e);
+		synchronized (trackedSockets) {
+			for (Socket client : trackedSockets) {
+				try {
+					client.close();
+				} catch (IOException e) {
+					logger.e("Error while closing client socket", e);
+				}
 			}
+			trackedSockets.clear();
 		}
-		trackedSockets.clear();
 		Thread lthr = listenThread;
 		if (lthr != null && lthr.isAlive()) {
 			try {
@@ -223,7 +224,11 @@ public class SimpleHttpServer {
 				} catch (SocketTimeoutException e) {
 					continue;
 				} catch (Exception e) {
-					logger.stackTrace(e);
+					if (e instanceof  SocketException && "Socket closed".equals(e.getMessage())) {
+						logger.i("Server stopped listening");
+					} else {
+						logger.stackTrace(e);
+					}
                     if (!shouldStopListen) {
 						shouldStopListen = true;
 					}
@@ -294,21 +299,25 @@ public class SimpleHttpServer {
 	};
 
 	private void handleConnection(final Socket socket) {
-		trackedSockets.add(socket);
+		synchronized (trackedSockets) {
+			trackedSockets.add(socket);
+		}
+
 		Request request;
 		DefaultRequestBodyReader requestBodyReader = new DefaultRequestBodyReader();
 		try (socket;
 			 OutputStream output = new BufferedOutputStream(socket.getOutputStream());
 				InputStream input = new BufferedInputStream(socket.getInputStream())) {
+
 			socket.setSoTimeout(connectionKeepAliveTimeoutSeconds * 1000);
 			socket.setKeepAlive(true);
-			//socket.setTcpNoDelay(true);
 			boolean keepAlive = true;
+
 			while (keepAlive) {
 				request = requestHeadersParser.readRequestHeaders(input, socket.getInetAddress().getHostAddress());
 				keepAlive = !request.requestToCloseConnection;
 
-				RequestContext requestContext = new RequestContext(SimpleHttpServer.this);
+				RequestContext requestContext = new RequestContext(requestBodyReader);
 
 				if (callback != null) {
 					callback.onConnectionRequest(requestContext, request);
@@ -318,7 +327,7 @@ public class SimpleHttpServer {
 				Throwable errDuringHandle = null;
 				try {
 					requestBodyReader.bodyWasRead = false;
-					response = requestHandler.handleRequest(requestContext, request, requestBodyReader);
+					response = requestHandler.handleRequest(requestContext, request);
 				} catch (Throwable e) {
 					logger.stackTrace(e);
 					errDuringHandle = e;
@@ -380,7 +389,9 @@ public class SimpleHttpServer {
 				}
 			}
 		} finally {
-			trackedSockets.remove(socket);
+			synchronized (trackedSockets) {
+				trackedSockets.remove(socket);
+			}
 			if (callback != null) {
 				callback.onConnectionClosed(socket);
 			}
@@ -389,5 +400,11 @@ public class SimpleHttpServer {
 
 	public boolean isListenThreadRunning() {
 		return listenThreadRunning;
+	}
+
+	public boolean hasOpenConnections() {
+		synchronized (trackedSockets) {
+			return  !trackedSockets.isEmpty();
+		}
 	}
 }

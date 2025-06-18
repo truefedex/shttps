@@ -1,6 +1,7 @@
 package com.phlox.simpleserver.database.model;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 /**
  * Hides the platform-specific implementation of the database table data
@@ -25,6 +26,7 @@ public interface TableData extends AutoCloseable {
     Double getDouble(int columnIndex, Double defaultValue);
     Boolean getBoolean(int columnIndex, Boolean defaultValue);
 
-    JSONArray toJson();
+    JSONArray toJson(boolean rowsAsObjects);
     JSONArray currentRowToJson();
+    JSONObject currentRowToJsonObject();
 }

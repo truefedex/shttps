@@ -66,11 +66,13 @@ function showConstraintsPopup(columnId) {
                 </label>
                 <label class="checkbox-label">
                     <input type="checkbox" class="constraint-checkbox" data-constraint="NOT NULL" 
+                           onchange="handleNotNullChange(this, ${columnId})"
                            ${columnEntry.dataset.notNull === 'true' ? 'checked' : ''}>
                     Not Null
                 </label>
                 <label class="checkbox-label">
                     <input type="checkbox" class="constraint-checkbox" data-constraint="UNIQUE" 
+                           onchange="handleUniqueChange(this, ${columnId})"
                            ${columnEntry.dataset.unique === 'true' ? 'checked' : ''}>
                     Unique
                 </label>
@@ -132,6 +134,16 @@ function handlePrimaryKeyChange(checkbox, columnId) {
             }
         }
     }
+}
+
+function handleNotNullChange(checkbox, columnId) {
+    const columnEntry = document.getElementById(`column-${columnId}`);
+    columnEntry.dataset.notNull = checkbox.checked ? 'true' : 'false';
+}
+
+function handleUniqueChange(checkbox, columnId) {
+    const columnEntry = document.getElementById(`column-${columnId}`);
+    columnEntry.dataset.unique = checkbox.checked ? 'true' : 'false';
 }
 
 function handleAutoincrementChange(checkbox, columnId) {

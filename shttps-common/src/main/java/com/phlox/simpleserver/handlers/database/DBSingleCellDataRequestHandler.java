@@ -23,10 +23,10 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         if ((!request.method.equals(Request.METHOD_GET)) &&
                 !request.method.equals(Request.METHOD_POST)) {
-            return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
+            return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_POST});
         }
         Database database = this.database.get();
         if (database == null) {
@@ -36,7 +36,7 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
         if (request.method.equals(Request.METHOD_GET)) {
             params = request.queryParams;
         } else {
-            requestBodyReader.readRequestBody(request);
+            context.requestBodyReader.readRequestBody(request);
             params = request.urlEncodedPostParams;
         }
         String table = params.get("table");

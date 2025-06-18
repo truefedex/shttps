@@ -21,7 +21,7 @@ public class DBDeleteRequestHandler extends BaseDBRequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         if (!request.method.equals(Request.METHOD_DELETE)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_DELETE});
         }
@@ -33,7 +33,7 @@ public class DBDeleteRequestHandler extends BaseDBRequestHandler {
             return StandardResponses.FORBIDDEN("Database table data editing API is disabled");
         }
         //TODO: check if user has permission to delete data
-        requestBodyReader.readRequestBody(request);
+        context.requestBodyReader.readRequestBody(request);
         String table = request.urlEncodedPostParams.get("table");
         if (table == null) {
             return StandardResponses.BAD_REQUEST("table parameter is required");

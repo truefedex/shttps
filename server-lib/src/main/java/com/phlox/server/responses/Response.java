@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
 
 public class Response {
     public static final String TAG = Response.class.getSimpleName();
@@ -24,7 +25,7 @@ public class Response {
     public static final String HEADER_CONTENT_DISPOSITION = "Content-Disposition";
 
     public int code = 200;
-    public String phrase = "OK";
+    public String phrase = StandardResponses.PHRASE_OK;
     private long contentLength;
     protected final InputStream stream;
     public Map<String, String> headers = new HashMap<>();
@@ -85,7 +86,7 @@ public class Response {
 
     public void writeOut(OutputStream output) throws IOException {
         String header = makeResponseHeader();
-        output.write(header.getBytes());
+        output.write(header.getBytes(StandardCharsets.UTF_8));
 
         try (InputStream responseStream = getStream()) {
             if (responseStream == null) return;

@@ -238,4 +238,17 @@ public class RawDocumentFile extends DocumentFile {
         }
         return uri.substring(FILE_URI_PREFIX.length());
     }
+
+    @Override
+    public String getRelativePath(DocumentFile file) {
+        if (!isDirectory() || file == null) {
+            return null;
+        }
+        String baseUri = getUri();
+        String fileUri = file.getUri();
+        if (fileUri.startsWith(baseUri)) {
+            return fileUri.substring(baseUri.length());
+        }
+        return null;
+    }
 }

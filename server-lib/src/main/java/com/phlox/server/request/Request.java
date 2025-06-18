@@ -25,6 +25,7 @@ public class Request {
     public static final String HEADER_CONTENT_DISPOSITION = "content-disposition";
     public static final String HEADER_CONTENT_LENGTH = "content-length";
     public static final String HEADER_TRANSFER_ENCODING =  "transfer-encoding";
+    public static final String HEADER_COOKIE = "cookie";
     public static final String HEADER_HOST  =  "host";
     public static final String HEADER_CONNECTION  =  "connection";
     public static final String HEADER_USER_AGENT  =  "user-agent";
@@ -39,6 +40,7 @@ public class Request {
     public String method;
     public String path;
     public Map<String, String> queryParams = new HashMap<>();
+    public Map<String, String> cookies = new HashMap<>();
     public Map<String, String> urlEncodedPostParams = new HashMap<>();
     public String hostAddress;
     public Map<String, String> headers = new HashMap<>();

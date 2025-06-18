@@ -21,7 +21,7 @@ public class DefaultRequestHeadersParser implements RequestHeadersParser {
 
         String line;
         int i = 0;
-        while ((line = request.input.nextLine()) != null && !line.isEmpty()) {
+        while ((line = request.input.nextLine("UTF-8")) != null && !line.isEmpty()) {
             //handle first line of headers
             String[] parts;
             if (i == 0) {
@@ -69,6 +69,11 @@ public class DefaultRequestHeadersParser implements RequestHeadersParser {
         String transferEncodingHeader = request.headers.get(Request.HEADER_TRANSFER_ENCODING);
         if (Request.TRANSFER_ENCODING_CHUNKED.equalsIgnoreCase(transferEncodingHeader)) {
             throw new IllegalArgumentException("Chunked transfer encoding is not supported");
+        }
+
+        String cookies = request.headers.get(Request.HEADER_COOKIE);
+        if (cookies != null) {
+            request.cookies = HTTPUtils.parseCookieHeader(cookies);
         }
 
         String connectionHeader = request.headers.get(Request.HEADER_CONNECTION);

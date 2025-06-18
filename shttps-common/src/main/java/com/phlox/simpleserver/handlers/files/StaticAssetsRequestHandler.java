@@ -3,12 +3,12 @@ package com.phlox.simpleserver.handlers.files;
 import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.platform.MimeTypeMap;
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.HTTPUtils;
 import com.phlox.simpleserver.SHTTPSApp;
+import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 import com.phlox.simpleserver.utils.Utils;
 
@@ -18,15 +18,17 @@ import java.util.Date;
 public class StaticAssetsRequestHandler implements RequestHandler {
     private final String baseAssetsPath;
     private final String baseRequestPath;
+    private final SHTTPSConfig config;
     private final SHTTPSPlatformUtils platformUtils = SHTTPSApp.getInstance().platformUtils;
 
-    public StaticAssetsRequestHandler(String baseAssetsPath, String baseRequestPath) {
+    public StaticAssetsRequestHandler(String baseAssetsPath, String baseRequestPath, SHTTPSConfig config) {
         this.baseAssetsPath = baseAssetsPath;
         this.baseRequestPath = baseRequestPath;
+        this.config = config;
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         boolean isHead = request.method.equals(Request.METHOD_HEAD);
         if (!request.method.equals(Request.METHOD_GET) && !isHead) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_HEAD});
@@ -45,6 +47,12 @@ public class StaticAssetsRequestHandler implements RequestHandler {
         }
 
         destPath = baseAssetsPath + (destPath.startsWith("/") ? destPath : ("/" + destPath));
+        if (config.getRedirectToIndex() && destPath.endsWith("/")) {
+            String checkIndexPath = destPath + "index.html";
+            if (platformUtils.getAssetSize(checkIndexPath) != -1) {
+                destPath = checkIndexPath;
+            }
+        }
         long assetSize = platformUtils.getAssetSize(destPath);
         if (assetSize == -1) {
             return StandardResponses.NOT_FOUND();
@@ -85,28 +93,5 @@ public class StaticAssetsRequestHandler implements RequestHandler {
         response.headers.put(Response.HEADER_LAST_MODIFIED, HTTPUtils.getHTTPDateFormat().format(new Date( assetLastModified )));
 
         return response;
-    }
-
-    @Override
-    public boolean canHandle(String path, String method) {
-        boolean isHead = method.equals(Request.METHOD_HEAD);
-        if (!method.equals(Request.METHOD_GET) && !isHead) {
-            return false;
-        }
-        String destPath = path;
-        if (baseRequestPath != null) {
-            if (!destPath.startsWith(baseRequestPath)) {
-                return false;
-            }
-            destPath = destPath.substring(baseRequestPath.length());
-        }
-        // Check if the path contains ".." to prevent directory traversal
-        if (Utils.contains(destPath.split("/"), "..")) {
-            return false;
-        }
-
-        destPath = baseAssetsPath + (destPath.startsWith("/") ? destPath : ("/" + destPath));
-        long assetSize = platformUtils.getAssetSize(destPath);
-        return assetSize != -1;
     }
 }

@@ -14,7 +14,7 @@ class RadixNode<T> {
 }
 
 public class RadixTree<T> {
-    private final RadixNode<T> root = new RadixNode<>("");
+    private RadixNode<T> root = new RadixNode<>("");
 
     public void put(String key, T value) {
         RadixNode<T> current = root;
@@ -53,6 +53,10 @@ public class RadixTree<T> {
             }
         }
         current.value = value;
+    }
+
+    public void clear() {
+        root = new RadixNode<T>("");
     }
 
     public T findLongestPrefix(String key) {

@@ -1,6 +1,7 @@
 package com.phlox.simpleserver.handlers;
 
-import com.phlox.server.handlers.RoutingRequestHandler;
+import com.phlox.server.handlers.RedirectsMiddleware;
+import com.phlox.server.handlers.Router;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -12,15 +13,9 @@ public class HandlersUtils {
     private HandlersUtils() {
     }
 
-    public static JSONObject ruleToJson(RoutingRequestHandler.RedirectRule rule) {
+    public static JSONObject ruleToJson(RedirectsMiddleware.RedirectRule rule) {
         JSONObject json = new JSONObject();
         json.put("enabled", rule.enabled);
-        json.put("mode", rule.mode.name());
-        JSONArray flags = new JSONArray();
-        for (RoutingRequestHandler.RedirectFlags flag : rule.flags) {
-            flags.put(flag.name());
-        }
-        json.put("flags", flags);
         json.put("code", rule.code);
         json.put("from", rule.from);
         json.put("to", rule.to);
@@ -29,23 +24,15 @@ public class HandlersUtils {
         return json;
     }
 
-    public static RoutingRequestHandler.RedirectRule ruleFromJson(JSONObject json) {
+    public static RedirectsMiddleware.RedirectRule ruleFromJson(JSONObject json) {
         boolean enabled = json.optBoolean("enabled", true);
-        RoutingRequestHandler.RedirectMode mode = RoutingRequestHandler.RedirectMode.valueOf(json.optString("mode", RoutingRequestHandler.RedirectMode.INTERNAL.name()));
-        JSONArray flags = json.optJSONArray("flags");
-        Set<RoutingRequestHandler.RedirectFlags> flagsSet = new HashSet<>();
-        if (flags != null) {
-            for (int i = 0; i < flags.length(); i++) {
-                flagsSet.add(RoutingRequestHandler.RedirectFlags.valueOf(flags.getString(i)));
-            }
-        }
         int code = json.optInt("code", 301);
         String from = json.optString("from", "");
         String to = json.optString("to", "");
         String comment = json.optString("comment", "");
         boolean shttpsInternal = json.optBoolean("shttps_internal", false);
-        RoutingRequestHandler.RedirectRule rule = new RoutingRequestHandler.RedirectRule(
-                from, to, code, mode, flagsSet.toArray(new RoutingRequestHandler.RedirectFlags[0]), enabled, comment);
+        RedirectsMiddleware.RedirectRule rule = new RedirectsMiddleware.RedirectRule(
+                from, to, code, enabled, comment);
         rule.shttpsInternal = shttpsInternal;
         return rule;
     }

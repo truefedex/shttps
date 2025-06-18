@@ -4,9 +4,10 @@ import com.phlox.server.platform.MimeTypeMap;
 import com.phlox.server.request.DefaultBinaryDataConsumer;
 import com.phlox.server.request.Request;
 import com.phlox.server.utils.docfile.DocumentFile;
-import com.phlox.server.utils.docfile.DocumentFileUtils;
 import com.phlox.simpleserver.SHTTPSApp;
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.Utils;
 
 import java.io.BufferedOutputStream;
@@ -15,10 +16,12 @@ import java.io.OutputStream;
 import java.util.Map;
 
 public class DirectUploadRequestDataConsumer extends DefaultBinaryDataConsumer {
+    private final User user;
     private SHTTPSConfig config;
 
-    public DirectUploadRequestDataConsumer(SHTTPSConfig config) {
+    public DirectUploadRequestDataConsumer(SHTTPSConfig config, User user) {
         this.config = config;
+        this.user = user;
     }
 
     @Override
@@ -36,10 +39,10 @@ public class DirectUploadRequestDataConsumer extends DefaultBinaryDataConsumer {
                 fullDestPath = destPath + "/" + fileName.substring(0, pathSepLastIndex);
                 fileName = fileName.substring(pathSepLastIndex + 1);
             }
-            DocumentFile uploadDir = DocumentFileUtils.findChildByPath(root, fullDestPath);
+            DocumentFile uploadDir = DocumentFileUtils.findChildByPath(root, fullDestPath, user);
             if (uploadDir == null) {
                 //try to find parent dir and create missing dirs
-                DocumentFile parent = DocumentFileUtils.findChildByPath(root, destPath);
+                DocumentFile parent = DocumentFileUtils.findChildByPath(root, destPath, user);
                 if (parent == null) return null;
                 String[] parts = fullDestPath.substring(destPath.length() + 1).split("/");
                 for (String part : parts) {

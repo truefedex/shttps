@@ -110,12 +110,18 @@ public class TableDataAndroid implements TableData {
     }
 
     @Override
-    public JSONArray toJson() {
+    public JSONArray toJson(boolean rowsAsObjects) {
         JSONArray json = new JSONArray();
         if (cursor.moveToFirst()) {
-            do {
-                json.put(currentRowToJson());
-            } while (cursor.moveToNext());
+            if (rowsAsObjects) {
+                do {
+                    json.put(currentRowToJsonObject());
+                } while (cursor.moveToNext());
+            } else {
+                do {
+                    json.put(currentRowToJson());
+                } while (cursor.moveToNext());
+            }
         }
         return json;
     }
@@ -125,36 +131,56 @@ public class TableDataAndroid implements TableData {
         JSONArray row = new JSONArray();
         int columnCount = cursor.getColumnCount();
         for (int i = 0; i < columnCount; i++) {
-            if (cursor.isNull(i)) {
-                row.put(null);
-                continue;
-            }
-            switch (cursor.getType(i)) {
-                case Cursor.FIELD_TYPE_INTEGER:
-                    row.put(cursor.getLong(i));
-                    break;
-                case Cursor.FIELD_TYPE_FLOAT:
-                    try {
-                        row.put(cursor.getDouble(i));
-                    } catch (JSONException e) {
-                        logger.e("Error converting column " + cursor.getColumnName(i) + " to double", e);
-                        row.put(cursor.getString(i));
-                    }
-                    break;
-                case Cursor.FIELD_TYPE_BLOB:
-                    JSONObject blobJson = new JSONObject();
-                    try {
-                        blobJson.put("type", "blob");
-                    } catch (JSONException ignored) {}
-                    row.put(blobJson);
-                    break;
-                case Cursor.FIELD_TYPE_NULL:
-                    row.put(null);
-                    break;
-                default:
-                    row.put(cursor.getString(i));
+            row.put(getColumnValueAsJson(i));
+        }
+        return row;
+    }
+
+    @Override
+    public JSONObject currentRowToJsonObject() {
+        JSONObject row = new JSONObject();
+        int columnCount = cursor.getColumnCount();
+        for (int i = 0; i < columnCount; i++) {
+            String columnName = cursor.getColumnName(i);
+            try {
+                row.put(columnName, getColumnValueAsJson(i));
+            } catch (JSONException e) {
+                logger.e("Error adding column " + columnName + " to JSON object", e);
             }
         }
         return row;
+    }
+
+    /**
+     * Helper method to convert a column value to a JSON-compatible value
+     * @param columnIndex The column index
+     * @return The column value as a JSON-compatible object
+     */
+    private Object getColumnValueAsJson(int columnIndex) {
+        if (cursor.isNull(columnIndex)) {
+            return JSONObject.NULL;
+        }
+        
+        switch (cursor.getType(columnIndex)) {
+            case Cursor.FIELD_TYPE_INTEGER:
+                return cursor.getLong(columnIndex);
+            case Cursor.FIELD_TYPE_FLOAT:
+                try {
+                    return cursor.getDouble(columnIndex);
+                } catch (Exception e) {
+                    logger.e("Error converting column " + cursor.getColumnName(columnIndex) + " to double", e);
+                    return cursor.getString(columnIndex);
+                }
+            case Cursor.FIELD_TYPE_BLOB:
+                JSONObject blobJson = new JSONObject();
+                try {
+                    blobJson.put("type", "blob");
+                } catch (JSONException ignored) {}
+                return blobJson;
+            case Cursor.FIELD_TYPE_NULL:
+                return JSONObject.NULL;
+            default:
+                return cursor.getString(columnIndex);
+        }
     }
 }

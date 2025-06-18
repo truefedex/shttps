@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.phlox.server'
-version = '1.0'
+version = '1.16.0'
 
 mainClassName = "com.phlox.server.Main"
 
@@ -28,9 +28,6 @@ dependencies {
     implementation 'org.xerial:sqlite-jdbc:3.47.1.0'
     implementation 'org.slf4j:slf4j-simple:2.0.16'
     implementation 'info.picocli:picocli:4.7.6'
-    implementation 'info.picocli:picocli-shell-jline3:4.7.6'
-    implementation 'org.bouncycastle:bcprov-jdk15on:1.70'
-    implementation 'org.bouncycastle:bcpkix-jdk15on:1.70'
     annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
@@ -54,6 +51,17 @@ jar {
 
 compileJava {
     options.compilerArgs += ["-Aproject=${project.group}/${project.name}"]
+}
+
+shadowJar {
+    // Include everything by default
+    from(project.sourceSets.main.output)
+
+    // Remove native libraries for platforms other than Windows and Linux
+    exclude 'org/sqlite/native/FreeBSD/**'
+    exclude 'org/sqlite/native/Linux-Android/**'
+    //exclude 'org/sqlite/native/Linux-Musl/**'
+    exclude 'org/sqlite/native/Mac/**'
 }
 
 test {

@@ -5,9 +5,14 @@ import com.phlox.server.utils.docfile.DocumentFile;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -36,6 +41,105 @@ public final class HTTPUtils {
                 }
             }
         }
+    }
+
+    public static Map<String, String> parseCookieHeader(String cookieHeader) {
+        Map<String, String> cookies = new LinkedHashMap<>();
+        if (cookieHeader == null || cookieHeader.isEmpty()) {
+            return cookies;
+        }
+
+        String[] pairs = cookieHeader.split(";");
+        for (String pair : pairs) {
+            String[] parts = pair.split("=", 2);
+            if (parts.length == 2) {
+                String name = parts[0].trim();
+                String rawValue = parts[1].trim();
+                String decodedValue;
+
+                try {
+                    decodedValue = URLDecoder.decode(rawValue, StandardCharsets.UTF_8.name());
+                } catch (Exception e) {
+                    decodedValue = rawValue;
+                }
+
+                cookies.put(name, decodedValue);
+            }
+        }
+
+        return cookies;
+    }
+
+    public static String buildSetCookieHeader(String name, String value, Map<String, Object> options) {
+        if (name == null || value == null || name.isEmpty()) {
+            throw new IllegalArgumentException("Cookie name and value must be non-null and name must be non-empty");
+        }
+
+        StringBuilder sb = new StringBuilder();
+        try {
+            sb.append(name).append("=")
+                    .append(URLEncoder.encode(value, StandardCharsets.UTF_8.name()));
+        } catch (UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
+
+        if (options != null) {
+            for (Map.Entry<String, Object> entry : options.entrySet()) {
+                String key = entry.getKey();
+                Object val = entry.getValue();
+
+                switch (key.toLowerCase()) {
+                    case "expires":
+                        if (val instanceof Date) {
+                            SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US);
+                            sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
+                            sb.append("; Expires=").append(sdf.format((Date) val));
+                        }
+                        break;
+
+                    case "max-age":
+                        if (val instanceof Number) {
+                            sb.append("; Max-Age=").append(((Number) val).longValue());
+                        }
+                        break;
+
+                    case "domain":
+                        sb.append("; Domain=").append(val.toString());
+                        break;
+
+                    case "path":
+                        sb.append("; Path=").append(val.toString());
+                        break;
+
+                    case "secure":
+                        if (Boolean.TRUE.equals(val)) {
+                            sb.append("; Secure");
+                        }
+                        break;
+
+                    case "httponly":
+                        if (Boolean.TRUE.equals(val)) {
+                            sb.append("; HttpOnly");
+                        }
+                        break;
+
+                    case "samesite":
+                        String samesite = val.toString();
+                        if (samesite.equalsIgnoreCase("Strict") ||
+                                samesite.equalsIgnoreCase("Lax") ||
+                                samesite.equalsIgnoreCase("None")) {
+                            sb.append("; SameSite=").append(samesite);
+                        }
+                        break;
+
+                    default:
+                        // unknown attribute - ignore
+                        break;
+                }
+            }
+        }
+
+        return sb.toString();
     }
 
     public static Map<String, String> parseHttpHeaders(String headersString) {

@@ -6,11 +6,12 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.text.TextUtils;
 
-import com.phlox.server.handlers.RoutingRequestHandler;
+import com.phlox.server.handlers.RedirectsMiddleware;
 import com.phlox.server.platform.Base64;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.handlers.HandlersUtils;
+import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.utils.KeyStoreCrypt;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 import com.phlox.simpleserver.utils.docfile.MediaStoreFileCollectionFile;
@@ -21,10 +22,10 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.security.KeyStore;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -120,18 +121,8 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     }
 
     @Override
-    public void setUseBasicAuth(boolean value) {
-        prefs.edit().putBoolean(KEY_USE_BASIC_AUTH, value).apply();
-    }
-
-    @Override
     public String getUsername() {
         return prefs.getString(KEY_USERNAME, "");
-    }
-
-    @Override
-    public void setUsername(String value) {
-        prefs.edit().putString(KEY_USERNAME, value).apply();
     }
 
     @Override
@@ -147,16 +138,6 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
         } catch (Exception e) {
             logger.e("Failed to get password", e);
             return "";
-        }
-    }
-
-    @Override
-    public void setPassword(String value) {
-        try {
-            String encrypted = keyStoreCrypt.encrypt(value, ALIAS_CONFIG_PREFIX + KEY_PASSWORD);
-            prefs.edit().putString(KEY_PASSWORD, encrypted).apply();
-        } catch (Exception e) {
-            logger.e("Failed to set password", e);
         }
     }
 
@@ -355,16 +336,16 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     }
 
     @Override
-    public List<RoutingRequestHandler.RedirectRule> getRedirectRules() {
+    public List<RedirectsMiddleware.RedirectRule> getRedirectRules() {
         //they stored as array of strings where each string is a serialized to JSON RedirectRule
         String jsArray = prefs.getString(KEY_REDIRECT_RULES, null);
         if (jsArray == null) return null;
-        List<RoutingRequestHandler.RedirectRule> result = new ArrayList<>();
+        List<RedirectsMiddleware.RedirectRule> result = new ArrayList<>();
         try {
             JSONArray array = new JSONArray(jsArray);
             for (int i = 0; i < array.length(); i++) {
                 JSONObject json = array.getJSONObject(i);
-                RoutingRequestHandler.RedirectRule rule = HandlersUtils.ruleFromJson(json);
+                RedirectsMiddleware.RedirectRule rule = HandlersUtils.ruleFromJson(json);
                 result.add(rule);
             }
             return result;
@@ -374,17 +355,50 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     }
 
     @Override
-    public void setRedirectRules(List<RoutingRequestHandler.RedirectRule> value) {
+    public void setRedirectRules(List<RedirectsMiddleware.RedirectRule> value) {
         if (value == null) {
             prefs.edit().remove(KEY_REDIRECT_RULES).apply();
             return;
         }
         JSONArray array = new JSONArray();
-        for (RoutingRequestHandler.RedirectRule rule : value) {
+        for (RedirectsMiddleware.RedirectRule rule : value) {
             JSONObject json = HandlersUtils.ruleToJson(rule);
             array.put(json);
         }
         prefs.edit().putString(KEY_REDIRECT_RULES, array.toString()).apply();
+    }
+
+    @Override
+    public List<User> getUsers() {
+        Set<String> usersStrSet = prefs.getStringSet(KEY_USERS, new HashSet<>());
+        List<User> users = new ArrayList<>();
+        for (String userStr : usersStrSet) {
+            try {
+                users.add(User.deserialize(new JSONObject(userStr)));
+            } catch (JSONException e) {
+                logger.e("Unable to parse User from JSON", e);
+            }
+        }
+        return users;
+    }
+
+    @Override
+    public void setUsers(Collection<User> users) {
+        Set<String> usersStrSet = new HashSet<>();
+        for (User user : users) {
+            usersStrSet.add(user.serialize().toString());
+        }
+        prefs.edit().putStringSet(KEY_USERS, usersStrSet).apply();
+    }
+
+    @Override
+    public AuthMode getAuthMode() {
+        return AuthMode.valueOf(prefs.getString(KEY_AUTH_MODE, AuthMode.NONE.name()));
+    }
+
+    @Override
+    public void setAuthMode(AuthMode value) {
+        prefs.edit().putString(KEY_AUTH_MODE, value.name()).apply();
     }
 
     @Override

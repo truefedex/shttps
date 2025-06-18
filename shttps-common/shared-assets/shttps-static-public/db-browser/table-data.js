@@ -563,6 +563,7 @@ function prepareColumnInput(column, container, editedRow, forNewRow, focusedColu
     }
 
     let inputElement;
+    let value = editedRow[column.name].value;
     if (editedRow[column.name].useNull) {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
@@ -590,52 +591,56 @@ function prepareColumnInput(column, container, editedRow, forNewRow, focusedColu
         inputElement = document.createElement('textarea');
         inputElement.className = 'input-field';
         inputElement.name = column.name;
-        inputElement.value = editedRow[column.name].value;
+        inputElement.value = value ? value : '';
     } else if (column.hints.internalType === 'INTEGER') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'number';
         inputElement.name = column.name;
-        inputElement.value = editedRow[column.name].value;
+        inputElement.value = value ? value : 0;
     } else if (column.hints.internalType === 'REAL') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'number';
         inputElement.step = 'any';
         inputElement.name = column.name;
-        inputElement.value = editedRow[column.name].value;
+        inputElement.value = value ? value : 0;
     } else if (column.hints.internalType === 'BOOLEAN') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'checkbox';
         inputElement.name = column.name;
-        inputElement.checked = editedRow[column.name].value;
+        inputElement.checked = value ? value : false;
     } else if (column.hints.internalType === 'DATE') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'date';
         inputElement.name = column.name;
-        inputElement.value = editedRow[column.name].value;
+        inputElement.value = value ? value : '';
     } else if (column.hints.internalType === 'TIME') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'time';
         inputElement.step = '1';
         inputElement.name = column.name;
-        inputElement.value = editedRow[column.name].value;
+        inputElement.value = value ? value : '';
     } else if (column.hints.internalType === 'DATETIME') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'datetime-local';
         inputElement.name = column.name;
-        inputElement.value = editedRow[column.name].value;
+        inputElement.value = value ? value : '';
     } else if (column.hints.internalType === 'UNIX_TIMESTAMP') {
         inputElement = document.createElement('input');
         inputElement.className = 'input-field';
         inputElement.type = 'datetime-local';
         inputElement.name = column.name;
-        let date = new Date(editedRow[column.name].value * 1000);
-        inputElement.value = date.toISOString().slice(0, 16);
+        try {
+            let date = new Date(editedRow[column.name].value * 1000);
+            inputElement.value = date.toISOString().slice(0, 16);
+        } catch (error) {
+            inputElement.value = '';
+        }
     } else if (column.hints.internalType === 'BLOB') {
         let valueElement = document.createElement('div');
         let currentValue = 'Current value: ';
@@ -679,7 +684,7 @@ function prepareColumnInput(column, container, editedRow, forNewRow, focusedColu
         inputElement.className = 'input-field';
         inputElement.type = 'text';
         inputElement.name = column.name;
-        inputElement.value = editedRow[column.name].value;
+        inputElement.value = value ? value : '';
     }
     container.appendChild(inputElement);
 

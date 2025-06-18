@@ -165,7 +165,7 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
                 }
                 String column = columns[i];
                 if (DBUtils.isValidColumnName(column)) {
-                    sql.append(column);
+                    sql.append("\"").append(column).append("\"");
                 } else {
                     throw new SecurityException("Invalid column name: " + column);
                 }
@@ -220,8 +220,8 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
         }
 
         StringBuilder infoSql = new StringBuilder("SELECT typeof(")
-                .append(column).append("), length(")
-                .append(column).append(") FROM ").append(table);
+                .append("\"").append(column).append("\"").append("), length(")
+                .append("\"").append(column).append("\"").append(") FROM ").append(table);
         String where = null;
         if (filters != null && !filters.isEmpty()) {
             where = DBUtils.buildSimpleWhereStatement(filters.toArray(new String[0]));

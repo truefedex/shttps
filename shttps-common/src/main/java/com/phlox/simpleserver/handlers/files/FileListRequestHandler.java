@@ -1,16 +1,16 @@
 package com.phlox.simpleserver.handlers.files;
 
-import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.responses.TextResponse;
 import com.phlox.server.utils.docfile.DocumentFile;
-import com.phlox.server.utils.docfile.DocumentFileUtils;
 import com.phlox.simpleserver.SHTTPSApp;
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.auth.AuthManager;
+import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.Utils;
 
 import org.json.JSONArray;
@@ -21,27 +21,25 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 
-public class FileListRequestHandler implements RequestHandler {
-    private final SHTTPSConfig config;
+public class FileListRequestHandler extends BaseFileRequestHandler {
 
-    public FileListRequestHandler(SHTTPSConfig config) {
-        this.config = config;
+    public FileListRequestHandler(SHTTPSConfig config, AuthManager authManager) {
+        super(config, authManager);
     }
 
-    public static JSONArray prepareFileListJson(String path, String sort, String sortReversedParam) throws JSONException {
-        SHTTPSConfig config = SHTTPSApp.getInstance().config;
+    public static JSONArray prepareFileListJson(String path, String sort, String sortReversedParam, User user, SHTTPSConfig config) throws JSONException {
         if (sort == null) {
             sort = "default";
         }
         boolean sortReversed = "true".equals(sortReversedParam);
         final int sortMultiplier = sortReversed ? -1 : 1;
         DocumentFile root = config.getRootDir();
-        final DocumentFile destFile = DocumentFileUtils.findChildByPath(root, path);
+        final DocumentFile destFile = DocumentFileUtils.findChildByPath(root, path, user);
         if ((destFile == null) || !destFile.isDirectory()) return null;
         DocumentFile[] files = destFile.listFiles();
         JSONArray json = new JSONArray();
 
-        if (!destFile.equals(root)) {
+        if (!"/".equals(path)) {
             JSONObject jsonFile = new JSONObject();
             jsonFile.put("name", "..");
             jsonFile.put("directory", true);
@@ -143,10 +141,12 @@ public class FileListRequestHandler implements RequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         if (!request.method.equals(Request.METHOD_GET)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
         }
+        User user = checkUser(context);
+        if (checkIsForbidden(user, User.FileSystemRights.LIST_CONTENTS)) return StandardResponses.FORBIDDEN("Insufficient rights");
         String path = request.queryParams.get("path");
         if (path == null) {
             path = "/";
@@ -157,12 +157,12 @@ public class FileListRequestHandler implements RequestHandler {
         String sort = request.queryParams.get("sort");
         String sortReversedParam = request.queryParams.get("sort-reversed");
 
-        JSONArray json = prepareFileListJson(path, sort, sortReversedParam);
+        JSONArray json = prepareFileListJson(path, sort, sortReversedParam, user, config);
 
         if (json == null) {
             return StandardResponses.NOT_FOUND();
         }
 
-        return new TextResponse(json.toString(), "application/json");
+        return new TextResponse(json.toString(), "application/json; charset=utf-8");
     }
 }

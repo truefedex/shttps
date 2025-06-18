@@ -19,7 +19,6 @@ public class ServerService extends Service {
     public static volatile Runnable onStartStopListener = null;
 
     private final SHTTPSApp app = SHTTPSApp.getInstance();
-    private SimpleHttpServer server;
 
     public ServerService() {
     }
@@ -53,7 +52,7 @@ public class ServerService extends Service {
         startForeground(ONGOING_NOTIFICATION_ID, notification);
 
         try {
-            server = app.startServer();
+            app.startServer();
         } catch (Exception e) {
             e.printStackTrace();
             Toast.makeText(this.getApplicationContext(), getString(R.string.errorf, e), Toast.LENGTH_LONG).show();

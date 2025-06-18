@@ -23,7 +23,7 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request, RequestBodyReader requestBodyReader) throws Exception {
+    public Response handleRequest(RequestContext context, Request request) throws Exception {
         if (!request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_POST});
         }
@@ -41,7 +41,7 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
                 Integer.parseInt(request.queryParams.get("offset")) : 0;
         boolean includeColumnNames = request.queryParams.containsKey("include-names") &&
                 Boolean.parseBoolean(request.queryParams.get("include-names"));
-        requestBodyReader.readRequestBody(request);
+        context.requestBodyReader.readRequestBody(request);
         String sql = new String(request.body.asBytes(), StandardCharsets.UTF_8);
         try {
             TableData result = database.execute(sql);
