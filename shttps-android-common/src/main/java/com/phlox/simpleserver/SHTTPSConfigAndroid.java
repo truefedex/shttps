@@ -168,7 +168,7 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
         try {
             byte[] cert = Base64.decode(encoded);
             KeyStore ks = KeyStore.getInstance("PKCS12");
-            ks.load(new ByteArrayInputStream(cert), getTLSCertPassword().toCharArray());
+            ks.load(new ByteArrayInputStream(cert), getTLSKeystorePassword().toCharArray());
             return ks;
         } catch (Exception e) {
             logger.e("Failed to get TLS cert", e);
@@ -179,7 +179,7 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     @Override
     public void setTLSCert(byte[] value) {
         if (value == null) {
-            prefs.edit().remove(KEY_TLS_CERT).remove(KEY_TLS_CERT_PASS).apply();
+            prefs.edit().remove(KEY_TLS_CERT).remove(KEY_TLS_CERT_KEYSTORE_PASS).apply();
             return;
         }
         try {
@@ -191,12 +191,12 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     }
 
     @Override
-    public String getTLSCertPassword() {
-        String encrypted = prefs.getString(KEY_TLS_CERT_PASS, null);
+    public String getTLSKeystorePassword() {
+        String encrypted = prefs.getString(KEY_TLS_CERT_KEYSTORE_PASS, null);
         if (encrypted == null) return null;
         try {
-            if (keyStoreCrypt.getKeyStore().containsAlias(ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_PASS)) {
-                return keyStoreCrypt.decrypt(encrypted, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_PASS);
+            if (keyStoreCrypt.getKeyStore().containsAlias(ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEYSTORE_PASS)) {
+                return keyStoreCrypt.decrypt(encrypted, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEYSTORE_PASS);
             } else {
                 throw new Exception("Key alias not found");
             }
@@ -206,23 +206,45 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     }
 
     @Override
-    public void setTLSCertPassword(String value) {
-        /* old way
-        try {
-            String encrypted = AESCrypt.encrypt(value);
-            prefs.edit().putString(KEY_TLS_CERT_PASS, encrypted).apply();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }*/
+    public void setTLSKeystorePassword(String value) {
         if (value == null) {
-            prefs.edit().remove(KEY_TLS_CERT_PASS).apply();
+            prefs.edit().remove(KEY_TLS_CERT_KEYSTORE_PASS).apply();
             return;
         }
         try {
-            String encrypted = keyStoreCrypt.encrypt(value, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_PASS);
-            prefs.edit().putString(KEY_TLS_CERT_PASS, encrypted).apply();
+            String encrypted = keyStoreCrypt.encrypt(value, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEYSTORE_PASS);
+            prefs.edit().putString(KEY_TLS_CERT_KEYSTORE_PASS, encrypted).apply();
         } catch (Exception e) {
             logger.e("Failed to set TLS cert password", e);
+        }
+    }
+
+    @Override
+    public String getTLSKeyPassword() {
+        String encrypted = prefs.getString(KEY_TLS_CERT_KEY_PASS, null);
+        if (encrypted == null) return null;
+        try {
+            if (keyStoreCrypt.getKeyStore().containsAlias(ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEY_PASS)) {
+                return keyStoreCrypt.decrypt(encrypted, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEY_PASS);
+            } else {
+                throw new Exception("Key alias not found");
+            }
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    @Override
+    public void setTLSKeyPassword(String value) {
+        if (value == null) {
+            prefs.edit().remove(KEY_TLS_CERT_KEY_PASS).apply();
+            return;
+        }
+        try {
+            String encrypted = keyStoreCrypt.encrypt(value, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEY_PASS);
+            prefs.edit().putString(KEY_TLS_CERT_KEY_PASS, encrypted).apply();
+        } catch (Exception e) {
+            logger.e("Failed to set TLS cert key password", e);
         }
     }
 
@@ -409,6 +431,26 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     @Override
     public void setInt(String key, int value) {
         prefs.edit().putInt(key, value).apply();
+    }
+
+    @Override
+    public boolean getBoolean(String key, boolean defaultValue) {
+        return prefs.getBoolean(key, defaultValue);
+    }
+
+    @Override
+    public void setBoolean(String key, boolean value) {
+        prefs.edit().putBoolean(key, value).apply();
+    }
+
+    @Override
+    public String getString(String key, String defaultValue) {
+        return prefs.getString(key, defaultValue);
+    }
+
+    @Override
+    public void setString(String key, String value) {
+        prefs.edit().putString(key, value).apply();
     }
 
     // Android-only settings. This is historically managed by Android App and not SHTTPS itself

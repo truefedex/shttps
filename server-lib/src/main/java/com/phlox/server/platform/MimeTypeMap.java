@@ -209,6 +209,8 @@ public class MimeTypeMap {
         "application/x-xcf", "xcf",
         "application/x-xfig", "fig",
         "application/xhtml+xml", "xhtml",
+        "application/wasm", "wasm",
+        "application/manifest+json", "webmanifest",
         "audio/3gpp", "3gpp",
         "audio/basic", "snd",
         "audio/midi", "mid",
@@ -270,6 +272,10 @@ public class MimeTypeMap {
         "image/x-xbitmap", "xbm",
         "image/x-xpixmap", "xpm",
         "image/x-xwindowdump", "xwd",
+        "image/webp", "webp",
+        "image/avif", "avif",
+        "image/heif", "heif",
+        "image/heic", "heic",
         "model/iges", "igs",
         "model/iges", "iges",
         "model/mesh", "msh",
@@ -337,6 +343,8 @@ public class MimeTypeMap {
         "video/mpeg", "mpg",
         "video/mpeg", "mpe",
         "video/mp4", "mp4",
+        "video/mp4", "f4v",
+        "video/mp4", "m4s",
         "video/mpeg", "VOB",
         "video/quicktime", "qt",
         "video/quicktime", "mov",
@@ -352,11 +360,19 @@ public class MimeTypeMap {
         "video/x-ms-wvx", "wvx",
         "video/x-msvideo", "avi",
         "video/x-sgi-movie", "movie",
+        "video/webm", "webm",
         "x-conference/x-cooltalk", "ice",
         "x-epoc/x-sisx-app", "sisx",
 
         "text/javascript" , "js",
-        "application/json" , "json"
+        "text/javascript" , "mjs",
+        "application/json" , "json",
+        "application/json" , "map",
+
+        "font/woff", "woff",
+        "font/woff2", "woff2",
+        "font/ttf", "ttf",
+        "font/otf", "otf"
     };
 
     private final HashMap<String, String> EXTENSION_TO_MIME_TYPE_MAP = new HashMap<>();

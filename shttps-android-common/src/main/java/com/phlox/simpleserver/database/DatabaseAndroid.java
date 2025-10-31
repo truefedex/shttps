@@ -4,7 +4,6 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
-import android.database.sqlite.SQLiteOpenHelper;
 import android.util.Base64;
 
 import com.phlox.simpleserver.database.model.Column;
@@ -12,6 +11,7 @@ import com.phlox.simpleserver.database.model.Table;
 import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.database.model.TableDataAndroid;
 import com.phlox.simpleserver.database.utils.DBUtils;
+import com.phlox.simpleserver.utils.Holder;
 
 import org.json.JSONObject;
 
@@ -23,13 +23,24 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
+public class DatabaseAndroid implements Database {
     private final String path;
+    private final SQLiteDatabase database;
+    private final ExecutorService writeExecutor;
+    private final SimpleDatabaseOperations simpleDBOperations;
 
     public DatabaseAndroid(Context context, File directory, String name) {
-        super(new SHTTPSDatabaseContext(context, directory), name, null, 1);
-        this.path = new File(directory, name).getAbsolutePath();
+        File dbFile = new File(directory, name);
+        this.path = dbFile.getAbsolutePath();
+        this.database = SQLiteDatabase.openDatabase(path, null,
+                SQLiteDatabase.CREATE_IF_NECESSARY |
+                        SQLiteDatabase.OPEN_READWRITE |
+                        SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING);
+        this.writeExecutor = Executors.newSingleThreadExecutor();
+        this.simpleDBOperations = new SimpleDatabaseOperations();
     }
 
     @Override
@@ -39,20 +50,22 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
 
     @Override
     public Map<String, Object> getStatus() throws IOException {
-        SQLiteDatabase database = getReadableDatabase();
         Map<String, Object> status = new HashMap<>();
         status.put("path", path);
         status.put("size", new File(path).length());
         Cursor cursor = database.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name!='android_metadata' AND name NOT LIKE 'sqlite_%'", null);
         status.put("tablesCount", cursor.getCount());
         cursor.close();
-        database.close();
         return status;
     }
 
     @Override
+    public void close() throws Exception {
+        database.close();
+    }
+
+    @Override
     public Table[] getTables() throws Exception {
-        SQLiteDatabase database = getReadableDatabase();
         //get indexes and foreign keys
         Cursor cursorIndexes = database.rawQuery("SELECT name, tbl_name, sql FROM sqlite_master WHERE type='index'", null);
         Map<String, String> indexes = new HashMap<>();
@@ -87,7 +100,7 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
             "    WHEN sql LIKE '%WITHOUT ROWID%' THEN 0\n" +
             "    ELSE 1\n" +
             "END AS has_rowid, sql\n" +
-            "FROM sqlite_master WHERE type='table' AND name!='android_metadata' AND name NOT LIKE 'sqlite_%'\n",
+            "FROM sqlite_master WHERE type='table' AND name!='android_metadata' AND name!='shttps_version' AND name NOT LIKE 'sqlite_%'\n",
  null);
         ArrayList<Table> tables = new ArrayList<>();
         while (cursor.moveToNext()) {
@@ -134,226 +147,308 @@ public class DatabaseAndroid extends SQLiteOpenHelper implements Database {
     }
 
     @Override
-    public TableData execute(String query) throws Exception {
-        SQLiteDatabase database = getWritableDatabase();
-        Cursor cursor = database.rawQuery(query, null);
-        if (cursor == null) {
-            return null;
-        }
-        if (cursor.getCount() == 0) {
-            cursor.close();
-            return null;
-        }
-        return new TableDataAndroid(cursor);
+    public TableData query(String query) throws Exception {
+        return simpleDBOperations.query(query);
+    }
+
+    @Override
+    public void execute(String query) throws Exception {
+        writeExecutor.submit(() -> {
+            simpleDBOperations.execute(query);
+            return 0;
+        }).get();
     }
 
     @Override
     public TableData getTableDataSecure(String tableName, String[] columns, Long offset, Long limit,
                                         String[] whereFilters, Object[] whereArgs, String orderBy,
-                                        boolean desc, boolean includeRowId) throws Exception {
-        SQLiteDatabase database = getReadableDatabase();
-        StringBuilder sql = new StringBuilder("SELECT ");
-        if (includeRowId) {
-            sql.append("rowid, ");
-        }
-        if (columns == null || columns.length == 0) {
-            sql.append("*");
-        } else {
-            for (int i = 0; i < columns.length; i++) {
-                if (i > 0) {
-                    sql.append(", ");
-                }
-                String column = columns[i];
-                if (DBUtils.isValidColumnName(column)) {
-                    sql.append("\"").append(column).append("\"");
-                } else {
-                    throw new SecurityException("Invalid column name: " + column);
-                }
-            }
-        }
-
-        if (!DBUtils.isValidTableName(tableName)) {
-            throw new SecurityException("Invalid table name: " + tableName);
-        }
-        sql.append(" FROM ").append(tableName);
-
-        if (whereFilters != null && whereFilters.length > 0) {
-            String where = DBUtils.buildSimpleWhereStatement(whereFilters);
-            sql.append(" WHERE ").append(where);
-        }
-        if (orderBy != null) {
-            if (!DBUtils.isValidColumnName(orderBy)) {
-                throw new SecurityException("Invalid column name: " + orderBy);
-            }
-            sql.append(" ORDER BY ").append(orderBy);
-            if (desc) {
-                sql.append(" DESC");
-            }
-        }
-        if (limit != null) {
-            if (limit < 0) {
-                throw new IllegalArgumentException("Invalid limit: " + limit);
-            }
-            sql.append(" LIMIT ").append(limit);
-            if (offset != null) {
-                if (offset < 0) {
-                    throw new IllegalArgumentException("Invalid offset: " + offset);
-                }
-                sql.append(" OFFSET ").append(offset);
-            }
-        }
-        String[] whereArgsStr = new String[whereArgs.length];
-        for (int i = 0; i < whereArgs.length; i++) {
-            whereArgsStr[i] = whereArgs[i].toString();
-        }
-        Cursor cursor = database.rawQuery(sql.toString(), whereArgsStr);
-        return new TableDataAndroid(cursor);
+                                        boolean desc, boolean includeRowId, Holder<Long> outCount) throws Exception {
+        return simpleDBOperations.getTableDataSecure(tableName, columns, offset, limit, whereFilters, whereArgs, orderBy, desc, includeRowId, outCount);
     }
 
     @Override
     public CellDataStreamInfo getSingleCellDataStream(String table, String column, List<String> filters, List<Object> filtersArgs) throws Exception {
-        if (!DBUtils.isValidTableName(table)) {
-            throw new SecurityException("Invalid table name: " + table);
-        }
-        if (!DBUtils.isValidColumnName(column)) {
-            throw new SecurityException("Invalid column name: " + column);
-        }
-
-        StringBuilder infoSql = new StringBuilder("SELECT typeof(")
-                .append("\"").append(column).append("\"").append("), length(")
-                .append("\"").append(column).append("\"").append(") FROM ").append(table);
-        String where = null;
-        if (filters != null && !filters.isEmpty()) {
-            where = DBUtils.buildSimpleWhereStatement(filters.toArray(new String[0]));
-            infoSql.append(" WHERE ").append(where);
-        }
-
-        infoSql.append(" LIMIT 1");
-        String[] filtersArgsStr = new String[filtersArgs.size()];
-        for (int i = 0; i < filtersArgs.size(); i++) {
-            filtersArgsStr[i] = filtersArgs.get(i).toString();
-        }
-        final SQLiteDatabase database = getReadableDatabase();
-        String type;
-        long length;
-        try (Cursor cursor = database.rawQuery(infoSql.toString(), filtersArgsStr)) {
-            if (cursor.moveToNext()) {
-                type = cursor.getString(0);
-                length = cursor.getLong(1);
-            } else {
-                return null;
-            }
-        }
-        if (type == null || length == 0 || type.equals("null")) {
-            return null;
-        }
-
-        if (!(type.equals("blob") || type.equals("text"))) {
-            throw new IllegalArgumentException("Invalid column type: " + type);
-        }
-
-        CellDataStreamInfo streamInfo = new CellDataStreamInfo();
-        streamInfo.type = type;
-        streamInfo.length = length;
-        streamInfo.mimeType = type.equals("text") ? "text/plain" : "application/octet-stream";
-
-        final StringBuilder sql = new StringBuilder("SELECT substr(").append(column).append(", ?, ?) FROM ").append(table);
-        if (where != null) {
-            sql.append(" WHERE ").append(where);
-        }
-        sql.append(" LIMIT 1");
-
-        streamInfo.inputStream = new InputStream() {
-            private Cursor cursor;
-            private byte[] currentBlobBytes = null;
-            private int currentBlobOffset = 0;
-            private long bytesRead = 0;
-
-            {
-                readNextBlobPart();
-            }
-
-            @Override
-            public int read() throws IOException {
-                if (currentBlobOffset >= currentBlobBytes.length) {
-                    readNextBlobPart();
-                }
-                if (currentBlobBytes == null || currentBlobBytes.length == 0) {
-                    return -1;
-                }
-                bytesRead++;
-                return currentBlobBytes[currentBlobOffset++] & 0xFF;
-            }
-
-            @Override
-            public int read(byte[] b) throws IOException {
-                if (currentBlobOffset >= currentBlobBytes.length) {
-                    readNextBlobPart();
-                }
-                if (currentBlobBytes == null || currentBlobBytes.length == 0) {
-                    return -1;
-                }
-                int readed = Math.min(b.length, currentBlobBytes.length - currentBlobOffset);
-                System.arraycopy(currentBlobBytes, currentBlobOffset, b, 0, readed);
-                currentBlobOffset += readed;
-                bytesRead += readed;
-                return readed;
-            }
-
-            @Override
-            public void close() throws IOException {
-                cursor.close();
-            }
-
-            private void readNextBlobPart() {
-                String[] arguments = new String[filtersArgs.size() + 2];
-                arguments[0] = Long.toString(bytesRead + 1);
-                arguments[1] = Long.toString(bytesRead + 1024 * 8);//8KB to not exceed android cursor limit
-                System.arraycopy(filtersArgsStr, 0, arguments, 2, filtersArgsStr.length);
-                cursor = database.rawQuery(sql.toString(), arguments);
-                cursor.moveToNext();
-                currentBlobBytes = cursor.getBlob(0);
-                currentBlobOffset = 0;
-                cursor.close();
-            }
-        };
-        return streamInfo;
+        return simpleDBOperations.getSingleCellDataStream(table, column, filters, filtersArgs);
     }
 
     @Override
     public long insert(String tableName, JSONObject values) throws Exception {
-        SQLiteDatabase database = getWritableDatabase();
-        return database.insertOrThrow(tableName, null, toContentValues(values));
+        return writeExecutor.submit(() ->
+                simpleDBOperations.insert(tableName, values)
+        ).get();
     }
 
     @Override
     public int update(String tableName, JSONObject values, String[] whereFilters, Object[] whereArgs) throws Exception {
-        SQLiteDatabase database = getWritableDatabase();
-        String[] whereArgsStr = new String[whereFilters.length];
-        for (int i = 0; i < whereFilters.length; i++) {
-            whereArgsStr[i] = whereArgs[i].toString();
-        }
-        return database.update(tableName, toContentValues(values), DBUtils.buildSimpleWhereStatement(whereFilters), whereArgsStr);
+        return writeExecutor.submit(() ->
+                simpleDBOperations.update(tableName, values, whereFilters, whereArgs)
+        ).get();
     }
 
     @Override
     public int delete(String tableName, String[] whereFilters, Object[] whereArgs) throws Exception {
-        SQLiteDatabase database = getWritableDatabase();
-        String[] whereArgsStr = new String[whereFilters.length];
-        for (int i = 0; i < whereFilters.length; i++) {
-            whereArgsStr[i] = whereArgs[i].toString();
+        return writeExecutor.submit(() ->
+                simpleDBOperations.delete(tableName, whereFilters, whereArgs)
+        ).get();
+    }
+
+    @Override
+    public <T> T runTransaction(DatabaseTransactionScope<T> tx) throws Exception {
+        return writeExecutor.submit(() -> {
+            database.beginTransaction();
+            try {
+                T result = tx.execute(simpleDBOperations);
+                database.setTransactionSuccessful();
+                return result;
+            } finally {
+                database.endTransaction();
+            }
+        }).get();
+    }
+
+    public class SimpleDatabaseOperations implements DatabaseOperations {
+        private SimpleDatabaseOperations() {
+
         }
-        return database.delete(tableName, DBUtils.buildSimpleWhereStatement(whereFilters), whereArgsStr);
-    }
 
-    @Override
-    public void onCreate(SQLiteDatabase sqLiteDatabase) {
-        //nothing to do
-    }
+        @Override
+        public TableData query(String query) throws Exception {
+            Cursor cursor = database.rawQuery(query, null);
+            if (cursor == null) {
+                return null;
+            }
+            if (cursor.getCount() == 0) {
+                cursor.close();
+                return null;
+            }
+            return new TableDataAndroid(cursor);
+        }
 
-    @Override
-    public void onUpgrade(SQLiteDatabase sqLiteDatabase, int i, int i1) {
-        //nothing to do
+        @Override
+        public void execute(String query) throws Exception {
+            database.execSQL(query);
+        }
+
+        @Override
+        public long insert(String tableName, JSONObject values) throws Exception {
+            return database.insertOrThrow(tableName, null, toContentValues(values));
+        }
+
+        @Override
+        public int update(String tableName, JSONObject values, String[] whereFilters, Object[] whereArgs) throws Exception {
+            String whereClause = null;
+            String[] whereArgsStr = null;
+            if (whereFilters != null && whereFilters.length > 0) {
+                whereClause = DBUtils.buildSimpleWhereStatement(whereFilters);
+                whereArgsStr = new String[whereFilters.length];
+                for (int i = 0; i < whereFilters.length; i++) {
+                    whereArgsStr[i] = whereArgs[i].toString();
+                }
+            }
+            return database.update(tableName, toContentValues(values), whereClause, whereArgsStr);
+        }
+
+        @Override
+        public int delete(String tableName, String[] whereFilters, Object[] whereArgs) throws Exception {
+            String whereClause = null;
+            String[] whereArgsStr = null;
+            if (whereFilters != null && whereFilters.length > 0) {
+                whereClause = DBUtils.buildSimpleWhereStatement(whereFilters);
+                whereArgsStr = new String[whereFilters.length];
+                for (int i = 0; i < whereFilters.length; i++) {
+                    whereArgsStr[i] = whereArgs[i].toString();
+                }
+            }
+            String finalWhereClause = whereClause;
+            String[] finalWhereArgsStr = whereArgsStr;
+            return database.delete(tableName, finalWhereClause, finalWhereArgsStr);
+        }
+
+        @Override
+        public TableData getTableDataSecure(String tableName, String[] columns, Long offset, Long limit, String[] whereFilters, Object[] whereArgs, String orderBy, boolean desc, boolean includeRowId, Holder<Long> outCount) throws Exception {
+            StringBuilder sql = new StringBuilder("SELECT %s");
+
+            StringBuilder columnsStringBuilder = new StringBuilder();
+            if (includeRowId) {
+                columnsStringBuilder.append("rowid, ");
+            }
+            if (columns == null || columns.length == 0) {
+                columnsStringBuilder.append("*");
+            } else {
+                for (int i = 0; i < columns.length; i++) {
+                    if (i > 0) {
+                        columnsStringBuilder.append(", ");
+                    }
+                    String column = columns[i];
+                    if (DBUtils.isValidColumnName(column)) {
+                        columnsStringBuilder.append("\"").append(column).append("\"");
+                    } else {
+                        throw new SecurityException("Invalid column name: " + column);
+                    }
+                }
+            }
+            String columnsString = columnsStringBuilder.toString();
+
+            if (!DBUtils.isValidTableName(tableName)) {
+                throw new SecurityException("Invalid table name: " + tableName);
+            }
+            sql.append(" FROM ").append(tableName);
+
+            if (whereFilters != null && whereFilters.length > 0) {
+                String where = DBUtils.buildSimpleWhereStatement(whereFilters);
+                sql.append(" WHERE ").append(where);
+            }
+            if (orderBy != null) {
+                if (!DBUtils.isValidColumnName(orderBy)) {
+                    throw new SecurityException("Invalid column name: " + orderBy);
+                }
+                sql.append(" ORDER BY ").append(orderBy);
+                if (desc) {
+                    sql.append(" DESC");
+                }
+            }
+            if (limit != null) {
+                if (limit < 0) {
+                    throw new IllegalArgumentException("Invalid limit: " + limit);
+                }
+                sql.append(" LIMIT ").append(limit);
+                if (offset != null) {
+                    if (offset < 0) {
+                        throw new IllegalArgumentException("Invalid offset: " + offset);
+                    }
+                    sql.append(" OFFSET ").append(offset);
+                }
+            }
+
+            String[] whereArgsStr = null;
+            if (whereFilters != null && whereFilters.length > 0) {
+                whereArgsStr = new String[whereArgs.length];
+                for (int i = 0; i < whereArgs.length; i++) {
+                    whereArgsStr[i] = whereArgs[i].toString();
+                }
+            }
+
+            if (outCount != null) {
+                String sqlString = String.format(sql.toString(), "count(*)");
+
+                try (Cursor cursor = database.rawQuery(sqlString, whereArgsStr)) {
+                    outCount.set(cursor.moveToNext() ? cursor.getLong(0) : 0);
+                }
+            }
+
+            String sqlString = String.format(sql.toString(), columnsString);
+            Cursor cursor = database.rawQuery(sqlString, whereArgsStr);
+            return new TableDataAndroid(cursor);
+        }
+
+        @Override
+        public CellDataStreamInfo getSingleCellDataStream(String table, String column, List<String> filters, List<Object> filtersArgs) throws Exception {
+            if (!DBUtils.isValidTableName(table)) {
+                throw new SecurityException("Invalid table name: " + table);
+            }
+            if (!DBUtils.isValidColumnName(column)) {
+                throw new SecurityException("Invalid column name: " + column);
+            }
+
+            StringBuilder infoSql = new StringBuilder("SELECT typeof(")
+                    .append("\"").append(column).append("\"").append("), length(")
+                    .append("\"").append(column).append("\"").append(") FROM ").append(table);
+            String where = null;
+            if (filters != null && !filters.isEmpty()) {
+                where = DBUtils.buildSimpleWhereStatement(filters.toArray(new String[0]));
+                infoSql.append(" WHERE ").append(where);
+            }
+
+            infoSql.append(" LIMIT 1");
+            String[] filtersArgsStr = new String[filtersArgs.size()];
+            for (int i = 0; i < filtersArgs.size(); i++) {
+                filtersArgsStr[i] = filtersArgs.get(i).toString();
+            }
+            String type;
+            long length;
+            try (Cursor cursor = database.rawQuery(infoSql.toString(), filtersArgsStr)) {
+                if (cursor.moveToNext()) {
+                    type = cursor.getString(0);
+                    length = cursor.getLong(1);
+                } else {
+                    return null;
+                }
+            }
+            if (type == null || length == 0 || type.equals("null")) {
+                return null;
+            }
+
+            if (!(type.equals("blob") || type.equals("text"))) {
+                throw new IllegalArgumentException("Invalid column type: " + type);
+            }
+
+            CellDataStreamInfo streamInfo = new CellDataStreamInfo();
+            streamInfo.type = type;
+            streamInfo.length = length;
+            streamInfo.mimeType = type.equals("text") ? "text/plain" : "application/octet-stream";
+
+            final StringBuilder sql = new StringBuilder("SELECT substr(").append(column).append(", ?, ?) FROM ").append(table);
+            if (where != null) {
+                sql.append(" WHERE ").append(where);
+            }
+            sql.append(" LIMIT 1");
+
+            streamInfo.inputStream = new InputStream() {
+                private Cursor cursor;
+                private byte[] currentBlobBytes = null;
+                private int currentBlobOffset = 0;
+                private long bytesRead = 0;
+
+                {
+                    readNextBlobPart();
+                }
+
+                @Override
+                public int read() throws IOException {
+                    if (currentBlobOffset >= currentBlobBytes.length) {
+                        readNextBlobPart();
+                    }
+                    if (currentBlobBytes == null || currentBlobBytes.length == 0) {
+                        return -1;
+                    }
+                    bytesRead++;
+                    return currentBlobBytes[currentBlobOffset++] & 0xFF;
+                }
+
+                @Override
+                public int read(byte[] b) throws IOException {
+                    if (currentBlobOffset >= currentBlobBytes.length) {
+                        readNextBlobPart();
+                    }
+                    if (currentBlobBytes == null || currentBlobBytes.length == 0) {
+                        return -1;
+                    }
+                    int readed = Math.min(b.length, currentBlobBytes.length - currentBlobOffset);
+                    System.arraycopy(currentBlobBytes, currentBlobOffset, b, 0, readed);
+                    currentBlobOffset += readed;
+                    bytesRead += readed;
+                    return readed;
+                }
+
+                @Override
+                public void close() throws IOException {
+                    cursor.close();
+                }
+
+                private void readNextBlobPart() {
+                    String[] arguments = new String[filtersArgs.size() + 2];
+                    arguments[0] = Long.toString(bytesRead + 1);
+                    arguments[1] = Long.toString(bytesRead + 1024 * 8);//8KB to not exceed android cursor limit
+                    System.arraycopy(filtersArgsStr, 0, arguments, 2, filtersArgsStr.length);
+                    cursor = database.rawQuery(sql.toString(), arguments);
+                    cursor.moveToNext();
+                    currentBlobBytes = cursor.getBlob(0);
+                    currentBlobOffset = 0;
+                    cursor.close();
+                }
+            };
+            return streamInfo;
+        }
     }
 
     private static ContentValues toContentValues(JSONObject values) {

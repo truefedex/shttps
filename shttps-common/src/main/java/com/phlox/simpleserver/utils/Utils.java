@@ -54,9 +54,8 @@ public class Utils {
             }
             return hexString.toString();
         } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
+            throw new RuntimeException(e);
         }
-        return null;
     }
 
     public static String hashFNV1a32(String dataStr) {

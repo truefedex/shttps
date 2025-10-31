@@ -13,6 +13,12 @@ public interface UserStore {
     boolean create(@NonNull User user);
     @Nullable User createEmptyUserWithAvailableIdentity();
     boolean update(@NonNull User user);
+    boolean update(@NonNull String userIdentity, @NonNull String field, @Nullable Object value);
     boolean delete(@NonNull String identity);
     boolean rename(@NonNull User user, @NonNull String newIdentity);
+
+    void deleteAll();
+
+    UserRightsEvaluator provideUserRightsEvaluator();
+    User registerNewUser(@NonNull String identity, @NonNull String password);
 }

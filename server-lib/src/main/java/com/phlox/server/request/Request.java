@@ -1,5 +1,6 @@
 package com.phlox.server.request;
 
+import com.phlox.server.utils.MultiMap;
 import com.phlox.server.utils.ScannerInputStream;
 
 import java.util.HashMap;
@@ -43,7 +44,7 @@ public class Request {
     public Map<String, String> cookies = new HashMap<>();
     public Map<String, String> urlEncodedPostParams = new HashMap<>();
     public String hostAddress;
-    public Map<String, String> headers = new HashMap<>();
+    public MultiMap<String, String> headers = new MultiMap<>();
     public ScannerInputStream input;
     public String contentType;
     public String boundary;

@@ -15,7 +15,7 @@ public interface SHTTPSPlatformUtils {
 
     OutputStream openOutputStream(String fileUri) throws IOException;
 
-    ImageThumbnail getImageThumbnail(String uri) throws IOException;
+    ImageData getImageThumbnail(String uri) throws IOException;
 
     InputStream openAssetStream(String fileName) throws IOException;
     long getAssetSize(String fileName);
@@ -27,20 +27,22 @@ public interface SHTTPSPlatformUtils {
 
     DocumentFile getDefaultRootDir();
 
-    class ImageThumbnail {
+    ImageData generateCaptchaImage(String code, int width, int height);
+
+    class ImageData {
         public int width;
         public int height;
         public String mimeType;
         public byte[] data;
     }
 
-    public static class UnsupportedImageFormatException extends IOException {
+    class UnsupportedImageFormatException extends IOException {
         public UnsupportedImageFormatException(String message) {
             super(message);
         }
     }
 
-    public static class UnknownFormatException extends IOException {
+    class UnknownFormatException extends IOException {
         public UnknownFormatException(String message) {
             super(message);
         }

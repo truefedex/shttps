@@ -1,0 +1,147 @@
+body {
+    background: #161616;
+}
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    padding: 0;
+}
+.login-form {
+    background: #404040;
+    padding: 30px;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 400px;
+    margin-top: -10vh;
+}
+.login-form h2 {
+    margin: 0 0 20px 0;
+    text-align: center;
+    color: #fff;
+}
+.form-tabs {
+    display: flex;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #555;
+}
+.tab-button {
+    flex: 1;
+    padding: 10px;
+    background: none;
+    border: none;
+    color: #bbb;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.3s;
+}
+.tab-button.active {
+    color: #fff;
+    border-bottom-color: #306477;
+}
+.tab-button:hover {
+    color: #fff;
+}
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+.captcha-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.captcha-image {
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.captcha-refresh {
+    background: #306477;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.captcha-refresh:hover {
+    background: #407487;
+}
+.register-link {
+    text-align: center;
+    margin-top: 15px;
+}
+.register-link a {
+    color: #306477;
+    text-decoration: none;
+}
+.register-link a:hover {
+    text-decoration: underline;
+}
+.form-group {
+    margin-bottom: 20px;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: #fff;
+}
+.form-group input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #303030;
+    color: #fff;
+    box-sizing: border-box;
+}
+.form-group input:focus {
+    outline: none;
+    border-color: #306477;
+}
+.login-button {
+    width: 100%;
+    padding: 10px;
+    background: #306477;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+.login-button:hover {
+    background: #407487;
+}
+.login-button:disabled {
+    background: #666;
+    cursor: not-allowed;
+}
+.error-message {
+    color: #ff6b6b;
+    margin-top: 10px;
+    text-align: center;
+    display: none;
+}
+.rate-limit-message {
+    color: #ffa500;
+    margin-top: 10px;
+    text-align: center;
+    display: none;
+}
+.password-wrapper input[type="password"],
+.password-wrapper input[type="text"] {
+    padding-right: 38px;
+}
+#togglePassword:focus,
+#toggleRegPassword:focus {
+    outline: none;
+}
+#togglePassword svg,
+#toggleRegPassword svg {
+    pointer-events: none;
+}

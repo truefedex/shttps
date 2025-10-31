@@ -14,11 +14,9 @@ import java.util.Map;
 
 public class LoginRequestHandler implements RequestHandler {
     private final WebAuthManager authManager;
-    private final SessionManager sessionManager;
 
-    public LoginRequestHandler(AuthManager authManager, SessionManager sessionManager) {
+    public LoginRequestHandler(AuthManager authManager) {
         this.authManager = (WebAuthManager) authManager;
-        this.sessionManager = sessionManager;
     }
 
     @Override
@@ -30,7 +28,7 @@ public class LoginRequestHandler implements RequestHandler {
         context.requestBodyReader.readRequestBody(request);
         User user = authManager.login(context, request);
         if (user != null) {
-            String sessionId = sessionManager.createSession(user.identity);
+            String sessionId = authManager.sessionManager.createSession(user.identity);
             Response response = new Response();
             Map<String, Object> options = new HashMap<>();
             options.put("Path", "/");

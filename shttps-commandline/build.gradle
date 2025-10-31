@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.phlox.server'
-version = '1.16.0'
+version = '2.0.0'
 
 mainClassName = "com.phlox.server.Main"
 
@@ -13,33 +13,20 @@ application {
     mainClass = mainClassName
 }
 
-sourceSets {
-    main {
-        resources {
-            srcDirs "src/main/resources", "../shttps-common/shared-assets"
-        }
-    }
-}
-
 dependencies {
     implementation project(path: ':server-lib')
     implementation project(path: ':shttps-common')
-    implementation 'org.json:json:20240303'
-    implementation 'org.xerial:sqlite-jdbc:3.47.1.0'
-    implementation 'org.slf4j:slf4j-simple:2.0.16'
+    implementation project(path: ':shttps-desktop-common')
     implementation 'info.picocli:picocli:4.7.6'
     annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
-
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
 }
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(21)
     }
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 jar {
@@ -62,8 +49,4 @@ shadowJar {
     exclude 'org/sqlite/native/Linux-Android/**'
     //exclude 'org/sqlite/native/Linux-Musl/**'
     exclude 'org/sqlite/native/Mac/**'
-}
-
-test {
-    useJUnitPlatform()
 }

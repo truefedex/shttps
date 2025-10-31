@@ -48,8 +48,8 @@ public class DefaultRequestHeadersParser implements RequestHeadersParser {
             i++;
         }
 
-        if (request.headers.isEmpty()) {
-            throw new IllegalArgumentException("Can not parse request header");
+        if (request.headers.size() == 0) {
+            throw new IllegalArgumentException("Can not parse request headers");
         }
 
         String contentTypeHeader = request.headers.get(Request.HEADER_CONTENT_TYPE);

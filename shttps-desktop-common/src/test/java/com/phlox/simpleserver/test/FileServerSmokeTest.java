@@ -3,16 +3,13 @@ package com.phlox.simpleserver.test;
 import com.phlox.server.database.DatabaseFabricImpl;
 import com.phlox.server.utils.PlatformUtilsImpl;
 import com.phlox.simpleserver.SHTTPSApp;
-import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.server.SHTTPSConfigImpl;
-import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
-import com.phlox.simpleserver.database.SHTTPSDatabaseFabric;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -24,7 +21,6 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.*;
 

@@ -52,7 +52,7 @@ public class ThumbnailHandler extends BaseFileRequestHandler {
         }
 
         try {
-            SHTTPSPlatformUtils.ImageThumbnail thumbnail = SHTTPSApp.getInstance().platformUtils.getImageThumbnail(destFile.getUri());
+            SHTTPSPlatformUtils.ImageData thumbnail = SHTTPSApp.getInstance().platformUtils.getImageThumbnail(destFile.getUri());
 
             ByteArrayInputStream bais = new ByteArrayInputStream(thumbnail.data);
             Response response = new Response(thumbnail.mimeType, thumbnail.data.length, bais);

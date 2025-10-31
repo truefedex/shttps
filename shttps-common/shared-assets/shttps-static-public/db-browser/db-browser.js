@@ -3,12 +3,23 @@ let databaseSchema = null;
 function onPageLoad() {
     //fetch the database schema /api/db/schema
     fetch('/api/db/schema')
-        .then(response => response.json())
+        .then(async response => {
+            if (response.ok) {
+                return response.json();
+            } else {
+                const errorText = await response.text();
+                throw new Error(errorText);
+            }
+        })
         .then(data => {
             databaseSchema = data;
             renderDatabaseSchema();
-        }
-    );    
+        })
+        .catch(error => {
+            console.error('Error fetching database schema:', error);
+            alert(`Error loading database schema: ${error.message}`);
+            document.getElementById('loader').style.display = 'none';
+        });
 }
 
 function renderDatabaseSchema() {
@@ -148,4 +159,20 @@ function deleteTable(tableName) {
             document.getElementById('loader').style.display = 'none';
         });
     }
+}
+
+// Menu/context menu logic for header menu button
+function onMenuClick(e) {
+    let menuButton = document.getElementById("menu-button");
+    let mainMenu = document.getElementById("main-menu");
+    let mmBackToFiles = document.getElementById("mm-back-to-files");
+    if (mmBackToFiles) {
+        mmBackToFiles.onclick = function () {
+            window.location.href = "/";
+        };
+    }
+    let rect = menuButton.getBoundingClientRect();
+    displayContextMenuWithAnchorRect(rect, mainMenu);
+    e.stopPropagation();
+    e.preventDefault();
 }

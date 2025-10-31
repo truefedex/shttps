@@ -16,7 +16,7 @@ public final class Utils {
     private Utils() {}
 
     public static void copyStream(InputStream input, OutputStream output) throws IOException {
-        byte[] buffer = new byte[1024];
+        byte[] buffer = new byte[8192];
         while (true) {
             int count = input.read(buffer);
             if (count == -1) {
@@ -27,7 +27,7 @@ public final class Utils {
     }
 
     public static void copyStream(InputStream input, OutputStream output, long amount) throws IOException {
-        byte[] buffer = new byte[1024];
+        byte[] buffer = new byte[8192];
         long totalRead = 0;
         while (totalRead < amount) {
             int maxToRead = (int) Math.min(buffer.length, amount - totalRead);

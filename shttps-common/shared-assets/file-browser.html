@@ -76,8 +76,11 @@
   <div class="context-menu" id="main-menu">
     <div class="menu-close-btn" onclick="hideContextMenu()">&times;</div>
     <ul class="menu-options">
+      {{#dbConnected}}<li class="menu-option" id="mm-database">Database</li>{{/dbConnected}}
+      {{#needAuthBlock}}
       {{^hasUser}}<li class="menu-option" id="mm-login">Login</li>{{/hasUser}}
       {{#hasUser}}<li class="menu-option" id="mm-logout">Logout</li>{{/hasUser}}
+      {{/needAuthBlock}}
     </ul>
   </div>
 </body>

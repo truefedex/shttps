@@ -7,14 +7,21 @@
   <link rel="stylesheet" href="/shttps-static-public/db-browser/db-browser.css">
   <link rel="icon" type="image/png" href="/shttps-static-public/icon.png">
   <script src="/shttps-static-public/db-browser/db-browser.js" defer></script>
+  <script src="/shttps-static-public/common.js"></script>
 </head>
 <body id="root" onload="onPageLoad();">
-  <div class="header"></div>
-  <div id="actionbar" class="actionbar" style="padding: 15px 15px 0;">
+  <div class="header">
+    <button id="menu-button" class="menu-button" onclick="onMenuClick(event);">☰</button>
+    <div id="loader" class="loader"></div>
     <button class="action-button" onclick="window.location.href='table-creator.html'">NEW TABLE</button>
     <button class="action-button" onclick="onExecuteSQLClick();">EXECUTE SQL</button>
   </div>
   <div id="tables-container"></div>
-  <div class="loader" id="loader"></div>
+  <div class="context-menu" id="main-menu">
+    <div class="menu-close-btn" onclick="hideContextMenu()">&times;</div>
+    <ul class="menu-options">
+      <li class="menu-option" id="mm-back-to-files">Back to files</li>
+    </ul>
+  </div>
 </body>
 </html>

@@ -9,15 +9,12 @@ import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.concurrent.Callable;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import picocli.CommandLine;
 import sun.misc.Signal;

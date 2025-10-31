@@ -27,7 +27,7 @@ public class ThumbnailManager {
         this.thumbnailsDir = System.getProperty("java.io.tmpdir") + File.separator + THUMBNAILS_DIR;
     }
 
-    public SHTTPSPlatformUtils.ImageThumbnail getImageThumbnail(String filePath) throws IOException {
+    public SHTTPSPlatformUtils.ImageData getImageThumbnail(String filePath) throws IOException {
         File file = new File(filePath);
         if (!file.exists()) {
             throw new FileNotFoundException("File not found: " + filePath);
@@ -69,8 +69,8 @@ public class ThumbnailManager {
         return loadThumbnail(thumbnailFile);
     }
 
-    private SHTTPSPlatformUtils.ImageThumbnail loadThumbnail(File thumbnailFile) throws IOException {
-        SHTTPSPlatformUtils.ImageThumbnail thumbnail = new SHTTPSPlatformUtils.ImageThumbnail();
+    private SHTTPSPlatformUtils.ImageData loadThumbnail(File thumbnailFile) throws IOException {
+        SHTTPSPlatformUtils.ImageData thumbnail = new SHTTPSPlatformUtils.ImageData();
         thumbnail.mimeType = platformUtils.getMimeType(RawDocumentFile.FILE_URI_PREFIX + thumbnailFile.getAbsolutePath());
         thumbnail.data = Files.readAllBytes(thumbnailFile.toPath());
         return thumbnail;

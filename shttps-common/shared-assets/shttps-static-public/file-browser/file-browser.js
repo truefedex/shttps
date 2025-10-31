@@ -92,7 +92,7 @@ function renderFileList() {
     if (file.directory) {
       path = path + "/";
     }
-    let href = encodeURI(path);
+    let href = path.split("/").map(encodeURIComponent).join("/");
     a.setAttribute("href", href);
     a.addEventListener('click', onFileItemClick);
     if (iOS()) {
@@ -225,7 +225,7 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
       let element = fileElements[j];
       if (element.nodeName.toLowerCase() != 'a') continue;
       let href = element.getAttribute("href");
-      let path = decodeURI(href);
+      let path = href.split("/").map(decodeURIComponent).join("/");
       let upperLevelFileNameElement = relativePaths != null ? relativePaths[i] : file.name;
       if (upperLevelFileNameElement.startsWith("/")) {
         upperLevelFileNameElement = upperLevelFileNameElement.substring(1);
@@ -470,7 +470,7 @@ function onPasteClick() {
     let element = fileElements[i];
     if (element.nodeName.toLowerCase() != 'a') continue;
     let href = element.getAttribute("href");
-    let path = decodeURI(href);
+    let path = href.split("/").map(decodeURIComponent).join("/");
     for (let j = 0; j < clipboard.length; j++) {
       let cp = clipboard[j];
       let fileName = extractFileOrFolderName(path)
@@ -517,7 +517,7 @@ function extractFileOrFolderName(path) {
 }
 
 function onRenameClick() {
-  let filePath = decodeURI(selectedFiles[0]);
+  let filePath = selectedFiles[0].split("/").map(decodeURIComponent).join("/");
   let fileName = extractFileOrFolderName(filePath);
   let name = prompt("Please enter new name", fileName);
   if (name == null) return;
@@ -544,7 +544,8 @@ function onRenameClick() {
 function onPushToClipboardClick(action) {
   let decodedPaths = [];
   for (let i = 0; i < selectedFiles.length; i++) {
-    decodedPaths.push(decodeURI(selectedFiles[i]));
+    let decodedPath = selectedFiles[i].split("/").map(decodeURIComponent).join("/");
+    decodedPaths.push(decodedPath);
   }
   sessionStorage.setItem("clipboard", JSON.stringify(decodedPaths));
   sessionStorage.setItem("clipboardAction", action);
@@ -559,8 +560,8 @@ function onDeleteClick() {
   xhr.setRequestHeader('Content-Type', 'application/json');
   let filenames = [];
   for (let i = 0; i < selectedFiles.length; i++) {
-    let filePath = decodeURI(selectedFiles[i]);
-    let fileNameParts = filePath.split("/");
+    let filePath = selectedFiles[i];
+    let fileNameParts = filePath.split("/").map(decodeURIComponent);
     let fileName = fileNameParts.pop();
     if (filePath.endsWith("/")) fileName = fileNameParts.pop();//second pop to get folder name
     filenames.push(fileName);
@@ -583,8 +584,8 @@ function onDeleteClick() {
 function onZipClick() {
   let filenames = [];
   for (let i = 0; i < selectedFiles.length; i++) {
-    let filePath = decodeURI(selectedFiles[i]);
-    let fileNameParts = filePath.split("/");
+    let filePath = selectedFiles[i];
+    let fileNameParts = filePath.split("/").map(decodeURIComponent);
     let fileName = fileNameParts.pop();
     if (filePath.endsWith("/")) fileName = fileNameParts.pop();//second pop to get folder name
     filenames.push(fileName);
@@ -605,6 +606,12 @@ function onZipClick() {
   hiddenField.setAttribute("type", "hidden");
   hiddenField.setAttribute("name", "files");
   hiddenField.setAttribute("value", JSON.stringify(filenames));
+  form.appendChild(hiddenField);
+  hiddenField = document.createElement("input");
+  hiddenField.setAttribute("type", "hidden");
+  hiddenField.setAttribute("name", "uncompressed");
+  let extensionsToStoreUncompressed = "mp3,aacmp3,aac,ogg,m4a,mp4,mkv,avi,mov,webm,flac,opus,jpg,jpeg,png,gif,webp,heic,heif,tiff,pdf,docx,xlsx,pptx,odt,ods,odp,epub,cbz,cbr,zip,rar,7z,gz,xz,bz2,tar.gz,tgz,apk,jar,war,ear,iso,dmg";
+  hiddenField.setAttribute("value", extensionsToStoreUncompressed);
   form.appendChild(hiddenField);
   document.body.appendChild(form);
   form.submit();
@@ -628,7 +635,8 @@ function loadPath(directoryPath) {
   document.getElementById("path").innerText = directoryPath;
   document.getElementById("loader").style.visibility = "visible";
   if (window.history.state == null || window.history.state.path != directoryPath) {
-    window.history.pushState({ path: directoryPath }, directoryPath, encodeURI(directoryPath));
+    let encodedPath = directoryPath.split("/").map(encodeURIComponent).join("/");
+    window.history.pushState({ path: directoryPath }, directoryPath, encodedPath);
   }
   let req = new XMLHttpRequest();
   req.overrideMimeType("application/json");
@@ -660,7 +668,7 @@ function onFileItemClick(e) {
   }
   let href = e.currentTarget.getAttribute("href");
   if (e.currentTarget.dataset.directory == "true") {
-    let path = decodeURI(href);
+    let path = href.split("/").map(decodeURIComponent).join("/");
     if (path.endsWith("/../")) {
       let parts = path.split("/");
       parts.pop(); // remove empty string after trailing slash
@@ -856,6 +864,12 @@ function onMenuClick(e) {
   let menuButton = document.getElementById("menu-button");
   let mainMenu = document.getElementById("main-menu");
   let mmLogin = document.getElementById("mm-login");
+  let mmDatabase = document.getElementById("mm-database");
+  if (mmDatabase) {
+    mmDatabase.onclick = function () {
+      window.location.href = "/shttps-static-public/db-browser/index.html";
+    }
+  }
   if (mmLogin) {
     mmLogin.onclick = function () {
       window.location.href = "/shttps-pages/login/";
@@ -905,7 +919,10 @@ function onPageLoad() {
   if (viewMode == "table") {
     radioToCheck = document.getElementById("radioTable");
   } else if (viewMode == "grid") {
-    radioToCheck = document.getElementById("radioGrid");
+    let gridElement = document.getElementById("radioGrid");
+    if (gridElement != null) {
+        radioToCheck = gridElement;
+    }
   }
   radioToCheck.checked = true;
 

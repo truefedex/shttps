@@ -13,18 +13,18 @@ public interface TableData extends AutoCloseable {
     String[] getColumnNames();
     @Override void close();
     int getColumnIndex(String columnName);
-    long count();
-    String getString(int columnIndex);
-    int getInt(int columnIndex);
-    long getLong(int columnIndex);
-    double getDouble(int columnIndex);
-    byte[] getBlob(int columnIndex);
-    boolean getBoolean(int columnIndex);
+    String getString(int columnIndex) throws Exception;
+    int getInt(int columnIndex) throws Exception;
+    long getLong(int columnIndex) throws Exception;
+    double getDouble(int columnIndex) throws Exception;
+    byte[] getBlob(int columnIndex) throws Exception;
+    boolean getBoolean(int columnIndex) throws Exception;
 
     Integer getInt(int columnIndex, Integer defaultValue);
     Long getLong(int columnIndex, Long defaultValue);
     Double getDouble(int columnIndex, Double defaultValue);
     Boolean getBoolean(int columnIndex, Boolean defaultValue);
+    boolean isNull(int col);
 
     JSONArray toJson(boolean rowsAsObjects);
     JSONArray currentRowToJson();

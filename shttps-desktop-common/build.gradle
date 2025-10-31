@@ -1,0 +1,34 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDirs "src/main/resources", "../shttps-common/shared-assets"
+        }
+    }
+}
+
+dependencies {
+    implementation project(path: ':server-lib')
+    implementation project(path: ':shttps-common')
+    implementation 'org.json:json:20250517'
+    implementation 'org.xerial:sqlite-jdbc:3.50.3.0'
+    implementation 'org.slf4j:slf4j-simple:2.0.17'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
+}
+
+test {
+    useJUnitPlatform()
+}

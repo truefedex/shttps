@@ -1,7 +1,9 @@
 package com.phlox.simpleserver.auth;
 
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.utils.Holder;
 
+import org.json.JSONObject;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -13,6 +15,8 @@ import java.util.Map;
 public class ConfigBasedUserStore implements UserStore {
     private final SHTTPSConfig config;
     private Map<String, User> users;
+
+    private final UserRightsEvaluator userRightsEvaluator = new UserRightsEvaluator(new Holder<>(null));
 
     public ConfigBasedUserStore(SHTTPSConfig config) {
         this.config = config;
@@ -48,7 +52,7 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public synchronized boolean create(User user) {
+    public synchronized boolean create(@NonNull User user) {
         if (isIdentityUsed(user.identity)) {
             return false;
         }
@@ -65,7 +69,9 @@ public class ConfigBasedUserStore implements UserStore {
         while (isIdentityUsed(identity)) {
             identity = baseIdentity + i++;
         }
-        User user = new User(identity, "", null, EnumSet.of(User.FileSystemRights.READ, User.FileSystemRights.LIST_CONTENTS));
+        User user = new User(identity, "", null,
+                EnumSet.of(User.FileSystemRights.READ, User.FileSystemRights.LIST_CONTENTS),
+                EnumSet.of(User.DBRights.READ), null, System.currentTimeMillis(), null);
         return create(user) ? user : null;
     }
 
@@ -75,6 +81,18 @@ public class ConfigBasedUserStore implements UserStore {
         users.put(user.identity, user);
         config.setUsers(users.values());
         return false;
+    }
+
+    @Override
+    public boolean update(@NonNull String userIdentity, @NonNull String field, @Nullable Object value) {
+        User user = users.get(userIdentity);
+        if (user == null) return false;
+        JSONObject json = user.serialize();
+        json.put(field, value);
+        User updatedUser = User.deserialize(json);
+        users.put(userIdentity, updatedUser);
+        config.setUsers(users.values());
+        return true;
     }
 
     @Override
@@ -106,5 +124,26 @@ public class ConfigBasedUserStore implements UserStore {
             users.put(u.identity, u);
         }
         this.users = users;
+    }
+
+    @Override
+    public void deleteAll() {
+        users.clear();
+        config.setUsers(users.values());
+    }
+
+    @Override
+    public UserRightsEvaluator provideUserRightsEvaluator() {
+        return userRightsEvaluator;
+    }
+
+    @Override
+    public @Nullable User registerNewUser(@NonNull String identity, @NonNull String password) {
+        if (isIdentityUsed(identity)) {
+            return null;
+        }
+        
+        User newUser = new User(identity, password);
+        return create(newUser) ? newUser : null;
     }
 }

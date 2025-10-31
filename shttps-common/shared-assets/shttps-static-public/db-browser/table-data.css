@@ -1,5 +1,5 @@
 #mainUI {
-    min-height: 100vh;
+    height: 100vh;
     margin: 0;
     padding: 0;
     display: flex;
@@ -116,8 +116,8 @@
     display: flex;
     height: 40px;
     align-items: center;
-    margin: 10px 0;
-    padding: 0 15px;
+    margin: 0;
+    padding: 5px 15px;
     background: #2d2d2d;
     border-radius: 6px;
 }

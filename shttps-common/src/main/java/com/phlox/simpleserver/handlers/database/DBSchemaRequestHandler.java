@@ -6,6 +6,7 @@ import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.model.Table;
 import com.phlox.simpleserver.utils.Holder;
@@ -13,8 +14,8 @@ import com.phlox.simpleserver.utils.Holder;
 import org.json.JSONArray;
 
 public class DBSchemaRequestHandler extends BaseDBRequestHandler {
-    public DBSchemaRequestHandler(Holder<Database> database, SHTTPSConfig config) {
-        super(database, config);
+    public DBSchemaRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
+        super(database, config, authManager);
     }
 
     @Override
@@ -27,6 +28,8 @@ public class DBSchemaRequestHandler extends BaseDBRequestHandler {
         if (database == null) {
             return StandardResponses.NOT_FOUND();
         }
+        User user = checkUser(context);
+        if (checkIsForbidden(user, User.DBRights.READ_SCHEMA)) return StandardResponses.FORBIDDEN("Insufficient rights");
         String tableName = request.queryParams.get("table");
         Table[] tables = database.getTables();
         if (tables != null) {

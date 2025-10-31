@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="login.css">
+    <link rel="icon" type="image/png" href="/shttps-static-public/icon.png">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-form">
+            <div class="form-tabs">
+                <button class="tab-button active" onclick="switchTab('login')">Login</button>
+                <button class="tab-button" onclick="switchTab('register')">Register</button>
+            </div>
+            
+            <!-- Login Tab -->
+            <div id="loginTab" class="tab-content active">
+                <form id="loginForm" onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <div class="password-wrapper" style="position: relative;">
+                            <input type="password" id="password" name="password" required style="padding-right: 38px;">
+                            <button type="button" id="togglePassword" aria-label="Show password" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 0; height: 24px; width: 24px; display: flex; align-items: center; justify-content: center;">
+                                <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="login-button">Login</button>
+                    <div id="errorMessage" class="error-message"></div>
+                </form>
+            </div>
+            
+            <!-- Registration Tab -->
+            <div id="registerTab" class="tab-content">
+                <form id="registerForm" onsubmit="handleRegister(event)">
+                    <div class="form-group">
+                        <label for="regUsername">Username</label>
+                        <input type="text" id="regUsername" name="identity" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regPassword">Password</label>
+                        <div class="password-wrapper" style="position: relative;">
+                            <input type="password" id="regPassword" name="password" required style="padding-right: 38px;">
+                            <button type="button" id="toggleRegPassword" aria-label="Show password" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 0; height: 24px; width: 24px; display: flex; align-items: center; justify-content: center;">
+                                <svg id="regEyeIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="captchaCode">Captcha</label>
+                        <div class="captcha-container">
+                            <img id="captchaImage" class="captcha-image" src="" alt="Captcha" onclick="refreshCaptcha()">
+                            <button type="button" class="captcha-refresh" onclick="refreshCaptcha()">Refresh</button>
+                        </div>
+                        <input type="text" id="captchaCode" name="captcha_code" placeholder="Enter captcha code" required>
+                    </div>
+                    <button type="submit" class="login-button">Register</button>
+                    <div id="registerErrorMessage" class="error-message"></div>
+                    <div id="registerSuccessMessage" style="color: #4CAF50; margin-top: 10px; text-align: center; display: none;">
+                        Registration successful! Logging you in...
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="login.js"></script>
+</body>
+</html>

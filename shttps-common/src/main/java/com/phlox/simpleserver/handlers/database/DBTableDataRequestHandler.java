@@ -1,25 +1,29 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
+import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.model.TableData;
+import com.phlox.simpleserver.utils.AbstractDataStreamer;
 import com.phlox.simpleserver.utils.Holder;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 public class DBTableDataRequestHandler extends BaseDBRequestHandler {
-    public DBTableDataRequestHandler(Holder<Database> database, SHTTPSConfig config) {
-        super(database, config);
+    public DBTableDataRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
+        super(database, config, authManager);
     }
 
     @Override
@@ -32,6 +36,8 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
         if (database == null) {
             return StandardResponses.NOT_FOUND();
         }
+        User user = checkUser(context);
+        if (checkIsForbidden(user, User.DBRights.READ)) return StandardResponses.FORBIDDEN("Insufficient rights");
         Map<String, String> params;
         if (request.method.equals(Request.METHOD_GET)) {
             params = request.queryParams;
@@ -44,12 +50,13 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
             return StandardResponses.BAD_REQUEST("table parameter is required");
         }
         String columns = params.get("columns");
-        String offset = params.get("offset");
-        String limit = params.get("limit");
+        String offsetParam = params.get("offset");
+        String limitParam = params.get("limit");
         String sort = params.get("sort");
         String sortDir = params.get("sort-order");
-        String includeRowIdStr = params.get("includeRowId");
-        String rowsAsObjects = params.get("rowsAsObjects");
+        boolean includeRowId = Boolean.parseBoolean(params.get("includeRowId"));
+        boolean rowsAsObjects = Boolean.parseBoolean(params.get("rowsAsObjects"));
+        boolean includeTotal = Boolean.parseBoolean(params.get("includeTotal"));
 
         List<String> filters = new ArrayList<>();
         List<Object> filtersArgs = new ArrayList<>();
@@ -66,21 +73,76 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
             }
         }
 
-        try (TableData tableData = database.getTableDataSecure(table, columns != null ? columns.split(",") : null,
-                offset != null ? Long.parseLong(offset) : null, limit != null ? Long.parseLong(limit) : null,
-                filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]),
-                sort, sortDir != null && sortDir.equalsIgnoreCase("desc"),
-                includeRowIdStr != null && includeRowIdStr.equalsIgnoreCase("true"))) {
-            return StandardResponses.OK(
-                    tableData.toJson(
-                            rowsAsObjects != null && rowsAsObjects.equalsIgnoreCase("true")
-                    ).toString(), "application/json");
+        Long offset = offsetParam != null ? Long.parseLong(offsetParam) : null;
+        Long limit = limitParam != null ? Long.parseLong(limitParam) : null;
+        Holder<Long> outTotal = includeTotal ? new Holder<>(0L) : null;
+
+        try {
+            TableData tableData = database.getTableDataSecure(table, columns != null ? columns.split(",") : null,
+                    offset, limit,
+                    filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]),
+                    sort, sortDir != null && sortDir.equalsIgnoreCase("desc"),
+                    includeRowId, outTotal);
+            SQLResponseStreamer streamer = new SQLResponseStreamer(tableData,
+                    rowsAsObjects, outTotal);
+            streamer.startDataGenerationThread();
+            Response response = new Response(streamer.getInputStream());
+            response.setContentType("application/json");
+            return response;
         } catch (SecurityException e) {
             return StandardResponses.FORBIDDEN(e.getMessage());
         } catch (IllegalArgumentException e) {
             return StandardResponses.BAD_REQUEST(e.getMessage());
         } catch (Exception e) {
             return StandardResponses.INTERNAL_SERVER_ERROR(e.getMessage());
+        }
+    }
+
+    private static class SQLResponseStreamer extends AbstractDataStreamer {
+        private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
+        private final TableData responseData;
+        private final boolean rowsAsObjects;
+        private final Holder<Long> includeTotal;
+
+        public SQLResponseStreamer(TableData responseData, boolean rowsAsObjects, Holder<Long> includeTotal) {
+            super(1024);
+            this.responseData = responseData;
+            this.rowsAsObjects = rowsAsObjects;
+            this.includeTotal = includeTotal;
+        }
+
+        @Override
+        protected void generateData(OutputStream output) throws Exception {
+            try {
+                String responsePrefix;
+                if (includeTotal != null) {
+                    long total = includeTotal.get();
+                    responsePrefix = "{\"total\":" + total + ",";
+                } else {
+                    responsePrefix = "{";
+                }
+                responsePrefix += "\"data\":[";
+                output.write(responsePrefix.getBytes(StandardCharsets.UTF_8));
+
+                int count = 0;
+                while (responseData.next()) {
+                    if (count > 0) {
+                        output.write(",".getBytes(StandardCharsets.UTF_8));
+                    }
+                    String rowStr = rowsAsObjects ?
+                            responseData.currentRowToJsonObject().toString() :
+                            responseData.currentRowToJson().toString();
+                    output.write(rowStr.getBytes(StandardCharsets.UTF_8));
+                    count++;
+                }
+                output.write("]}".getBytes(StandardCharsets.UTF_8));
+            } finally {
+                try {
+                    responseData.close();
+                } catch (Exception e) {
+                    logger.stackTrace(e);
+                }
+            }
         }
     }
 }

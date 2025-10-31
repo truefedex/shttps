@@ -28,8 +28,8 @@ public class DBUtils {
      "[" - less or equal
      "!" - not equal
      "?" - like
-     "∈" - in
-     "∉" - not in
+     "∈x" - in (where 'x' is non-zero positive number meaning arguments count)
+     "∉x" - not in (where 'x' is non-zero positive number meaning arguments count)
      */
     public static String buildSimpleWhereStatement(String[] whereFilters) throws SecurityException {
         StringBuilder where = new StringBuilder();

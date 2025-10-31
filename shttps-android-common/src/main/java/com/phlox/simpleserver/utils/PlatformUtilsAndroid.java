@@ -12,10 +12,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.MediaStore;
 import android.util.Size;
-import android.webkit.MimeTypeMap;
 
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
+import com.phlox.server.platform.MimeTypeMap;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -26,7 +26,6 @@ import java.io.OutputStream;
 import java.net.NetworkInterface;
 import java.security.KeyStore;
 import java.util.HashSet;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 
@@ -45,8 +44,12 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
         if (ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())) {
             return ctx.getContentResolver().getType(uri);
         } else if (ContentResolver.SCHEME_FILE.equals(uri.getScheme())) {
-            return MimeTypeMap.getSingleton().getMimeTypeFromExtension(
-                    MimeTypeMap.getFileExtensionFromUrl(uri.toString()).toLowerCase(Locale.US));
+            int lastIndexOf = uriStr.lastIndexOf(".");
+            if (lastIndexOf == -1) {
+                return null; // empty extension
+            }
+            String ext = uriStr.substring(lastIndexOf + 1);
+            return MimeTypeMap.getInstance().getMimeTypeFromExtension(ext);
         } else return null;
     }
 
@@ -62,7 +65,7 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
 
     @SuppressLint("NewApi")//for ImageDecoder.DecodeException
     @Override
-    public ImageThumbnail getImageThumbnail(String imageUriStr) throws FileNotFoundException, IOException {
+    public ImageData getImageThumbnail(String imageUriStr) throws FileNotFoundException, IOException {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
             throw new UnsupportedOperationException("Not supported on Android < 10");
 
@@ -119,7 +122,7 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
             }
             thumb.compress(format, quality, baos);
 
-            ImageThumbnail imageThumbnail = new ImageThumbnail();
+            ImageData imageThumbnail = new ImageData();
             imageThumbnail.width = thumb.getWidth();
             imageThumbnail.height = thumb.getHeight();
             imageThumbnail.mimeType = "image/webp";
@@ -202,5 +205,10 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
             rootDir.mkdirs();
         }
         return DocumentFile.fromFile(rootDir);
+    }
+
+    @Override
+    public ImageData generateCaptchaImage(String code, int width, int height) {
+        return CaptchaImageGenerator.generateCaptchaImage(code, width, height);
     }
 }

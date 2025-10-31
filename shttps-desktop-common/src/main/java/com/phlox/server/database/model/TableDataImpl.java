@@ -1,5 +1,6 @@
 package com.phlox.server.database.model;
 
+import com.phlox.server.database.DatabaseImpl;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.simpleserver.database.model.TableData;
 
@@ -7,20 +8,17 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.InputStream;
-import java.sql.Blob;
-import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Base64;
 
 public class TableDataImpl implements TableData {
-    private Connection connection;
+    private DatabaseImpl.ManagedConnection connection;
     private Statement statement;
     private ResultSet resultSet;
     private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
 
-    public TableDataImpl(Connection connection, Statement statement, ResultSet resultSet) {
+    public TableDataImpl(DatabaseImpl.ManagedConnection connection, Statement statement, ResultSet resultSet) {
         this.connection = connection;
         this.statement = statement;
         this.resultSet = resultSet;
@@ -83,7 +81,7 @@ public class TableDataImpl implements TableData {
     @Override
     public int getColumnIndex(String columnName) {
         try {
-            return resultSet.findColumn(columnName);
+            return resultSet.findColumn(columnName) - 1;
         } catch (SQLException e) {
             logger.e("Error finding column index", e);
             return -1;
@@ -91,79 +89,39 @@ public class TableDataImpl implements TableData {
     }
 
     @Override
-    public long count() {
-        try {
-            return resultSet.getFetchSize();
-        } catch (SQLException e) {
-            logger.e("Error getting row count", e);
-            return 0;
-        }
+    public String getString(int columnIndex) throws Exception {
+        return resultSet.getString(++columnIndex);
     }
 
     @Override
-    public String getString(int columnIndex) {
-        try {
-            return resultSet.getString(columnIndex);
-        } catch (SQLException e) {
-            logger.e("Error getting string value", e);
-            return null;
-        }
+    public int getInt(int columnIndex) throws Exception {
+        return resultSet.getInt(++columnIndex);
     }
 
     @Override
-    public int getInt(int columnIndex) {
-        try {
-            return resultSet.getInt(columnIndex);
-        } catch (SQLException e) {
-            logger.e("Error getting int value", e);
-            return 0;
-        }
+    public long getLong(int columnIndex) throws Exception {
+        return resultSet.getLong(++columnIndex);
     }
 
     @Override
-    public long getLong(int columnIndex) {
-        try {
-            return resultSet.getLong(columnIndex);
-        } catch (SQLException e) {
-            logger.e("Error getting long value", e);
-            return 0;
-        }
+    public double getDouble(int columnIndex) throws Exception {
+        return resultSet.getDouble(++columnIndex);
     }
 
     @Override
-    public double getDouble(int columnIndex) {
-        try {
-            return resultSet.getDouble(columnIndex);
-        } catch (SQLException e) {
-            logger.e("Error getting double value", e);
-            return 0.0;
-        }
+    public byte[] getBlob(int columnIndex) throws Exception {
+        return resultSet.getBytes(++columnIndex);
     }
 
     @Override
-    public byte[] getBlob(int columnIndex) {
-        try {
-            return resultSet.getBytes(columnIndex);
-        } catch (SQLException e) {
-            logger.e("Error getting blob value", e);
-            return new byte[0];
-        }
-    }
-
-    @Override
-    public boolean getBoolean(int columnIndex) {
-        try {
-            return resultSet.getBoolean(columnIndex);
-        } catch (SQLException e) {
-            logger.e("Error getting boolean value", e);
-            return false;
-        }
+    public boolean getBoolean(int columnIndex) throws Exception {
+        return resultSet.getBoolean(++columnIndex);
     }
 
     @Override
     public Integer getInt(int columnIndex, Integer defaultValue) {
         try {
-            int result = resultSet.getInt(columnIndex);
+            int result = resultSet.getInt(++columnIndex);
             return resultSet.wasNull() ? defaultValue : result;
         } catch (SQLException e) {
             logger.e("Error getting int value", e);
@@ -174,7 +132,7 @@ public class TableDataImpl implements TableData {
     @Override
     public Long getLong(int columnIndex, Long defaultValue) {
         try {
-            long result = resultSet.getLong(columnIndex);
+            long result = resultSet.getLong(++columnIndex);
             return resultSet.wasNull() ? defaultValue : result;
         } catch (SQLException e) {
             logger.e("Error getting long value", e);
@@ -185,7 +143,7 @@ public class TableDataImpl implements TableData {
     @Override
     public Double getDouble(int columnIndex, Double defaultValue) {
         try {
-            double result = resultSet.getDouble(columnIndex);
+            double result = resultSet.getDouble(++columnIndex);
             return resultSet.wasNull() ? defaultValue : result;
         } catch (SQLException e) {
             logger.e("Error getting double value", e);
@@ -196,11 +154,22 @@ public class TableDataImpl implements TableData {
     @Override
     public Boolean getBoolean(int columnIndex, Boolean defaultValue) {
         try {
-            boolean result = resultSet.getBoolean(columnIndex);
+            boolean result = resultSet.getBoolean(++columnIndex);
             return resultSet.wasNull() ? defaultValue : result;
         } catch (SQLException e) {
             logger.e("Error getting boolean value", e);
             return defaultValue;
+        }
+    }
+
+    @Override
+    public boolean isNull(int col) {
+        try {
+            resultSet.getObject(++col);
+            return resultSet.wasNull();
+        } catch (SQLException e) {
+            logger.e("Error checking for null", e);
+            return true;
         }
     }
 

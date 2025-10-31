@@ -1,18 +1,22 @@
-let tableName = new URL(document.location.toString()).searchParams.get('table');
-let tableSchema = null;
-let rowCount = 0;
-let currentPage = 1;
-let rowsPerPage = calculateRowsPerPage();
-let autoReloadOnResizeTimer = null;
-let filters = {};
-let sort = null;
-let selectedRows = [];
-
 let mainUI = document.getElementById('mainUI');
 let tableTitle = document.getElementById('table-name');
 let newRecordButton = document.getElementById('new-record-button');
 let deleteRowsButton = document.getElementById('delete-rows-button');
 let editRowButton = document.getElementById('edit-row-button');
+
+
+let tableName = new URL(document.location.toString()).searchParams.get('table');
+let tableSchema = null;
+let rowCount = 0;
+let currentPage = 1;
+let autoReloadOnResizeTimer = null;
+let filters = {};
+let sort = null;
+let selectedRows = [];
+const rowHeight = 49;//24 content + 12*2 padding + 1 border
+const maxRowHeight = 60;//60px is the maximum height for a row
+let rowsPerPage = calculateRowsPerPage();
+
 
 function onPageLoad() {
     tableTitle.textContent = tableName;
@@ -70,7 +74,6 @@ function onPageLoad() {
 
 function calculateRowsPerPage() {
     let tableDataContainer = document.getElementById('table-data-container');
-    const rowHeight = 30 + 2;
     const availableHeight = tableDataContainer.clientHeight - 70; // 60px for the header + padding + horizontal scrollbar
     return Math.floor(availableHeight / rowHeight);
 }
@@ -83,14 +86,25 @@ function onPageResize() {
 function fetchTableSchema(onDone) {
     // fetch the table schema /api/db/schema?table=tableName
     fetch(`/api/db/schema?table=${tableName}`)
-        .then(response => response.json())
+        .then(async response => {
+            if (response.ok) {
+                return response.json();
+            } else {
+                const errorText = await response.text();
+                throw new Error(errorText);
+            }
+        })
         .then(data => {
             tableSchema = data;
             rowCount = tableSchema.rowCount;
             detectTypesHints();
             onDone();
-        }
-    );
+        })
+        .catch(error => {
+            console.error('Error fetching table schema:', error);
+            alert(`Error loading table schema: ${error.message}`);
+            document.getElementById('loader').style.visibility = 'hidden';
+        });
 }
 
 function detectTypesHints() {
@@ -179,12 +193,23 @@ function fetchTableData() {
             body: params
         }
     )
-        .then(response => response.json())
+        .then(async response => {
+            if (response.ok) {
+                return response.json();
+            } else {
+                const errorText = await response.text();
+                throw new Error(errorText);
+            }
+        })
         .then(data => {
             renderTableData(data);
             renderPager();
-        }
-    );
+        })
+        .catch(error => {
+            console.error('Error fetching table data:', error);
+            alert(`Error loading table data: ${error.message}`);
+            document.getElementById('loader').style.visibility = 'hidden';
+        });
 }
 
 function deleteSelectedRows() {
@@ -228,12 +253,22 @@ function deleteSelectedRows() {
             body: params
         }
     )
-        .then(response => response.json())
+        .then(async response => {
+            if (response.ok) {
+                return response.json();
+            } else {
+                const errorText = await response.text();
+                throw new Error(errorText);
+            }
+        })
         .then(data => {
             console.log(data);
             fetchTableData();
-        }
-    );
+        })
+        .catch(error => {
+            console.error('Error deleting rows:', error);
+            alert(`Error deleting rows: ${error.message}`);
+        });
 }
 
 function renderTableData(data) {
@@ -286,9 +321,15 @@ function renderTableData(data) {
 
     let tableBody = document.getElementById('table-body');
     tableBody.innerHTML = '';
-    for (let row of data) {
+    //calculate row height - rows should stretch to fill the container but not more than maxRowHeight
+    let rowHeight = (container.clientHeight - headerElement.clientHeight) / data.data.length;
+    if (rowHeight > maxRowHeight) {
+        rowHeight = maxRowHeight;
+    }
+    for (let row of data.data) {
         let rowElement = document.createElement('tr');
         rowElement.className = 'db-row';
+        rowElement.style.height = rowHeight + 'px';
         let columnIndex = 0;
         for (let column of row) {
             if (tableSchema.hasRowId && columnIndex === 0) {

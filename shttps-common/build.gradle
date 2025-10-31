@@ -9,7 +9,7 @@ java {
 
 dependencies {
     implementation project(path: ':server-lib')
-    implementation 'org.json:json:20231013'
+    implementation 'org.json:json:20250517'
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.2'

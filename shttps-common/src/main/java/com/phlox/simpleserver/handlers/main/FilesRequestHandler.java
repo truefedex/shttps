@@ -70,17 +70,20 @@ public class FilesRequestHandler extends StaticFileRequestHandler {
             for (int i = 0; i < json.length(); i++) {
                 files.add(new FileModel(json.getJSONObject(i), destPath));
             }
-            
-            boolean displayMenuButton = authManager instanceof WebAuthManager && user != null;
+
+            boolean needAuthBlock = authManager instanceof WebAuthManager && user != null;
+            boolean displayMenuButton = needAuthBlock || config.isDatabaseEnabled();
 
             HTMLTemplateResponse response = new HTMLTemplateResponse(template, new HashMap<String, Object>() {{
                 put("current_path", request.path);
-                put("allowEditing", allowEditing && (user == null || user.hasAnyFileEditingRights()));
+                put("allowEditing", allowEditing && (user == null || authManager.getUserRightsEvaluator().hasAnyFileEditingRights(user)));
                 put("thumbnails_support", SHTTPSApp.getInstance().platformUtils.isThumbnailsSupported());
                 put("list_no_script", files);
                 put("mediastore", root.getUri().startsWith("mediastore://"));
                 put("display_menu_button", displayMenuButton);
+                put("needAuthBlock", needAuthBlock);
                 put("hasUser", user != null && !user.isGuest());
+                put("dbConnected", config.isDatabaseEnabled());
             }});
 
             if (isHead) {

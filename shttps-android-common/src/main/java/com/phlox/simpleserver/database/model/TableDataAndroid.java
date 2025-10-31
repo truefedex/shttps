@@ -38,11 +38,6 @@ public class TableDataAndroid implements TableData {
     }
 
     @Override
-    public long count() {
-        return cursor.getCount();
-    }
-
-    @Override
     public String getString(int columnIndex) {
         return cursor.getString(columnIndex);
     }
@@ -102,6 +97,11 @@ public class TableDataAndroid implements TableData {
             return defaultValue;
         }
         return cursor.getInt(columnIndex) != 0;
+    }
+
+    @Override
+    public boolean isNull(int col) {
+        return cursor.isNull(col);
     }
 
     @Override

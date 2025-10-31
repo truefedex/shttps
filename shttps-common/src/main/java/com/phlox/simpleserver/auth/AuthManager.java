@@ -9,6 +9,7 @@ import org.jspecify.annotations.Nullable;
 public interface AuthManager {
     @Nullable
     User getAuthenticatedUser(@NonNull RequestContext context);
-    User authenticate(RequestContext context, Request request);
+    @Nullable User authenticate(RequestContext context, Request request);
     void logout(@NonNull RequestContext context, @NonNull Request request);
+    @NonNull UserRightsEvaluator getUserRightsEvaluator();
 }

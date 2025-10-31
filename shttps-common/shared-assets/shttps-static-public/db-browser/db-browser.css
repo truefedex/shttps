@@ -19,7 +19,8 @@
   }
 }
 
-.loader {
+/* Overlay Loader (full-screen) */
+.overlay-loader {
   display: none;
   position: fixed;
   top: 0;
@@ -108,4 +109,29 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 15px 15px 0 15px;
+}
+
+.header .action-button {
+  margin-left: 10px;
+}
+
+.menu-button {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5em;
+  padding: 5px 10px;
+  cursor: pointer;
+  margin-right: 5px;
+  user-select: none;
+}
+
+.menu-button:hover {
+  color: #306477;
 }

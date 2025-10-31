@@ -6,6 +6,7 @@ import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.utils.Holder;
 
@@ -16,8 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DBUpdateRequestHandler extends BaseDBRequestHandler {
-    public DBUpdateRequestHandler(Holder<Database> database, SHTTPSConfig config) {
-        super(database, config);
+    public DBUpdateRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
+        super(database, config, authManager);
     }
 
     @Override
@@ -32,7 +33,8 @@ public class DBUpdateRequestHandler extends BaseDBRequestHandler {
         if (!config.isAllowDatabaseTableDataEditingApi()) {
             return StandardResponses.FORBIDDEN("Database table data editing API is disabled");
         }
-        //TODO: check if user has permission to update data
+        User user = checkUser(context);
+        if (checkIsForbidden(user, User.DBRights.UPDATE)) return StandardResponses.FORBIDDEN("Insufficient rights");
         context.requestBodyReader.readRequestBody(request);
         String table = request.urlEncodedPostParams.get("table");
         if (table == null) {

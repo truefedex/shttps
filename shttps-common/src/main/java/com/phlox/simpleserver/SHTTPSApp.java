@@ -1,9 +1,8 @@
 package com.phlox.simpleserver;
 
 import com.phlox.server.SimpleHttpServer;
-import com.phlox.server.handlers.LoggingMiddleware;
+import com.phlox.server.handlers.RateLimitingMiddleware;
 import com.phlox.server.handlers.RedirectsMiddleware;
-import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.handlers.Router;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
@@ -14,27 +13,31 @@ import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.Utils;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.auth.AuthManager;
+import com.phlox.simpleserver.auth.ConfigBasedUserStore;
+import com.phlox.simpleserver.auth.DBBasedUserStore;
 import com.phlox.simpleserver.auth.DummyAuthManager;
+import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.auth.basic.BasicAuthManager;
+import com.phlox.simpleserver.auth.basic.BasicAuthMiddleware;
+import com.phlox.simpleserver.auth.web.CaptchaManager;
+import com.phlox.simpleserver.auth.web.CaptchaRequestHandler;
 import com.phlox.simpleserver.auth.web.InMemorySessionManager;
 import com.phlox.simpleserver.auth.web.LoginRequestHandler;
 import com.phlox.simpleserver.auth.web.LogoutRequestHandler;
 import com.phlox.simpleserver.auth.web.SessionManager;
+import com.phlox.simpleserver.auth.web.UserRegistrationRequestHandler;
 import com.phlox.simpleserver.auth.web.WebAuthManager;
 import com.phlox.simpleserver.auth.web.WebAuthMiddleware;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.DatabaseMigrator;
 import com.phlox.simpleserver.database.SHTTPSDatabaseFabric;
-import com.phlox.simpleserver.auth.ConfigBasedUserStore;
-import com.phlox.simpleserver.auth.UserStore;
-import com.phlox.simpleserver.auth.basic.BasicAuthManager;
-import com.phlox.simpleserver.auth.basic.BasicAuthMiddleware;
-import com.phlox.simpleserver.handlers.main.FilesRequestHandler;
+import com.phlox.simpleserver.handlers.database.DBCustomSQLRequestHandler;
+import com.phlox.simpleserver.handlers.database.DBDeleteRequestHandler;
+import com.phlox.simpleserver.handlers.database.DBInsertRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBSchemaRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBSingleCellDataRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBTableDataRequestHandler;
-import com.phlox.simpleserver.handlers.database.DBInsertRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBUpdateRequestHandler;
-import com.phlox.simpleserver.handlers.database.DBDeleteRequestHandler;
-import com.phlox.simpleserver.handlers.database.DBCustomSQLRequestHandler;
 import com.phlox.simpleserver.handlers.files.DeleteFileRequestHandler;
 import com.phlox.simpleserver.handlers.files.FileListRequestHandler;
 import com.phlox.simpleserver.handlers.files.MoveFileRequestHandler;
@@ -43,11 +46,12 @@ import com.phlox.simpleserver.handlers.files.RenameFileRequestHandler;
 import com.phlox.simpleserver.handlers.files.StaticAssetsRequestHandler;
 import com.phlox.simpleserver.handlers.files.StaticFileRequestHandler;
 import com.phlox.simpleserver.handlers.files.ThumbnailHandler;
-import com.phlox.simpleserver.handlers.files.upload.UploadFileRequestHandler;
 import com.phlox.simpleserver.handlers.files.ZipDownloadRequestHandler;
+import com.phlox.simpleserver.handlers.files.upload.UploadFileRequestHandler;
+import com.phlox.simpleserver.handlers.main.FilesRequestHandler;
 import com.phlox.simpleserver.utils.Holder;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
-
+import com.phlox.simpleserver.utils.ServerLogsCollector;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -62,12 +66,15 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 public class SHTTPSApp {
     private static SHTTPSApp instance;
@@ -77,12 +84,17 @@ public class SHTTPSApp {
     private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
 
     private final Holder<Database> database = new Holder<>(null);
+    public final ServerLogsCollector logsCollector = new ServerLogsCollector(1000);
 
-    private final Router router = new Router();
-    public LoggingMiddleware loggingMiddleware;
+    private final Router router = new Router(logsCollector);
+    public RateLimitingMiddleware rateLimitingMiddleware;
     private UserStore userStore;
+    private SessionManager sessionManager;
     public Callback callback;
-    private volatile SimpleHttpServer server;
+    private volatile SimpleHttpServer server = null;
+    private volatile int shutdownTimeout = 0;
+    private final ScheduledExecutorService scheduledThreadPool = Executors.newScheduledThreadPool(1);
+    private volatile ScheduledFuture<?> shutdownFuture = null;
 
     public static SHTTPSApp init(SHTTPSConfig config, SHTTPSPlatformUtils platformUtils, SHTTPSDatabaseFabric databaseFabric) {
         if (instance != null) {
@@ -104,6 +116,17 @@ public class SHTTPSApp {
         if (instance == null) {
             throw new IllegalStateException("App not initialized");
         }
+        instance.stopServer();
+        Database db = instance.database.get();
+        if (db != null) {
+            try {
+                db.close();
+            } catch (Exception e) {
+                instance.logger.e("Failed to close database", e);
+            }
+            instance.database.set(null);
+        }
+        instance.scheduledThreadPool.shutdownNow();
         instance = null;
     }
 
@@ -126,6 +149,7 @@ public class SHTTPSApp {
                 Database database = databaseFabric.openDatabase(config.getDatabasePath());
                 Map<String, Object> bdStatus = database.getStatus();
                 logger.i("Database opened: " + bdStatus);
+                DatabaseMigrator.runMigrations(database, config.isStoreUsersInDatabase());
                 setDatabase(database);
             } catch (Exception e) {
                 logger.e("Failed to open database", e);
@@ -138,24 +162,34 @@ public class SHTTPSApp {
         Router.Middlewares authMiddlewares = new Router.Middlewares();
         router.globalMiddlewares.reset();
 
-        final String loginFormPath = "/shttps-pages/login/";
+        final String loginFormPath = "/shttps-static-public/auth/";
         AuthManager authManager;
-        SessionManager sessionManager = null;
+
         switch (config.getAuthMode()) {
             case BASIC_AUTH:
-                authManager = new BasicAuthManager(provideUserStore(true));
+                authManager = new BasicAuthManager(provideUserStore());
                 BasicAuthMiddleware authMiddleware = new BasicAuthMiddleware(authManager);
                 authMiddlewares.addPreMiddleware(authMiddleware);
                 break;
             case WEB:
-                sessionManager = new InMemorySessionManager();
-                authManager = new WebAuthManager(provideUserStore(true), sessionManager);
-                WebAuthMiddleware authMiddleware1 = new WebAuthMiddleware(authManager, loginFormPath);
+                authManager = new WebAuthManager(provideUserStore(),
+                        provideSessionManager(false));
+                WebAuthMiddleware authMiddleware1 = new WebAuthMiddleware(authManager,
+                        loginFormPath, config.isAllowedUserRegistration());
                 authMiddlewares.addPreMiddleware(authMiddleware1);
                 break;
             default:
                 authManager = new DummyAuthManager();
                 break;
+        }
+
+        rateLimitingMiddleware = new RateLimitingMiddleware(
+                config.getGlobalRateLimit(),
+                1000 * 60,//minute
+                config.rateLimiterTrustToIPHeaders()
+        );
+        if (config.getGlobalRateLimit() > 0) {
+            router.globalMiddlewares.addPreMiddleware(rateLimitingMiddleware);
         }
 
         RedirectsMiddleware redirectsMiddleware = new RedirectsMiddleware();
@@ -169,9 +203,6 @@ public class SHTTPSApp {
             }
         }
         router.globalMiddlewares.addPreMiddleware(redirectsMiddleware);
-
-        loggingMiddleware = new LoggingMiddleware(1000);
-        router.globalMiddlewares.addPostMiddleware(loggingMiddleware);
 
         //Setup routes
         router.resetRoutes();
@@ -187,32 +218,37 @@ public class SHTTPSApp {
         router.addRoute("/api/file/zip", Set.of("POST"), new ZipDownloadRequestHandler(config, authManager), authMiddlewares);
 
         //database handlers
-        router.addRoute("/api/db/schema", Set.of("GET"), new DBSchemaRequestHandler(database, config), authMiddlewares);
-        router.addRoute("/api/db/table", Set.of("GET", "POST"), new DBTableDataRequestHandler(database, config), authMiddlewares);
-        router.addRoute("/api/db/insert", Set.of("POST"), new DBInsertRequestHandler(database, config), authMiddlewares);
-        router.addRoute("/api/db/update", Set.of("PUT"), new DBUpdateRequestHandler(database, config), authMiddlewares);
-        router.addRoute("/api/db/delete", Set.of("DELETE"), new DBDeleteRequestHandler(database, config), authMiddlewares);
-        router.addRoute("/api/db/query", Set.of("POST"), new DBCustomSQLRequestHandler(database, config), authMiddlewares);
-        router.addRoute("/api/db/cell-data", Set.of("GET", "POST"), new DBSingleCellDataRequestHandler(database, config), authMiddlewares);
+        router.addRoute("/api/db/schema", Set.of("GET"), new DBSchemaRequestHandler(database, config, authManager), authMiddlewares);
+        router.addRoute("/api/db/table", Set.of("GET", "POST"), new DBTableDataRequestHandler(database, config, authManager), authMiddlewares);
+        router.addRoute("/api/db/insert", Set.of("POST"), new DBInsertRequestHandler(database, config, authManager), authMiddlewares);
+        router.addRoute("/api/db/update", Set.of("PUT"), new DBUpdateRequestHandler(database, config, authManager), authMiddlewares);
+        router.addRoute("/api/db/delete", Set.of("DELETE"), new DBDeleteRequestHandler(database, config, authManager), authMiddlewares);
+        router.addRoute("/api/db/query", Set.of("POST"), new DBCustomSQLRequestHandler(database, config, authManager), authMiddlewares);
+        router.addRoute("/api/db/cell-data", Set.of("GET", "POST"), new DBSingleCellDataRequestHandler(database, config, authManager), authMiddlewares);
 
         //auth handlers (if any)
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.WEB)) {
-            router.addRoute("/api/user/login", Set.of("POST"), new LoginRequestHandler(authManager, sessionManager));
+            assert authManager instanceof WebAuthManager;
+            Router.Middlewares loginMiddlewares = new Router.Middlewares();
+            loginMiddlewares.addPreMiddleware(new RateLimitingMiddleware(10, 1000 * 60, config.rateLimiterTrustToIPHeaders()));
+            router.addRoute("/api/user/login", Set.of("POST"), new LoginRequestHandler(authManager), loginMiddlewares);
+
             router.addRoute("/api/user/logout", Set.of("POST"), new LogoutRequestHandler(authManager), authMiddlewares);
+
+            if (config.isAllowedUserRegistration()) {
+                CaptchaManager captchaManager = new CaptchaManager(platformUtils);
+                Router.Middlewares captchaMiddlewares = new Router.Middlewares();
+                captchaMiddlewares.addPreMiddleware(new RateLimitingMiddleware(5, 1000 * 60, config.rateLimiterTrustToIPHeaders()));
+                router.addRoute("/api/captcha", Set.of("GET"), new CaptchaRequestHandler(captchaManager), captchaMiddlewares);
+
+                Router.Middlewares userRegMiddlewares = new Router.Middlewares();
+                userRegMiddlewares.addPreMiddleware(new RateLimitingMiddleware(3, 1000 * 60, config.rateLimiterTrustToIPHeaders()));
+                router.addRoute("/api/user/register", Set.of("POST"),
+                        new UserRegistrationRequestHandler((WebAuthManager) authManager, captchaManager), userRegMiddlewares);
+            }
         }
 
         //build-in pages
-        if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.WEB)) {
-            router.addRoute(loginFormPath, Set.of("GET"), (context, request) -> {
-                try (InputStream is = platformUtils.openAssetStream("shttps-static-public/auth/login.html")) {
-                    String html = new String(Utils.readAllBytes(is), StandardCharsets.UTF_8);
-                    return new TextResponse(html, "text/html");
-                } catch (IOException e) {
-                    throw new RuntimeException("Can not read assets");
-                }
-            });
-        }
-
         router.addRouteByPathPrefix("/shttps-static-public",
                 new StaticAssetsRequestHandler("shttps-static-public", "/shttps-static-public", config), authMiddlewares);
 
@@ -222,50 +258,60 @@ public class SHTTPSApp {
         router.addRouteByPathPrefix("/", filesRequestHandler, authMiddlewares);
 
 
-        SimpleHttpServer srv = new SimpleHttpServer.Builder()
-                .setRequestHandler(router)
-                .setCallback(new SimpleHttpServer.Callback() {
-                    @Override
-                    public void onServerStarted() {
-                        logger.i("Server started");
-                    }
-                    @Override
-                    public void onServerStopped() {
-                        logger.i("Server stopped");
-                    }
-                    @Override
-                    public void onNewConnection(Socket socket, long connectionNumber) {
-                        SocketAddress address = socket.getRemoteSocketAddress();
-                        logger.i("New connection #" + connectionNumber + " from " + (address != null ? address.toString() : "unknown address"));
-                        Callback callback = SHTTPSApp.this.callback;
-                        if (callback != null) {
-                            callback.onNewConnection(socket);
-                        }
-                    }
-                    @Override
-                    public void onConnectionClosed(Socket socket) {
-                        SocketAddress address = socket.getRemoteSocketAddress();
-                        logger.i("Connection closed from " + (address  != null  ? address.toString()  : "unknown address"));
-                    }
-                    @Override
-                    public void onConnectionError(Socket socket, Exception e) {
-                        SocketAddress address = socket.getRemoteSocketAddress();
-                        logger.e("Connection error from " + (address   != null   ? address.toString()    : "unknown address"));
-                    }
-                    @Override
-                    public void onConnectionRequest(RequestContext context, Request request) {}
-                    @Override
-                    public void onConnectionResponse(RequestContext context, Request request, Response response) {}
+        SimpleHttpServer srv = new SimpleHttpServer(router);
+        if (config.getVerifyHost()) {
+            srv.hostName = config.getHost();
+        }
+        srv.callback = new SimpleHttpServer.Callback() {
+            @Override
+            public void onServerStarted() {
+                logger.i("Server started");
+                Callback callback = SHTTPSApp.this.callback;
+                if (callback != null) {
+                    callback.onServerStarted();
+                }
+            }
+            @Override
+            public void onServerStopped() {
+                logger.i("Server stopped");
+                Callback callback = SHTTPSApp.this.callback;
+                if (callback != null) {
+                    callback.onServerStopped();
+                }
+            }
+            @Override
+            public void onNewConnection(Socket socket, long connectionNumber) {
+                SocketAddress address = socket.getRemoteSocketAddress();
+                logger.i("New connection #" + connectionNumber + " from " + (address != null ? address.toString() : "unknown address"));
+                Callback callback = SHTTPSApp.this.callback;
+                if (callback != null) {
+                    callback.onNewConnection(socket);
+                }
+                setupShutdownTimeout();
+            }
+            @Override
+            public void onConnectionClosed(Socket socket) {
+                SocketAddress address = socket.getRemoteSocketAddress();
+                logger.i("Connection closed from " + (address  != null  ? address.toString()  : "unknown address"));
+            }
+            @Override
+            public void onConnectionError(Socket socket, Exception e) {
+                SocketAddress address = socket.getRemoteSocketAddress();
+                logger.e("Connection error from " + (address   != null   ? address.toString()    : "unknown address"));
+            }
+            @Override
+            public void onConnectionRequest(RequestContext context, Request request) {}
+            @Override
+            public void onConnectionResponse(RequestContext context, Request request, Response response) {}
 
-                    @Override
-                    public void onConnectionRejected(Socket socket, int reason) {
-                        Callback callback = SHTTPSApp.this.callback;
-                        if (callback != null) {
-                            callback.onConnectionRejected(socket, reason);
-                        }
-                    }
-                })
-                .build();
+            @Override
+            public void onConnectionRejected(Socket socket, int reason) {
+                Callback callback = SHTTPSApp.this.callback;
+                if (callback != null) {
+                    callback.onConnectionRejected(socket, reason);
+                }
+            }
+        };
 
         String[] allowedInterfaces = config.getAllowedNetworkInterfaces();
         if (allowedInterfaces != null && allowedInterfaces.length > 0) {
@@ -280,7 +326,7 @@ public class SHTTPSApp {
                     try {
                         allowedClientAddressesParsed.add(InetAddress.getByName(address));
                     } catch (UnknownHostException e) {
-                        e.printStackTrace();
+                        logger.e("Error while processing whitelist", e);
                     }
                 }
             }
@@ -297,25 +343,29 @@ public class SHTTPSApp {
 
         if (config.getUseTLS()) {
             KeyStore cert = config.getTLSCert();
-            String certPassword = config.getTLSCertPassword();
+            String certPassword = config.getTLSKeystorePassword();
+            String keyPassword = config.getTLSKeyPassword();
+            // For compatibility if key password is not set, it is assumed to be the same as the store password
+            keyPassword = (keyPassword != null && !keyPassword.isEmpty()) ? keyPassword : certPassword;
             if (cert == null)  {
                 //use default self-signed cert
                 String password = "z47x#vt6Rm$!y;LK";
                 try (InputStream certStream = platformUtils.openAssetStream("default_self_signed.pfx")) {
                     cert = KeyStore.getInstance("PKCS12");
                     cert.load(certStream, password.toCharArray());
-                    certPassword = password;
+                    keyPassword = password;
                 } catch (Exception e) {
                     throw new IllegalStateException("Failed to load default self-signed certificate", e);
                 }
             } else if (certPassword == null) {
                 throw new IllegalStateException("Certificate password not set!");
             }
-            srv.startListen(config.getPort(), cert, certPassword);
+            srv.startListen(config.getPort(), cert, keyPassword);
         } else {
             srv.startListen(config.getPort());
         }
         this.server = srv;
+        setupShutdownTimeout();
     }
 
     public synchronized void stopServer() {
@@ -323,6 +373,14 @@ public class SHTTPSApp {
         if (srv != null && srv.isListenThreadRunning()) {
             srv.stopListen();
             server = null;
+        }
+
+        rateLimitingMiddleware.shutdown();
+
+        ScheduledFuture<?> future = this.shutdownFuture;
+        if (future != null) {
+            future.cancel(false);
+            this.shutdownFuture = null;
         }
     }
 
@@ -333,10 +391,21 @@ public class SHTTPSApp {
     public UserStore provideUserStore(boolean invalidate) {
         UserStore userStore = this.userStore;
         if (invalidate || userStore == null) {
-            userStore = new ConfigBasedUserStore(config);
+            userStore = config.isStoreUsersInDatabase() ?
+                    new DBBasedUserStore(database, config) :
+                    new ConfigBasedUserStore(config);
             this.userStore = userStore;
         }
         return userStore;
+    }
+
+    public SessionManager provideSessionManager(boolean invalidate) {
+        SessionManager sessionManager = this.sessionManager;
+        if (invalidate || sessionManager == null) {
+            sessionManager = new InMemorySessionManager();
+            this.sessionManager = sessionManager;
+        }
+        return sessionManager;
     }
 
     public boolean isServerRunning() {
@@ -344,11 +413,9 @@ public class SHTTPSApp {
         return srv != null && srv.isListenThreadRunning();
     }
 
-    public void restartServerIfRunning() {
-        SimpleHttpServer srv = this.server;
-        if (srv != null && srv.isListenThreadRunning()) {
-            srv.stopListen();
-            server = null;
+    public synchronized void restartServerIfRunning() {
+        if (isServerRunning()) {
+            stopServer();
             try {
                 startServer();
             } catch (Exception e) {
@@ -366,6 +433,14 @@ public class SHTTPSApp {
     }
 
     public void setDatabase(Database db) {
+        Database oldDb = this.database.get();
+        if (oldDb != null) {
+            try {
+                oldDb.close();
+            } catch (Exception e) {
+                logger.e("Failed to close old database", e);
+            }
+        }
         this.database.set(db);
     }
 
@@ -377,9 +452,40 @@ public class SHTTPSApp {
         return server;
     }
 
+    public void setShutdownTimeout(int shutdownTimeout) {
+        this.shutdownTimeout = shutdownTimeout;
+        if (isServerRunning()) setupShutdownTimeout();
+    }
+
+    private void setupShutdownTimeout() {
+        ScheduledFuture<?> future = this.shutdownFuture;
+        if (future != null) {
+            future.cancel(false);
+            this.shutdownFuture = null;
+        }
+        if (shutdownTimeout > 0) {
+            this.shutdownFuture = scheduledThreadPool.schedule(autoShutdownHandler, shutdownTimeout, TimeUnit.SECONDS);
+        }
+    }
+
+    private final Runnable autoShutdownHandler = () -> {
+        SimpleHttpServer server = SHTTPSApp.this.server;
+        if (server != null) {
+            if (server.hasOpenConnections()) {
+                setupShutdownTimeout();
+            } else {
+                stopServer();
+            }
+        }
+    };
+
     public interface Callback {
         void onConnectionRejected(Socket socket, int reason);
 
         void onNewConnection(Socket socket);
+
+        void onServerStarted();
+
+        void onServerStopped();
     }
 }

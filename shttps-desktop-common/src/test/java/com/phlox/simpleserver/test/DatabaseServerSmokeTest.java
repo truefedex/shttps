@@ -3,16 +3,13 @@ package com.phlox.simpleserver.test;
 import com.phlox.server.database.DatabaseFabricImpl;
 import com.phlox.server.utils.PlatformUtilsImpl;
 import com.phlox.simpleserver.SHTTPSApp;
-import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.server.SHTTPSConfigImpl;
-import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
-import com.phlox.simpleserver.database.SHTTPSDatabaseFabric;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -119,7 +116,7 @@ public class DatabaseServerSmokeTest {
         
         // If table doesn't exist, create it
         if (response.statusCode() == 200 && !response.body().contains(TEST_TABLE)) {
-            String createTableSql = "CREATE TABLE " + TEST_TABLE + " (" + TEST_COLUMN + " TEXT)";
+            String createTableSql = "CREATE TABLE IF NOT EXISTS " + TEST_TABLE + " (" + TEST_COLUMN + " TEXT)";
             request = HttpRequest.newBuilder()
                     .uri(URI.create(testConfig.getServerUrl() + "/api/db/query"))
                     .header("Content-Type", "text/plain")

@@ -150,14 +150,32 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     public KeyStore getTLSCert() {
         String path = json.optString(KEY_TLS_CERT, null);
         if (path == null || path.isEmpty()) return null;
-        try {
+        try (FileInputStream fis = new FileInputStream(path)) {
             KeyStore ks;
             if (path.endsWith(".bks")) {
                 ks = KeyStore.getInstance("BKS");
             } else {
                 ks = KeyStore.getInstance("PKCS12");
             }
-            ks.load(new FileInputStream(path), getTLSCertPassword().toCharArray());
+            String keyStorePassword = getTLSKeystorePassword();
+            String keyPassword = getTLSKeyPassword();
+            if (keyPassword == null) {
+                keyPassword = keyStorePassword;
+            }
+            ks.load(fis, keyStorePassword.toCharArray());
+            //ckeck if we have at least one key entry and can load key with provided password
+            boolean hasKeyEntry = false;
+            for (String alias : Collections.list(ks.aliases())) {
+                if (ks.isKeyEntry(alias)) {
+                    hasKeyEntry = true;
+                    ks.getKey(alias, keyPassword.toCharArray());
+                    break;
+                }
+            }
+            if (!hasKeyEntry) {
+                logger.e("Keystore file doesn't contain any key entries: " + path);
+                return null;
+            }
             return ks;
         } catch (Exception e) {
             logger.e("Failed to read keystore file: " + path, e);
@@ -168,18 +186,12 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     @Override
     public void setTLSCert(byte[] value) {
         //on commandline we assume value is path to file
+        if (value == null) {
+            json.remove(KEY_TLS_CERT);
+            save();
+            return;
+        }
         json.put(KEY_TLS_CERT, new String(value));
-        save();
-    }
-
-    @Override
-    public String getTLSCertPassword() {
-        return json.optString(KEY_TLS_CERT_PASS, null);
-    }
-
-    @Override
-    public void setTLSCertPassword(String value) {
-        json.put(KEY_TLS_CERT_PASS, value);
         save();
     }
 
@@ -371,6 +383,28 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
         save();
     }
 
+    @Override
+    public boolean getBoolean(String key, boolean defaultValue) {
+        return json.optBoolean(key, defaultValue);
+    }
+
+    @Override
+    public void setBoolean(String key, boolean value) {
+        json.put(key, value);
+        save();
+    }
+
+    @Override
+    public String getString(String key, String defaultValue) {
+        return json.optString(key, defaultValue);
+    }
+
+    @Override
+    public void setString(String key, String value) {
+        json.put(key, value);
+        save();
+    }
+
     private void save() {
         if (batchModifications) {
             return;
@@ -407,7 +441,7 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
         if (getTLSCert() == null) {
             json.put(KEY_TLS_CERT, "");
         }
-        json.put(KEY_TLS_CERT_PASS, getTLSCertPassword());
+        json.put(KEY_TLS_CERT_KEYSTORE_PASS, getTLSKeystorePassword());
         json.put(KEY_ALLOWED_NETWORK_INTERFACES, getAllowedNetworkInterfaces() == null ? "" : String.join(",", getAllowedNetworkInterfaces()));
         json.put(KEY_WHITE_LIST_MODE, WhiteListMode.toInt(getWhiteListMode()));
         json.put(KEY_WHITE_LIST_OF_IPS, getWhiteList() == null ? "" : String.join(",", getWhiteList()));
@@ -416,6 +450,10 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
         json.put(KEY_DATABASE_PATH, getDatabasePath());
         json.put(KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API, isAllowDatabaseCustomSqlRemoteApi());
         json.put(KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API, isAllowDatabaseTableDataEditingApi());
+        json.put(KEY_AUTH_MODE, getAuthMode());
+        json.put(KEY_USERS, getUsers());
+        json.put(KEY_STORE_USERS_IN_DATABASE, isStoreUsersInDatabase());
+        json.put(KEY_HOST, getHost());
         endBatchModifications();
     }
 }

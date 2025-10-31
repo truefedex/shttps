@@ -7,9 +7,11 @@ import java.util.HashMap;
 public class RequestContext {
     //Default request body reader and parser - use it if request should have a body
     public final RequestBodyReader requestBodyReader;
-    //Middleware can use that to store data between request handlers
+    //Middleware can use that to store data between request handlers/middlewares
     public final HashMap<String, Object> data = new HashMap<>();
-    //There can be stored RequestHandler's response to use by post-middleware
+    //There can be stored additional headers for the response added by middlewares
+    public final HashMap<String, String> additionalResponseHeaders = new HashMap<>();
+    //There could be stored RequestHandler's response to use by post-middleware
     public Response response;
 
     public RequestContext(RequestBodyReader requestBodyReader) {

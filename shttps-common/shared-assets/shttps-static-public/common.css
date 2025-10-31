@@ -60,7 +60,7 @@ body {
     padding: 10px 40px 10px 20px;
     cursor: pointer;
     white-space: nowrap;
-    color: #7e7e7e;
+    color: #e0e0e0;
 }
 .context-menu .menu-options .menu-option:hover {
     background: rgba(0, 0, 0, 0.2);

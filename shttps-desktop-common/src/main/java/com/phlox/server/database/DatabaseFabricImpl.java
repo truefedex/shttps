@@ -15,8 +15,7 @@ public class DatabaseFabricImpl implements SHTTPSDatabaseFabric {
 
     @Override
     public Database createDatabase(String path) throws Exception {
-        //database file created on first table creation (by org.xerial:sqlite-jdbc)
-        throw new RuntimeException("Not implemented");
+        return openDatabase(path);
     }
 
     @Override

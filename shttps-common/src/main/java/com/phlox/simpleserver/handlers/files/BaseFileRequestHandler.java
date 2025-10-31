@@ -9,6 +9,7 @@ import com.phlox.simpleserver.auth.User;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
+import java.util.EnumSet;
 import java.util.List;
 
 public abstract class BaseFileRequestHandler implements RequestHandler {
@@ -28,6 +29,7 @@ public abstract class BaseFileRequestHandler implements RequestHandler {
     protected boolean checkIsForbidden(@Nullable User user, User.FileSystemRights... right) {
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.NONE)) return false;
         if (user == null) return true;
-        return !user.fsRights.containsAll(List.of(right));
+        EnumSet<User.FileSystemRights> fsRights = authManager.getUserRightsEvaluator().userFSRights(user);
+        return !fsRights.containsAll(List.of(right));
     }
 }

@@ -26,7 +26,7 @@ public interface SHTTPSConfig {
     String KEY_RENDER_FOLDERS = "render_folders";
     String KEY_ALLOW_EDITING = "allow_editing";
     String KEY_PORT = "port";
-    String KEY_USE_BASIC_AUTH = "use_basic_auth";
+    @Deprecated String KEY_USE_BASIC_AUTH = "use_basic_auth";
     String KEY_USERNAME = "username";
     String KEY_PASSWORD = "password";
     String KEY_AUTOSTART = "autostart";
@@ -34,7 +34,8 @@ public interface SHTTPSConfig {
     String KEY_REDIRECT_TO_INDEX = "redirect_to_index";
     String KEY_USE_TLS = "use_tls";
     String KEY_TLS_CERT = "tls_cert";
-    String KEY_TLS_CERT_PASS = "tls_cert_pass";
+    String KEY_TLS_CERT_KEYSTORE_PASS = "tls_cert_pass";
+    String KEY_TLS_CERT_KEY_PASS = "tls_key_pass";
     String KEY_ALLOWED_NETWORK_INTERFACES = "allowed_network_interfaces";
     String KEY_WHITE_LIST_MODE = "white_list_mode";
     String KEY_WHITE_LIST_OF_IPS = "white_list_of_ips";
@@ -47,6 +48,11 @@ public interface SHTTPSConfig {
     String KEY_CONFIG_VERSION = "config_version";
     String KEY_AUTH_MODE = "auth_mode";
     String KEY_USERS = "users";
+    String KEY_STORE_USERS_IN_DATABASE = "store_users_in_database";
+    String KEY_HOST = "host";
+    String KEY_VERIFY_HOST = "verify_host";
+    String KEY_ALLOW_USER_REGISTRATION = "allow_user_registration";
+    String KEY_DEFAULT_ROLE_FOR_NEW_USER = "default_new_user_role";
 
     default void runMigrations() {
         if (getConfigVersion() == CONFIG_VERSION) return;
@@ -73,8 +79,11 @@ public interface SHTTPSConfig {
                         getUsername(),
                         Objects.requireNonNull(Utils.sha256(Utils.hashFNV1a32(getPassword()))),
                         null,
-                        EnumSet.allOf(User.FileSystemRights.class
-                )));
+                        EnumSet.allOf(User.FileSystemRights.class),
+                        EnumSet.allOf(User.DBRights.class),
+                        null,
+                        System.currentTimeMillis(), null
+                ));
                 setUsers(users);
             }
             setConfigVersion(4);
@@ -118,9 +127,21 @@ public interface SHTTPSConfig {
 
     void setTLSCert(byte [] value);
 
-    String getTLSCertPassword();
+    default String getTLSKeystorePassword() {
+        return getString(KEY_TLS_CERT_KEYSTORE_PASS, null);
+    }
 
-    void setTLSCertPassword(String value);
+    default void setTLSKeystorePassword(String value) {
+        setString(KEY_TLS_CERT_KEYSTORE_PASS, value);
+    }
+
+    default String getTLSKeyPassword() {
+        return getString(KEY_TLS_CERT_KEY_PASS, null);
+    }
+
+    default void setTLSKeyPassword(String value) {
+        setString(KEY_TLS_CERT_KEY_PASS, value);
+    }
 
     String[] getAllowedNetworkInterfaces();
 
@@ -165,6 +186,28 @@ public interface SHTTPSConfig {
     AuthMode getAuthMode();
     void setAuthMode(AuthMode value);
 
+    default boolean isStoreUsersInDatabase() {
+        return getBoolean(KEY_STORE_USERS_IN_DATABASE, false);
+    }
+
+    default void setStoreUsersInDatabase(boolean value) {
+        setBoolean(KEY_STORE_USERS_IN_DATABASE, value);
+    }
+
+    default String getHost() {
+        return getString(KEY_HOST, null);
+    }
+
+    default void setHost(String value) {
+        setString(KEY_HOST, value);
+    }
+
+    default boolean getVerifyHost() { return getBoolean(KEY_VERIFY_HOST, false); }
+
+    default void setVerifyHost(boolean value) {
+        setBoolean(KEY_VERIFY_HOST, value);
+    }
+
     default void setConfigVersion(int value) {
         setInt(KEY_CONFIG_VERSION, value);
     }
@@ -173,9 +216,49 @@ public interface SHTTPSConfig {
         return getInt(KEY_CONFIG_VERSION, 0);
     }
 
+    default boolean isAllowedUserRegistration() {
+        return getBoolean(KEY_ALLOW_USER_REGISTRATION, false);
+    }
+
+    default void setAllowedUserRegistration(boolean value) {
+        setBoolean(KEY_ALLOW_USER_REGISTRATION, value);
+    }
+
+    default String getDefaultRoleForNewUser() {
+        return getString(KEY_DEFAULT_ROLE_FOR_NEW_USER, "");
+    }
+
+    default void setDefaultRoleForNewUser(String value) {
+        setString(KEY_DEFAULT_ROLE_FOR_NEW_USER, value);
+    }
+
+    default int getGlobalRateLimit() {
+        return getInt("global_rate_limit", 0);
+    }
+
+    default void setGlobalRateLimit(int requestsPerMinute) {
+        setInt("global_rate_limit", requestsPerMinute);
+    }
+
+    default boolean rateLimiterTrustToIPHeaders() {
+        return getBoolean("rate_limiter_trust_ip_headers", false);
+    }
+
+    default void setRateLimiterTrustToIPHeaders(boolean value) {
+        setBoolean("rate_limiter_trust_ip_headers", value);
+    }
+
     int getInt(String key, int defaultValue);
 
     void setInt(String key, int value);
+
+    boolean getBoolean(String key, boolean defaultValue);
+
+    void setBoolean(String key, boolean value);
+
+    String getString(String key, String defaultValue);
+
+    void setString(String key, String value);
 
     @Keep
     enum AuthMode {

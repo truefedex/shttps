@@ -5,6 +5,7 @@ import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.auth.UserRightsEvaluator;
 import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.utils.Utils;
 
@@ -79,7 +80,7 @@ public class BasicAuthManager implements AuthManager {
 
             String username = values[0];
             String password = values[1];
-            String passwordHash = Utils.sha256(password);
+            String passwordHash = Utils.sha256(Utils.hashFNV1a32(password));
 
             assert passwordHash != null;
             User user = userStore.authenticate(username, passwordHash);
@@ -97,5 +98,10 @@ public class BasicAuthManager implements AuthManager {
             lastAttemptTime = currentTime;
             return null;
         }
+    }
+
+    @Override
+    public @NonNull UserRightsEvaluator getUserRightsEvaluator() {
+        return userStore.provideUserRightsEvaluator();
     }
 }

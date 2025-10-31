@@ -4,6 +4,7 @@ import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.auth.UserRightsEvaluator;
 import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.auth.basic.AuthenticationException;
 import com.phlox.simpleserver.utils.Utils;
@@ -21,14 +22,14 @@ public class WebAuthManager implements AuthManager {
     private static final long INITIAL_BACKOFF_MS = 1000; // 1 second
     private static final long MAX_BACKOFF_MS = 30000; // 30 seconds
     private static final long BACKOFF_RESET_MS = 300000; // 5 minutes
-    private UserStore userStore;
-    private SessionManager sessionManager;
+    private final @NonNull UserStore userStore;
+    protected @NonNull SessionManager sessionManager;
 
-    private final User guestUser;
+    private final @Nullable User guestUser;
     private final AtomicLong failedAttempts = new AtomicLong(0);
     private volatile long lastAttemptTime = 0;
 
-    public WebAuthManager(UserStore userStore, SessionManager sessionManager) {
+    public WebAuthManager(@NonNull UserStore userStore, @NonNull SessionManager sessionManager) {
         this.userStore = userStore;
         this.sessionManager = sessionManager;
         this.guestUser = userStore.find(User.GUEST_IDENTITY);
@@ -46,7 +47,9 @@ public class WebAuthManager implements AuthManager {
         User user = null;
         if (sessionId != null) {
             String username = sessionManager.getUsernameBySessionId(sessionId);
-            user = userStore.find(username);
+            if (username != null) {
+                user = userStore.find(username);
+            }
         }
         if (user == null && guestUser != null) {
             user = guestUser;
@@ -81,10 +84,11 @@ public class WebAuthManager implements AuthManager {
         }
 
         try {
-            assert passwordHash != null;
             User user = userStore.authenticate(username, Objects.requireNonNull(Utils.sha256(passwordHash)));
             if (user != null) {
                 failedAttempts.set(0);
+                user.lastLogin = System.currentTimeMillis();
+                userStore.update(user.identity, User.FIELD_LAST_LOGIN, user.lastLogin);
                 context.data.put(CONTEXT_KEY_WEB_AUTH_USER, user);
                 return user;
             }
@@ -106,5 +110,55 @@ public class WebAuthManager implements AuthManager {
             sessionManager.invalidateSession(sessionId);
         }
         sessionManager.cleanupExpiredSessions();
+    }
+
+    @Override
+    public @NonNull UserRightsEvaluator getUserRightsEvaluator() {
+        return userStore.provideUserRightsEvaluator();
+    }
+
+    /**
+     * Validates and registers user with given identity and password.
+     * @param identity desired user identity
+     * @param password desired user password
+     * @return validation result with error message if invalid, null if user registered successfully
+     */
+    public @Nullable String registerUser(@NonNull String identity, @NonNull String password) {
+        // Validate identity
+        if (identity.length() < 3) {
+            return "Identity must be at least 3 characters long";
+        }
+        if (identity.length() > 50) {
+            return "Identity must be no more than 50 characters long";
+        }
+        if (!identity.matches("^[a-zA-Z0-9_-]+$")) {
+            return "Identity can only contain letters, numbers, underscores, and hyphens";
+        }
+        if (User.GUEST_IDENTITY.equals(identity)) {
+            return "This identity is reserved";
+        }
+
+        // Validate password
+        if (password.length() < 6) {
+            return "Password must be at least 6 characters long";
+        }
+        if (password.length() > 100) {
+            return "Password must be no more than 100 characters long";
+        }
+
+        if (userStore.isIdentityUsed(identity)) {
+            return "Identity is already in use";
+        }
+
+        try {
+            String passwordHash = Utils.sha256(password);
+            User newUser = userStore.registerNewUser(identity, passwordHash);
+            if (newUser == null) {
+                return "Failed to create user account";
+            }
+            return null; // Success
+        } catch (Exception e) {
+            return "Error during registration: " + e.getMessage();
+        }
     }
 }

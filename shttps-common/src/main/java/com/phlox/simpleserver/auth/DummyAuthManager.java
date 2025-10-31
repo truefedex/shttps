@@ -21,4 +21,9 @@ public class DummyAuthManager implements AuthManager {
     public void logout(@NonNull RequestContext context, @NonNull Request request) {
 
     }
+
+    @Override
+    public @NonNull UserRightsEvaluator getUserRightsEvaluator() {
+        throw new IllegalStateException("Method getUserRightsEvaluator is undefined for DummyAuthManager");
+    }
 }

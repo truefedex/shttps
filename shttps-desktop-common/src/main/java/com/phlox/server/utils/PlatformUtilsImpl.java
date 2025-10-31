@@ -46,7 +46,7 @@ public class PlatformUtilsImpl implements SHTTPSPlatformUtils {
     }
 
     @Override
-    public ImageThumbnail getImageThumbnail(String uri) throws IOException {
+    public ImageData getImageThumbnail(String uri) throws IOException {
         return thumbnailManager.getImageThumbnail(fileUriToFilePath(uri));
     }
 
@@ -121,5 +121,10 @@ public class PlatformUtilsImpl implements SHTTPSPlatformUtils {
                 throw new RuntimeException("Failed to create www folder near jar file: " + jarPath);
         }
         return DocumentFile.fromFile(www);
+    }
+
+    @Override
+    public ImageData generateCaptchaImage(String code, int width, int height) {
+        return CaptchaImageGenerator.generateCaptchaImage(code, width, height);
     }
 }

@@ -1,13 +1,12 @@
 package com.phlox.server.responses;
 
-import com.phlox.server.SimpleHttpServer;
+import com.phlox.server.utils.MultiMap;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.HashMap;
-import java.util.Map;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 public class Response {
     public static final String TAG = Response.class.getSimpleName();
@@ -28,7 +27,7 @@ public class Response {
     public String phrase = StandardResponses.PHRASE_OK;
     private long contentLength;
     protected final InputStream stream;
-    public Map<String, String> headers = new HashMap<>();
+    public MultiMap<String, String> headers = new MultiMap<>();
     public Object customData;
 
     public Response(InputStream stream) {
@@ -78,8 +77,11 @@ public class Response {
 
     protected String makeResponseHeader() {
         StringBuilder headersStr = new StringBuilder("HTTP/1.1 " + code + " " + phrase + "\n");
-        for (Map.Entry<String, String> entry: headers.entrySet()) {
-            headersStr.append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+        for (String key: headers.keys()) {
+            List<String> values = headers.getAll(key);
+            for (String value: values) {
+                headersStr.append(key).append(": ").append(value).append("\n");
+            }
         }
         return headersStr.append("\n").toString();
     }

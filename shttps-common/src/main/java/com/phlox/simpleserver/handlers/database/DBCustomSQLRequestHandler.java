@@ -1,12 +1,13 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.responses.TextResponse;
+import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.utils.AbstractDataStreamer;
@@ -14,12 +15,13 @@ import com.phlox.simpleserver.utils.Holder;
 
 import org.json.JSONArray;
 
-import java.io.PipedOutputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
 public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
-    public DBCustomSQLRequestHandler(Holder<Database> database, SHTTPSConfig config) {
-        super(database, config);
+
+    public DBCustomSQLRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
+        super(database, config, authManager);
     }
 
     @Override
@@ -34,21 +36,23 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
         if (!config.isAllowDatabaseCustomSqlRemoteApi()) {
             return StandardResponses.FORBIDDEN("Database custom SQL remote API is disabled");
         }
-        //TODO: check if user has permission to execute custom SQL
+        User user = checkUser(context);
+        if (checkIsForbidden(user, User.DBRights.EXEC_SQL)) return StandardResponses.FORBIDDEN("Insufficient rights");
         int limit = request.queryParams.containsKey("limit") ?
                 Integer.parseInt(request.queryParams.get("limit")) : 100;
         int offset = request.queryParams.containsKey("offset") ?
                 Integer.parseInt(request.queryParams.get("offset")) : 0;
-        boolean includeColumnNames = request.queryParams.containsKey("include-names") &&
-                Boolean.parseBoolean(request.queryParams.get("include-names"));
+        boolean includeColumnNames = request.queryParams.containsKey("includeNames") &&
+                Boolean.parseBoolean(request.queryParams.get("includeNames"));
         context.requestBodyReader.readRequestBody(request);
         String sql = new String(request.body.asBytes(), StandardCharsets.UTF_8);
         try {
-            TableData result = database.execute(sql);
+            TableData result = database.query(sql);
             if (result == null) {
                 return new TextResponse(200, "OK", "{}");
             }
-            SQLResponseStreamer streamer = new SQLResponseStreamer(result, offset, limit, includeColumnNames);
+            SQLResponseStreamer streamer = new SQLResponseStreamer(result, offset, limit,
+                    includeColumnNames);
             streamer.startDataGenerationThread();
             Response response = new Response(streamer.getInputStream());
             response.setContentType("application/json");
@@ -59,6 +63,7 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
     }
 
     private static class SQLResponseStreamer extends AbstractDataStreamer {
+        private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
         private final TableData responseData;
         private final int offset;
         private final int limit;
@@ -74,12 +79,11 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
         }
 
         @Override
-        protected void generateData(PipedOutputStream output) throws Exception {
+        protected void generateData(OutputStream output) throws Exception {
             try {
-                long total = responseData.count();
                 String responsePrefix = "{\"offset\":" + offset +
-                        ",\"limit\":" + limit +
-                        ",\"total\":" + total + ",";
+                        ",\"limit\":" + limit;
+                responsePrefix += ",";
                 if (includeColumnNames) {
                     JSONArray columnNames = new JSONArray(responseData.getColumnNames());
                     responsePrefix += "\"columns\":" + columnNames + ",";
@@ -107,7 +111,7 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
                 try {
                     responseData.close();
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    logger.stackTrace(e);
                 }
             }
         }
