@@ -17,6 +17,7 @@ public final class StandardResponses {
 
     public static final String PHRASE_UNAUTHORIZED = "Unauthorized";
     public static final String PHRASE_UNSUPPORTED_MEDIA_TYPE = "Unsupported Media Type";
+    public static final String PHRASE_PAYLOAD_TOO_LARGE = "Payload Too Large";
 
     public StandardResponses() {
     }
@@ -31,6 +32,8 @@ public final class StandardResponses {
     public static Response BAD_REQUEST() { return new Response(HTTP_BAD_REQUEST, PHRASE_BAD_REQUEST); }
     public static Response BAD_REQUEST(String msg) { return new TextResponse(HTTP_BAD_REQUEST, PHRASE_BAD_REQUEST, msg); }
     public static Response FORBIDDEN(String msg) { return new TextResponse(HTTP_FORBIDDEN, PHRASE_FORBIDDEN, msg); }
+    public static Response FORBIDDEN() { return new TextResponse(HTTP_FORBIDDEN, PHRASE_FORBIDDEN, PHRASE_FORBIDDEN); }
+    public static Response PAYLOAD_TOO_LARGE() {return new Response(HTTP_ENTITY_TOO_LARGE, PHRASE_PAYLOAD_TOO_LARGE); }
     public static Response UNAUTHORIZED() { return new Response(HTTP_UNAUTHORIZED, PHRASE_UNAUTHORIZED); }
 
     public static Response MOVED_PERMANENTLY(String newLocation) {

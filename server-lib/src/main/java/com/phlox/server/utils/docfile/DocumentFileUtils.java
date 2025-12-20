@@ -14,7 +14,10 @@ public final class DocumentFileUtils {
         if ("/".equals(path) || "".equals(path)) {
             return root;
         }
-        String[] parts = path.substring(1).split("/");
+        if (path.startsWith("/")) {
+            path = path.substring(1);
+        }
+        String[] parts = path.split("/");
         DocumentFile current = root;
         for (String part: parts) {
             current = current.findFile(part);

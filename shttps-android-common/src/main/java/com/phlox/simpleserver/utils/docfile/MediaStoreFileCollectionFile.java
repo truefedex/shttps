@@ -454,11 +454,6 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
     }
 
     @Override
-    public boolean storageHasEnoughFreeSpaceFor(long contentLength) {
-        return true;
-    }
-
-    @Override
     public InputStream openInputStream() throws IOException {
         if (isDirectory()) {
             throw new IOException();
@@ -500,4 +495,13 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
         return relativePath;
     }
 
+    @Override
+    public long getStorageSize() {
+        return Long.MAX_VALUE;
+    }
+
+    @Override
+    public long getStorageFreeSpace() {
+        return Long.MAX_VALUE;
+    }
 }

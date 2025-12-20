@@ -10,6 +10,7 @@ import com.phlox.simpleserver.SHTTPSApp;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.Utils;
 
@@ -20,14 +21,18 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Map;
 
 public class FileListRequestHandler extends BaseFileRequestHandler {
+    public static final String LIST_CONTENTS_OPERATION = "LIST_CONTENTS";
 
-    public FileListRequestHandler(SHTTPSConfig config, AuthManager authManager) {
-        super(config, authManager);
+    public FileListRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
+        super(config, authManager, userStore);
     }
 
-    public static JSONArray prepareFileListJson(String path, String sort, String sortReversedParam, User user, SHTTPSConfig config) throws JSONException {
+    public static JSONArray prepareFileListJson(String path, String sort, String sortReversedParam,
+                                                String searchPattern,
+                                                User user, SHTTPSConfig config) throws JSONException {
         if (sort == null) {
             sort = "default";
         }
@@ -36,7 +41,18 @@ public class FileListRequestHandler extends BaseFileRequestHandler {
         DocumentFile root = config.getRootDir();
         final DocumentFile destFile = DocumentFileUtils.findChildByPath(root, path, user);
         if ((destFile == null) || !destFile.isDirectory()) return null;
-        DocumentFile[] files = destFile.listFiles();
+        DocumentFile[] files;
+        if (searchPattern != null && !searchPattern.isEmpty()) {
+            ArrayList<DocumentFile> searchResults = DocumentFileUtils.searchRecursive(
+                    destFile, searchPattern, 0);
+            files = new DocumentFile[searchResults.size()];
+            searchResults.toArray(files);
+        } else {
+            files = destFile.listFiles();
+            if (files == null) {
+                files = new DocumentFile[0];
+            }
+        }
         JSONArray json = new JSONArray();
 
         if (!"/".equals(path)) {
@@ -77,12 +93,12 @@ public class FileListRequestHandler extends BaseFileRequestHandler {
                         if (type1.startsWith("image/") && !type2.startsWith("image/")) {
                             return -1 * sortMultiplier;
                         } else if (type2.startsWith("image/") && !type1.startsWith("image/")) {
-                            return 1 * sortMultiplier;
+                            return sortMultiplier;
                         }
                         if (type1.startsWith("video/") && !type2.startsWith("video/")) {
                             return -1 * sortMultiplier;
                         } else if (type2.startsWith("video/") && !type1.startsWith("video/")) {
-                            return 1 * sortMultiplier;
+                            return sortMultiplier;
                         }
                     }
                     return f1.getName().compareToIgnoreCase(f2.getName()) * sortMultiplier;
@@ -135,6 +151,18 @@ public class FileListRequestHandler extends BaseFileRequestHandler {
             jsonFile.put("directory", file.isDirectory());
             jsonFile.put("length", Utils.formatFileSize(file.length()));
             jsonFile.put("modified", file.lastModified());
+            if (searchPattern != null && !searchPattern.isEmpty()) {
+                String relativePath = destFile.getRelativePath(file);
+                //remove file or folder name from the end
+                if (relativePath.endsWith("/" + file.getName())) {
+                    relativePath = relativePath.substring(0, relativePath.length() - file.getName().length());
+                }
+                //remove leading slash
+                if (relativePath.startsWith("/")) {
+                    relativePath = relativePath.substring(1);
+                }
+                jsonFile.put("relativePath", relativePath);
+            }
             json.put(jsonFile);
         }
         return json;
@@ -145,19 +173,25 @@ public class FileListRequestHandler extends BaseFileRequestHandler {
         if (!request.method.equals(Request.METHOD_GET)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
         }
-        User user = checkUser(context);
-        if (checkIsForbidden(user, User.FileSystemRights.LIST_CONTENTS)) return StandardResponses.FORBIDDEN("Insufficient rights");
         String path = request.queryParams.get("path");
         if (path == null) {
             path = "/";
-        }
-        if (!path.startsWith("/")) {
-            path = "/"+path;
+        } else if (!path.startsWith("/")) {
+            path = "/" + path;
         }
         String sort = request.queryParams.get("sort");
         String sortReversedParam = request.queryParams.get("sort-reversed");
+        String searchPattern = request.queryParams.get("search");
 
-        JSONArray json = prepareFileListJson(path, sort, sortReversedParam, user, config);
+        User user = checkUser(context);
+        if (checkIsForbidden(user, path, LIST_CONTENTS_OPERATION, Map.of(
+                "sort", sort != null ? sort : "default",
+                "search", searchPattern != null ? searchPattern : "",
+                "sort-reversed", sortReversedParam != null ? sortReversedParam : "false"
+        ), User.FileSystemRights.LIST_CONTENTS))
+            return StandardResponses.FORBIDDEN();
+
+        JSONArray json = prepareFileListJson(path, sort, sortReversedParam, searchPattern, user, config);
 
         if (json == null) {
             return StandardResponses.NOT_FOUND();

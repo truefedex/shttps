@@ -53,6 +53,7 @@ public interface SHTTPSConfig {
     String KEY_VERIFY_HOST = "verify_host";
     String KEY_ALLOW_USER_REGISTRATION = "allow_user_registration";
     String KEY_DEFAULT_ROLE_FOR_NEW_USER = "default_new_user_role";
+    String KEY_NEW_USER_DIR_PATTERN = "new_user_dir_pattern";
 
     default void runMigrations() {
         if (getConfigVersion() == CONFIG_VERSION) return;
@@ -82,7 +83,9 @@ public interface SHTTPSConfig {
                         EnumSet.allOf(User.FileSystemRights.class),
                         EnumSet.allOf(User.DBRights.class),
                         null,
-                        System.currentTimeMillis(), null
+                        System.currentTimeMillis(), null, null,
+                        EnumSet.of(User.SystemRights.READ_STATUS),
+                        0
                 ));
                 setUsers(users);
             }
@@ -246,6 +249,14 @@ public interface SHTTPSConfig {
 
     default void setRateLimiterTrustToIPHeaders(boolean value) {
         setBoolean("rate_limiter_trust_ip_headers", value);
+    }
+
+    default void setNewUserDirPattern(String pattern) {
+        setString(KEY_NEW_USER_DIR_PATTERN, pattern);
+    }
+
+    default String getNewUserDirPattern() {
+        return getString(KEY_NEW_USER_DIR_PATTERN, "");
     }
 
     int getInt(String key, int defaultValue);

@@ -8,7 +8,10 @@ import org.json.JSONObject;
 import java.util.List;
 
 public interface DatabaseOperations {
-    TableData query(String query) throws Exception;
+    default TableData query(String query) throws Exception {
+        return query(query, null, true);
+    }
+    TableData query(String query, Object[] args, boolean possiblyWriteOperation) throws Exception;
     void execute(String query) throws Exception;
     long insert(String tableName, JSONObject values) throws Exception;
     int update(String tableName, JSONObject values, String[] whereFilters, Object[] whereArgs) throws Exception;

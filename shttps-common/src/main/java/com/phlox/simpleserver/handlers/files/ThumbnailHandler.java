@@ -11,6 +11,7 @@ import com.phlox.simpleserver.SHTTPSApp;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
@@ -19,10 +20,12 @@ import java.io.FileNotFoundException;
 import java.util.Date;
 
 public class ThumbnailHandler extends BaseFileRequestHandler {
+    public static final String THUMBNAIL_OPERATION = "THUMBNAIL";
+
     private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
 
-    public ThumbnailHandler(SHTTPSConfig config, AuthManager authManager) {
-        super(config, authManager);
+    public ThumbnailHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
+        super(config, authManager, userStore);
     }
 
     @Override
@@ -30,14 +33,16 @@ public class ThumbnailHandler extends BaseFileRequestHandler {
         if (!request.method.equals(Request.METHOD_GET)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET});
         }
-        User user = checkUser(context);
-        if (checkIsForbidden(user, User.FileSystemRights.READ)) return StandardResponses.FORBIDDEN("Insufficient rights");
         if (!request.queryParams.containsKey("path"))
             return StandardResponses.BAD_REQUEST();
         String path = request.queryParams.get("path");
         DocumentFile root = config.getRootDir();
+        User user = checkUser(context);
         final DocumentFile destFile = DocumentFileUtils.findChildByPath(root, path, user);
         if ((destFile == null) || destFile.isDirectory()) return StandardResponses.NOT_FOUND();
+
+        if (checkIsForbidden(user, path, THUMBNAIL_OPERATION, null, User.FileSystemRights.READ))
+            return StandardResponses.FORBIDDEN();
 
         String ifModifiedSinceStr = request.headers.get(Request.HEADER_IF_MODIFIED_SINCE);
         if (ifModifiedSinceStr != null) {

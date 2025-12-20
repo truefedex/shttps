@@ -6,11 +6,13 @@ import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.HTTPUtils;
+import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.SHTTPSApp;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
@@ -23,9 +25,12 @@ import java.util.Date;
 import java.util.List;
 
 public class StaticFileRequestHandler extends BaseFileRequestHandler {
+    public static final String DOWNLOAD_OPERATION = "DOWNLOAD";
 
-    public StaticFileRequestHandler(SHTTPSConfig config, AuthManager authManager) {
-        super(config, authManager);
+    private static final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(StaticFileRequestHandler.class);
+
+    public StaticFileRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
+        super(config, authManager, userStore);
     }
 
     @Override
@@ -34,24 +39,28 @@ public class StaticFileRequestHandler extends BaseFileRequestHandler {
         if (!request.method.equals(Request.METHOD_GET) && !isHead) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_HEAD});
         }
-        User user = checkUser(context);
-        if (checkIsForbidden(user, User.FileSystemRights.READ)) return StandardResponses.FORBIDDEN("Insufficient rights");
+
         String queryPath = request.queryParams.get("path");
         String destPath = queryPath != null ? queryPath : request.path;
         if (!destPath.startsWith("/"))  {
             destPath = "/"+destPath;
         }
         DocumentFile root = config.getRootDir();
+        User user = checkUser(context);
         DocumentFile file = DocumentFileUtils.findChildByPath(root, destPath, user);
         if (file == null || file.isDirectory()) {
             return null;
         }
+
+        if (checkIsForbidden(user, destPath, DOWNLOAD_OPERATION, null, User.FileSystemRights.READ))
+            return StandardResponses.FORBIDDEN();
+
         String ifModifiedSinceStr = request.headers.get(Request.HEADER_IF_MODIFIED_SINCE);
         if (ifModifiedSinceStr != null) {
             Date date = null;
             try {
                 date = HTTPUtils.getHTTPDateFormat().parse(ifModifiedSinceStr);
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) { logger.stackTrace(e); }
 
             if (date != null && (file.lastModified() / 1000) <= (date.getTime() / 1000)) {//comparing skipping milliseconds
                 return StandardResponses.NOT_MODIFIED();

@@ -311,11 +311,6 @@ public class TreeDocumentFile extends DocumentFile {
     }*/
 
     @Override
-    public boolean storageHasEnoughFreeSpaceFor(long contentLength) {
-        return true;
-    }
-
-    @Override
     public InputStream openInputStream() throws IOException {
         return mContext.getContentResolver().openInputStream(mUri);
     }
@@ -338,6 +333,16 @@ public class TreeDocumentFile extends DocumentFile {
             return Uri.decode(relativeUriPart);
         }
         return null;
+    }
+
+    @Override
+    public long getStorageSize() {
+        return Long.MAX_VALUE;
+    }
+
+    @Override
+    public long getStorageFreeSpace() {
+        return Long.MAX_VALUE;
     }
 }
 

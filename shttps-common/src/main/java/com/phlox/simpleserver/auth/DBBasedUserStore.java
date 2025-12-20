@@ -1,8 +1,12 @@
 package com.phlox.simpleserver.auth;
 
+import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.DatabaseOperations;
+import com.phlox.simpleserver.database.DatabaseTransactionScope;
 import com.phlox.simpleserver.database.model.TableData;
+import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.Holder;
 
 import org.jspecify.annotations.NonNull;
@@ -10,7 +14,6 @@ import org.jspecify.annotations.Nullable;
 import org.json.JSONObject;
 
 import java.util.EnumSet;
-import java.util.HashSet;
 
 public class DBBasedUserStore implements UserStore {
     public static final String USERS_TABLE_NAME = "user";
@@ -77,7 +80,7 @@ public class DBBasedUserStore implements UserStore {
     public long count() {
         Database db = database.get();
         if (db == null) return 0;
-        try (TableData data = db.query("select count(*) from " + USERS_TABLE_NAME)) {
+        try (TableData data = db.query("select count(*) from " + USERS_TABLE_NAME, null, false)) {
             if (!data.next()) throw new IllegalStateException("Can not retrieve users count");
             return data.getLong(0);
         } catch (Exception e) {
@@ -99,32 +102,74 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public boolean create(@NonNull User user) {
-        if (isIdentityUsed(user.identity)) {
-            return false;
-        }
+    public void create(@NonNull User user) throws Exception {
+        create(user, false);
+    }
+
+    private void create(@NonNull User user, boolean checkRootDirUniqueness) throws Exception {
         Database db = database.get();
-        if (db == null) return false;
-        try {
-            db.insert(USERS_TABLE_NAME, user.serialize());
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        if (db == null) {
+            throw new IllegalStateException("Database is not initialized");
         }
-        return true;
+        if (user.rootDir != null &&
+                DocumentFileUtils.checkOrCreateUserDir(config.getRootDir(), user.rootDir) == null) {
+            throw new IllegalStateException("Can not create user directory");
+        }
+
+        UserRole role = user.role != null ? userRightsEvaluator.loadRole(user.role) : null;
+        boolean hasStorageLimit = role != null ? (role.storageLimit != null) :
+                (user.storageLimit != null);
+
+        if (hasStorageLimit) {
+            DocumentFile userRootDir;
+            if (user.rootDir != null) {
+                userRootDir = DocumentFileUtils.checkOrCreateUserDir(config.getRootDir(), user.rootDir);
+            } else {
+                userRootDir = config.getRootDir();
+            }
+            assert userRootDir != null;
+            user.usedStorage = userRootDir.calculateDirectorySize();
+        }
+
+        db.runTransaction((DatabaseTransactionScope<Object>) db1 -> {
+            try (TableData data = db.getTableDataSecure(USERS_TABLE_NAME, new String[]{"identity"}, null, null,
+                    new String[]{"identity="},
+                    new Object[]{user.identity}, null, false, false, null)) {
+                if (data.next()) {
+                    throw new IllegalStateException("Identity already used");
+                }
+            }
+            if (checkRootDirUniqueness) {
+                if (isUserDirUsed(user.rootDir, db1)) {
+                    throw new IllegalStateException("User root dir is not unique");
+                }
+            }
+            db1.insert(USERS_TABLE_NAME, user.serialize());
+            return null;
+        });
     }
 
     @Override
-    public @Nullable User createEmptyUserWithAvailableIdentity() {
+    public @Nullable User createEmptyUserWithAvailableIdentity() throws Exception {
         String baseIdentity = "user";
         String identity = baseIdentity;
         int i = 1;
         while (isIdentityUsed(identity)) {
             identity = baseIdentity + i++;
         }
-        User user = new User(identity, "", null,
+
+        String rootDirPattern = config.getNewUserDirPattern();
+        String rootDir = formatNewUserDir(rootDirPattern, identity);
+        boolean needToCheckForUserRootDirUniqueness = rootDirPattern != null &&
+                rootDirPattern.contains("*");
+
+        User user = new User(identity, "", rootDir,
                 EnumSet.of(User.FileSystemRights.READ, User.FileSystemRights.LIST_CONTENTS),
-                EnumSet.of(User.DBRights.READ), config.getDefaultRoleForNewUser(), System.currentTimeMillis(), null);
-        return create(user) ? user : null;
+                EnumSet.of(User.DBRights.READ), config.getDefaultRoleForNewUser(),
+                System.currentTimeMillis(), null, null,
+                EnumSet.of(User.SystemRights.READ_STATUS), 0);
+        create(user, needToCheckForUserRootDirUniqueness);
+        return user;
     }
 
     @Override
@@ -213,7 +258,7 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public @Nullable User registerNewUser(@NonNull String identity, @NonNull String password) {
+    public @Nullable User registerNewUser(@NonNull String identity, @NonNull String password) throws Exception {
         if (isIdentityUsed(identity)) {
             return null;
         }
@@ -231,7 +276,55 @@ public class DBBasedUserStore implements UserStore {
                 EnumSet.noneOf(User.FileSystemRights.class),
                 EnumSet.noneOf(User.DBRights.class),
                 defaultRole,
-                System.currentTimeMillis(), null);
-        return create(newUser) ? newUser : null;
+                System.currentTimeMillis(), null, null,
+                EnumSet.noneOf(User.SystemRights.class), 0);
+        String rootDirPattern = config.getNewUserDirPattern();
+        newUser.rootDir = formatNewUserDir(rootDirPattern, identity);
+        boolean needToCheckForUserRootDirUniqueness = rootDirPattern != null &&
+                rootDirPattern.contains("*");
+        create(newUser, needToCheckForUserRootDirUniqueness);
+        return newUser;
+    }
+
+    @Override
+    public boolean isUserDirUsed(String userDir) {
+        Database db = database.get();
+        return isUserDirUsed(userDir, db);
+    }
+
+    private boolean isUserDirUsed(String userDir, DatabaseOperations db) {
+        try (TableData data = db.getTableDataSecure(USERS_TABLE_NAME, null, null, 1L,
+                new String[]{"root_dir="},
+                new Object[]{userDir}, null, false, false, null)) {
+            return  data.next();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void updateUserAtomically(String identity, Updater<User> predicate) throws Exception {
+        Database db = database.get();
+        if (db == null) return;
+        db.runTransaction((DatabaseTransactionScope<Object>) db1 -> {
+            try (TableData data = db1.getTableDataSecure(USERS_TABLE_NAME, null, null, null,
+                    new String[]{"identity="},
+                    new Object[]{identity}, null, false, false, null)) {
+                User user;
+                if (data.next()) {
+                    user = User.deserialize(data.currentRowToJsonObject());
+                } else {
+                    throw new IllegalStateException("User not found");
+                }
+                User updatedUser = predicate.process(user);
+                if (updatedUser != null) {
+                    int updated = db1.update(USERS_TABLE_NAME, updatedUser.serialize(),
+                            new String[]{"identity="},
+                            new Object[]{updatedUser.identity});
+                    return updated > 0;
+                }
+            }
+            return null;
+        });
     }
 }

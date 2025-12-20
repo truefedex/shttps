@@ -23,7 +23,7 @@ public class RawDocumentFile extends DocumentFile {
         return null;
     }
 
-    RawDocumentFile(DocumentFile parent, File file) {
+    public RawDocumentFile(DocumentFile parent, File file) {
         super(parent);
         mFile = file;
     }
@@ -32,7 +32,9 @@ public class RawDocumentFile extends DocumentFile {
     public DocumentFile createFile(String mimeType, String displayName) {
         final File target = new File(mFile, displayName);
         try {
-            target.createNewFile();
+            if (!target.createNewFile()) {
+                throw new RuntimeException("Can not create file: " + displayName);
+            }
             return new RawDocumentFile(this, target);
         } catch (IOException e) {
             e.printStackTrace();
@@ -119,38 +121,26 @@ public class RawDocumentFile extends DocumentFile {
         return mFile.exists();
     }
 
+    public interface ListFilesFallback {
+        File[] onListFilesFailed(File dir);
+    }
+    public static ListFilesFallback listFilesFallback = null;
+
     @Override
     public DocumentFile[] listFiles() {
-        final ArrayList<DocumentFile> results = new ArrayList<DocumentFile>();
+        final ArrayList<DocumentFile> results = new ArrayList<>();
         File[] files = mFile.listFiles();
         if (files == null) {
-            if (mFile.getAbsolutePath().equals("/") && Utils.isAndroid()) {
-                files = new File[]{
-                        new File(mFile, "system"),
-                        new File(mFile, "vendor"),
-                        new File(mFile, "data"),
-                        new File(mFile, "proc"),
-                        new File(mFile, "dev"),
-                        new File(mFile, "mnt"),
-                        new File(mFile, "storage"),
-                        new File(mFile, "sdcard"),
-                        new File(mFile, "acct"),
-                        new File(mFile, "apex"),
-                        new File(mFile, "cache"),
-                        new File(mFile, "config"),
-                        new File(mFile, "etc"),
-                        new File(mFile, "init"),
-                        new File(mFile, "odm"),
-                        new File(mFile, "product")
-                };
+            if (listFilesFallback != null) {
+                files = listFilesFallback.onListFilesFailed(mFile);
             } else {
-                files = new File[]{};
+                files = new File[0];
             }
         }
         for (File file : files) {
             results.add(new RawDocumentFile(this, file));
         }
-        return results.toArray(new DocumentFile[results.size()]);
+        return results.toArray(new DocumentFile[0]);
     }
 
     @Override
@@ -202,12 +192,6 @@ public class RawDocumentFile extends DocumentFile {
     public boolean moveTo(DocumentFile destDir) {
         return Utils.moveFileOrDir(mFile, new File(((RawDocumentFile)destDir).mFile, mFile.getName()));
     }
-
-    @Override
-    public boolean storageHasEnoughFreeSpaceFor(long contentLength) {
-        return mFile.getFreeSpace() > contentLength;
-    }
-
     
     @Override
     public DocumentFile findFile(String displayName) {
@@ -250,5 +234,15 @@ public class RawDocumentFile extends DocumentFile {
             return fileUri.substring(baseUri.length());
         }
         return null;
+    }
+
+    @Override
+    public long getStorageSize() {
+        return getFile().getTotalSpace();
+    }
+
+    @Override
+    public long getStorageFreeSpace() {
+        return getFile().getFreeSpace();
     }
 }

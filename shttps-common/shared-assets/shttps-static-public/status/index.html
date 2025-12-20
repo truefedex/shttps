@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="/shttps-static-public/common.css">
+  <link rel="stylesheet" href="/shttps-static-public/status/status.css">
+  <link rel="icon" type="image/png" href="/shttps-static-public/icon.png">
+  <script src="/shttps-static-public/common.js"></script>
+  <script src="/shttps-static-public/status/status.js"></script>
+</head>
+<body id="root" onload="onPageLoad();">
+  <div class="header">
+    <button id="menu-button" class="menu-button" onclick="onMenuClick(event);">☰</button>
+    <div id="loader" class="loader"></div>
+    <div id="path">System Status Dashboard</div>
+  </div>
+  <div id="status-container">
+    <!-- Status dashboard content will be loaded dynamically -->
+  </div>
+  <div class="context-menu" id="main-menu">
+    <div class="menu-close-btn" onclick="hideContextMenu()">&times;</div>
+    <ul class="menu-options">
+      <li class="menu-option" id="mm-back-to-files">Back to files</li>
+    </ul>
+  </div>
+  <script>
+    function onMenuClick(e) {
+      let menuButton = document.getElementById("menu-button");
+      let mainMenu = document.getElementById("main-menu");
+      let mmBackToFiles = document.getElementById("mm-back-to-files");
+      if (mmBackToFiles) {
+        mmBackToFiles.onclick = function () {
+          window.location.href = "/";
+        }
+      }
+      let rect = menuButton.getBoundingClientRect();
+      displayContextMenuWithAnchorRect(rect, mainMenu);
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  </script>
+</body>
+</html>
+

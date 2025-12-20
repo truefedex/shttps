@@ -56,4 +56,8 @@ public class ServerLogsCollector implements Router.Listener {
             listener.onLogEntry(logEntry);
         }
     }
+
+    public void clear() {
+        logs.clear();
+    }
 }

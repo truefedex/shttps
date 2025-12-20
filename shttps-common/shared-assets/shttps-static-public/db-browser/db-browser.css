@@ -119,6 +119,21 @@
 
 .header .action-button {
   margin-left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#shttps-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+#shttps-toggle-icon svg {
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
 }
 
 .menu-button {

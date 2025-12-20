@@ -125,25 +125,14 @@ public class WebAuthManager implements AuthManager {
      */
     public @Nullable String registerUser(@NonNull String identity, @NonNull String password) {
         // Validate identity
-        if (identity.length() < 3) {
-            return "Identity must be at least 3 characters long";
+        if (identity.length() < 5) {
+            return "Identity must be at least 5 characters long";
         }
         if (identity.length() > 50) {
             return "Identity must be no more than 50 characters long";
         }
         if (!identity.matches("^[a-zA-Z0-9_-]+$")) {
             return "Identity can only contain letters, numbers, underscores, and hyphens";
-        }
-        if (User.GUEST_IDENTITY.equals(identity)) {
-            return "This identity is reserved";
-        }
-
-        // Validate password
-        if (password.length() < 6) {
-            return "Password must be at least 6 characters long";
-        }
-        if (password.length() > 100) {
-            return "Password must be no more than 100 characters long";
         }
 
         if (userStore.isIdentityUsed(identity)) {

@@ -8,6 +8,8 @@ import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.DatabaseOperations;
+import com.phlox.simpleserver.database.DatabaseTransactionScope;
 import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.utils.AbstractDataStreamer;
 import com.phlox.simpleserver.utils.Holder;
@@ -22,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 
 public class DBTableDataRequestHandler extends BaseDBRequestHandler {
+    public static final String READ_TABLE_OPERATION = "READ_TABLE";
+
     public DBTableDataRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
         super(database, config, authManager);
     }
@@ -32,12 +36,6 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
                 !request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_POST});
         }
-        Database database = this.database.get();
-        if (database == null) {
-            return StandardResponses.NOT_FOUND();
-        }
-        User user = checkUser(context);
-        if (checkIsForbidden(user, User.DBRights.READ)) return StandardResponses.FORBIDDEN("Insufficient rights");
         Map<String, String> params;
         if (request.method.equals(Request.METHOD_GET)) {
             params = request.queryParams;
@@ -73,8 +71,31 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
             }
         }
 
+        Database database = this.database.get();
+        if (database == null) {
+            return StandardResponses.NOT_FOUND();
+        }
+        User user = checkUser(context);
         Long offset = offsetParam != null ? Long.parseLong(offsetParam) : null;
         Long limit = limitParam != null ? Long.parseLong(limitParam) : null;
+        Response checkResponse = database.runTransaction(db -> {
+            if (checkIsForbidden(db, user, table, READ_TABLE_OPERATION, Map.of(
+                    "columns", columns != null ? columns : "",
+                    "offset", offset != null ? offset : "",
+                    "limit", limit != null ? limit : "",
+                    "sort", sort != null ? sort : "",
+                    "sortDir", sortDir != null ? sortDir : "",
+                    "includeRowId", includeRowId,
+                    "rowsAsObjects", rowsAsObjects,
+                    "includeTotal", includeTotal
+            ), User.DBRights.READ))
+                return StandardResponses.FORBIDDEN();
+            return null;
+        });
+        if (checkResponse != null) {
+            return checkResponse;
+        }
+
         Holder<Long> outTotal = includeTotal ? new Holder<>(0L) : null;
 
         try {

@@ -14,17 +14,25 @@ public class UserRole implements Serializable {
     public static final String FIELD_NAME = "name";
     public static final String FIELD_FS_RIGHTS = "fs_rights";
     public static final String FIELD_DB_RIGHTS = "db_rights";
+    public static final String FIELD_FILE_STORAGE_SIZE_LIMIT = "storage_limit";
+    public static final String FIELD_SYSTEM_RIGHTS = "system_rights";
 
     public @NonNull String name;
     public @NonNull EnumSet<User.FileSystemRights> fsRights;
     public @NonNull EnumSet<User.DBRights> dbRights;
+    public @Nullable Long storageLimit = null;
+    public @NonNull EnumSet<User.SystemRights> systemRights;
 
     public UserRole(@NonNull String name,
                     @NonNull EnumSet<User.FileSystemRights> fsRights,
-                    @NonNull EnumSet<User.DBRights> dbRights) {
+                    @NonNull EnumSet<User.DBRights> dbRights,
+                    @Nullable Long storageLimit,
+                    @NonNull EnumSet<User.SystemRights> systemRights) {
         this.name = name;
         this.fsRights = fsRights;
         this.dbRights = dbRights;
+        this.storageLimit = storageLimit;
+        this.systemRights = systemRights;
     }
 
     public @NonNull JSONObject serialize() {
@@ -43,6 +51,16 @@ public class UserRole implements Serializable {
             rightsMask |= (1 << right.ordinal());
         }
         object.put(FIELD_DB_RIGHTS, rightsMask);
+
+        if (storageLimit != null) {
+            object.put(FIELD_FILE_STORAGE_SIZE_LIMIT, storageLimit);
+        }
+
+        rightsMask = 0;
+        for (User.SystemRights right : systemRights) {
+            rightsMask |= (1 << right.ordinal());
+        }
+        object.put(FIELD_SYSTEM_RIGHTS, rightsMask);
 
         return object;
     }
@@ -67,6 +85,17 @@ public class UserRole implements Serializable {
             }
         }
 
-        return new UserRole(name, fsRights, dbRights);
+        Long storageLimit = (object.has(FIELD_FILE_STORAGE_SIZE_LIMIT) && !object.isNull(FIELD_FILE_STORAGE_SIZE_LIMIT)) ?
+                object.getLong(FIELD_FILE_STORAGE_SIZE_LIMIT) : null;
+
+        EnumSet<User.SystemRights> systemRights = EnumSet.noneOf(User.SystemRights.class);
+        rightsMask = object.optInt(FIELD_SYSTEM_RIGHTS, 0);
+        for (User.SystemRights right : User.SystemRights.values()) {
+            if ((rightsMask & (1 << right.ordinal())) != 0) {
+                systemRights.add(right);
+            }
+        }
+
+        return new UserRole(name, fsRights, dbRights, storageLimit, systemRights);
     }
 }

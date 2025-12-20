@@ -85,10 +85,10 @@ public final class HTTPUtils {
 
         if (options != null) {
             for (Map.Entry<String, Object> entry : options.entrySet()) {
-                String key = entry.getKey();
+                String key = entry.getKey().toLowerCase();
                 Object val = entry.getValue();
 
-                switch (key.toLowerCase()) {
+                switch (key) {
                     case "expires":
                         if (val instanceof Date) {
                             SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US);

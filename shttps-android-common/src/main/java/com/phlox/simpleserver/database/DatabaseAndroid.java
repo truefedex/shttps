@@ -147,7 +147,10 @@ public class DatabaseAndroid implements Database {
     }
 
     @Override
-    public TableData query(String query) throws Exception {
+    public TableData query(String query, Object[] args, boolean possiblyWriteOperation) throws Exception {
+        if (possiblyWriteOperation) {
+            return writeExecutor.submit(() -> simpleDBOperations.query(query)).get();
+        }
         return simpleDBOperations.query(query);
     }
 
@@ -212,13 +215,16 @@ public class DatabaseAndroid implements Database {
         }
 
         @Override
-        public TableData query(String query) throws Exception {
-            Cursor cursor = database.rawQuery(query, null);
-            if (cursor == null) {
-                return null;
+        public TableData query(String query, Object[] args, boolean possiblyWriteOperation) throws Exception {
+            String[] argsStr = null;
+            if (args != null && args.length > 0) {
+                argsStr = new String[args.length];
+                for (int i = 0; i < args.length; i++) {
+                    argsStr[i] = args[i].toString();
+                }
             }
-            if (cursor.getCount() == 0) {
-                cursor.close();
+            Cursor cursor = database.rawQuery(query, argsStr);
+            if (cursor == null) {
                 return null;
             }
             return new TableDataAndroid(cursor);

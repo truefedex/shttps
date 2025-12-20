@@ -9,6 +9,7 @@ import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.utils.AbstractDataStreamer;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 
@@ -21,23 +22,26 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 public class ZipDownloadRequestHandler extends BaseFileRequestHandler {
-    public ZipDownloadRequestHandler(SHTTPSConfig config, AuthManager authManager) {
-        super(config, authManager);
+    public static final String ZIP_DOWNLOAD_OPERATION = "ZIP_DOWNLOAD";
+
+    public ZipDownloadRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
+        super(config, authManager, userStore);
     }
 
     @Override
     public Response handleRequest(RequestContext context, Request request) throws Exception {
         if (!request.method.equals(Request.METHOD_POST)) return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_POST});
         if (!"application/x-www-form-urlencoded".equals(request.contentType)) return StandardResponses.BAD_REQUEST();
-        User user = checkUser(context);
-        if (checkIsForbidden(user, User.FileSystemRights.READ)) return StandardResponses.FORBIDDEN("Insufficient rights");
+
         context.requestBodyReader.readRequestBody(request);
 
         Integer compressionLevel;
@@ -59,6 +63,7 @@ public class ZipDownloadRequestHandler extends BaseFileRequestHandler {
 
         String destPath = request.urlEncodedPostParams.get("path");
         DocumentFile root = config.getRootDir();
+        User user = checkUser(context);
         final DocumentFile destFile = DocumentFileUtils.findChildByPath(root, destPath, user);
         if ((destFile == null) || !destFile.isDirectory()) return StandardResponses.NOT_FOUND();
         String filesStr = request.urlEncodedPostParams.get("files");
@@ -66,6 +71,15 @@ public class ZipDownloadRequestHandler extends BaseFileRequestHandler {
             return StandardResponses.BAD_REQUEST("No files specified");
         }
         JSONArray filesJArr = new JSONArray(filesStr);
+
+        Map<String, Object> operationParams = new HashMap<>();
+        operationParams.put("level", compressionLevel);
+        operationParams.put("uncompressed", excludedExtensions);
+        operationParams.put("files.size", filesJArr.length());
+        operationParams.put("files[]", filesJArr.toString());
+        if (checkIsForbidden(user, destPath, ZIP_DOWNLOAD_OPERATION, operationParams,
+                User.FileSystemRights.READ))
+            return StandardResponses.FORBIDDEN();
 
         ZipDataStreamer streamer = new ZipDataStreamer(destFile, filesJArr, excludedExtensions, compressionLevel);
         streamer.startDataGenerationThread();

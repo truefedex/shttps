@@ -72,7 +72,19 @@ public abstract class DocumentFile {
 
     public abstract boolean moveTo(DocumentFile destDir);
 
-    public abstract boolean storageHasEnoughFreeSpaceFor(long contentLength);
+    public abstract long getStorageSize();
+    public abstract long getStorageFreeSpace();
+    public long calculateDirectorySize() {
+        long totalSize = 0;
+        for (DocumentFile doc : listFiles()) {
+            if (doc.isFile()) {
+                totalSize += doc.length();
+            } else {
+                totalSize += doc.calculateDirectorySize();
+            }
+        }
+        return totalSize;
+    }
 
     public abstract InputStream openInputStream() throws IOException;
 

@@ -8,6 +8,8 @@ import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.DatabaseOperations;
+import com.phlox.simpleserver.database.DatabaseTransactionScope;
 import com.phlox.simpleserver.utils.Holder;
 
 import org.json.JSONArray;
@@ -19,6 +21,8 @@ import java.util.List;
 import java.util.Map;
 
 public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
+    public static final String READ_CELL_OPERATION = "READ_CELL";
+
     public DBSingleCellDataRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
         super(database, config, authManager);
     }
@@ -29,12 +33,7 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
                 !request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_POST});
         }
-        Database database = this.database.get();
-        if (database == null) {
-            return StandardResponses.NOT_FOUND();
-        }
-        User user = checkUser(context);
-        if (checkIsForbidden(user, User.DBRights.READ)) return StandardResponses.FORBIDDEN("Insufficient rights");
+
         Map<String, String> params;
         if (request.method.equals(Request.METHOD_GET)) {
             params = request.queryParams;
@@ -62,24 +61,36 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
             }
         }
 
-        InputStream stream = null;
-        try {
-            Database.CellDataStreamInfo cellDataStreamInfo = database.getSingleCellDataStream(table, column, filters, filtersArgs);
-            if (cellDataStreamInfo == null) {
-                return StandardResponses.NOT_FOUND();
-            }
-            stream = cellDataStreamInfo.inputStream;
-            if (stream == null) {
-                return StandardResponses.NO_CONTENT();//cell value is null or wrong type (only string or binary is supported)
-            }
-
-            return new Response(cellDataStreamInfo.mimeType, cellDataStreamInfo.length, stream);
-        } catch (Exception e) {
-            return StandardResponses.INTERNAL_SERVER_ERROR(e.getMessage());
-        } finally {
-            if (stream != null) {
-                stream.close();
-            }
+        Database database = this.database.get();
+        if (database == null) {
+            return StandardResponses.NOT_FOUND();
         }
+        User user = checkUser(context);
+        return database.runTransaction(db -> {
+            if (checkIsForbidden(db, user, table, READ_CELL_OPERATION, Map.of(
+                    "column", column
+            ), User.DBRights.READ))
+                return StandardResponses.FORBIDDEN();
+
+            InputStream stream = null;
+            try {
+                Database.CellDataStreamInfo cellDataStreamInfo = db.getSingleCellDataStream(table, column, filters, filtersArgs);
+                if (cellDataStreamInfo == null) {
+                    return StandardResponses.NOT_FOUND();
+                }
+                stream = cellDataStreamInfo.inputStream;
+                if (stream == null) {
+                    return StandardResponses.NO_CONTENT();//cell value is null or wrong type (only string or binary is supported)
+                }
+
+                return new Response(cellDataStreamInfo.mimeType, cellDataStreamInfo.length, stream);
+            } catch (Exception e) {
+                return StandardResponses.INTERNAL_SERVER_ERROR(e.getMessage());
+            } finally {
+                if (stream != null) {
+                    stream.close();
+                }
+            }
+        });
     }
 }

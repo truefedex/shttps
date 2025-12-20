@@ -12,9 +12,7 @@
 
 <body id="root" onload="onPageLoad();" onresize="onPageResize();" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
   <div class="header">
-    {{#display_menu_button}}
     <button id="menu-button" class="menu-button" onclick="onMenuClick(event);">☰</button>
-    {{/display_menu_button}}
     <div id="loader" class="loader"></div>
     <div id="path">{{current_path}}</div>
     <div id="view-mode" class="form_radio_group">
@@ -36,19 +34,68 @@
   </div>
   {{#allowEditing}}
   <div id="actionbar" class="actionbar" style="display: none;">
-    <button id="select-button" class="action-button" onclick="onSelectModeClick(this);">SELECT MODE</button>
-    <button class="action-button" onclick="onNewFolderClick();">NEW FOLDER</button>
-    <button class="action-button" onclick="onNewFileClick();">NEW FILE</button>
+    <button class="action-button" onclick="onNewFolderClick();">
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M560-320h80v-80h80v-80h-80v-80h-80v80h-80v80h80v80ZM160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z"/>
+      </svg>
+      NEW FOLDER
+    </button>
+    <button class="action-button" onclick="onNewFileClick();">
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/>
+      </svg>
+      NEW FILE
+    </button>
     <button id="upload-button" class="action-button" onclick="doUpload();">
       <div class="button__progress"></div>
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/>
+      </svg>
       <span class="button__text">UPLOAD FILES</span>
+      <span class="button__speed"></span>
     </button>
-    <button id="rename-button" class="action-button" onclick="onRenameClick();" disabled>RENAME</button>
-    <button id="cut-button" class="action-button" onclick="onPushToClipboardClick('move');" disabled>CUT</button>
-    <button id="copy-button" class="action-button" onclick="onPushToClipboardClick('copy');" disabled>COPY</button>
-    <button id="delete-button" class="action-button" onclick="onDeleteClick();" disabled>DELETE</button>
-    <button id="paste-button" class="action-button" onclick="onPasteClick();" disabled>PASTE</button>
-    <button id="zip-button" class="action-button" onclick="onZipClick();" disabled>DOWNLOAD AS ZIP</button>
+    <button id="search-button" class="action-button" onclick="onSearchClick();">
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/>
+      </svg>
+      SEARCH
+    </button>
+    <button id="rename-button" class="action-button" onclick="onRenameClick();" disabled>
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/>
+      </svg>
+      RENAME
+    </button>
+    <button id="cut-button" class="action-button" onclick="onPushToClipboardClick('move');" disabled>
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M760-120 480-400l-94 94q8 15 11 32t3 34q0 66-47 113T240-80q-66 0-113-47T80-240q0-66 47-113t113-47q17 0 34 3t32 11l94-94-94-94q-15 8-32 11t-34 3q-66 0-113-47T80-720q0-66 47-113t113-47q66 0 113 47t47 113q0 17-3 34t-11 32l494 494v40H760ZM600-520l-80-80 240-240h120v40L600-520ZM240-640q33 0 56.5-23.5T320-720q0-33-23.5-56.5T240-800q-33 0-56.5 23.5T160-720q0 33 23.5 56.5T240-640Zm240 180q8 0 14-6t6-14q0-8-6-14t-14-6q-8 0-14 6t-6 14q0 8 6 14t14 6ZM240-160q33 0 56.5-23.5T320-240q0-33-23.5-56.5T240-320q-33 0-56.5 23.5T160-240q0 33 23.5 56.5T240-160Z"/>
+      </svg>
+      CUT
+    </button>
+    <button id="copy-button" class="action-button" onclick="onPushToClipboardClick('copy');" disabled>
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M760-200H320q-33 0-56.5-23.5T240-280v-560q0-33 23.5-56.5T320-920h280l240 240v400q0 33-23.5 56.5T760-200ZM560-640v-200H320v560h440v-360H560ZM160-40q-33 0-56.5-23.5T80-120v-560h80v560h440v80H160Zm160-800v200-200 560-560Z"/>
+      </svg>
+      COPY
+    </button>
+    <button id="delete-button" class="action-button" onclick="onDeleteClick();" disabled>
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/>
+      </svg>
+      DELETE
+    </button>
+    <button id="paste-button" class="action-button" onclick="onPasteClick();" disabled>
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h167q11-35 43-57.5t70-22.5q40 0 71.5 22.5T594-840h166q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560h-80v120H280v-120h-80v560Zm280-560q17 0 28.5-11.5T520-800q0-17-11.5-28.5T480-840q-17 0-28.5 11.5T440-800q0 17 11.5 28.5T480-760Z"/>
+      </svg>
+      <span>PASTE</span>
+    </button>
+    <button id="zip-button" class="action-button" onclick="onZipClick();" disabled>
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M640-480v-80h80v80h-80Zm0 80h-80v-80h80v80Zm0 80v-80h80v80h-80ZM447-640l-80-80H160v480h400v-80h80v80h160v-400H640v80h-80v-80H447ZM160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80v-480 480Z"/>
+      </svg>
+      DOWNLOAD AS ZIP
+    </button>
   </div>
   <input style="visibility: hidden;" id="files" type="file" name="files" onchange="onUploadFilesSelected(this);"
     multiple>
@@ -76,6 +123,7 @@
   <div class="context-menu" id="main-menu">
     <div class="menu-close-btn" onclick="hideContextMenu()">&times;</div>
     <ul class="menu-options">
+      <li class="menu-option" id="mm-status">Status</li>
       {{#dbConnected}}<li class="menu-option" id="mm-database">Database</li>{{/dbConnected}}
       {{#needAuthBlock}}
       {{^hasUser}}<li class="menu-option" id="mm-login">Login</li>{{/hasUser}}

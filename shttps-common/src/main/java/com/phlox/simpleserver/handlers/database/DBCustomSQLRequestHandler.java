@@ -12,13 +12,18 @@ import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.utils.AbstractDataStreamer;
 import com.phlox.simpleserver.utils.Holder;
+import com.phlox.simpleserver.utils.Utils;
 
 import org.json.JSONArray;
 
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
 public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
+    public static final String CUSTOM_SQL_DATABASE_SUBJECT_CONSTANT = "*";
+    public static final String CUSTOM_SQL_DATABASE_OPERATION = "EXECUTE";
 
     public DBCustomSQLRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
         super(database, config, authManager);
@@ -29,15 +34,9 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
         if (!request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_POST});
         }
-        Database database = this.database.get();
-        if (database == null) {
-            return StandardResponses.NOT_FOUND();
-        }
         if (!config.isAllowDatabaseCustomSqlRemoteApi()) {
             return StandardResponses.FORBIDDEN("Database custom SQL remote API is disabled");
         }
-        User user = checkUser(context);
-        if (checkIsForbidden(user, User.DBRights.EXEC_SQL)) return StandardResponses.FORBIDDEN("Insufficient rights");
         int limit = request.queryParams.containsKey("limit") ?
                 Integer.parseInt(request.queryParams.get("limit")) : 100;
         int offset = request.queryParams.containsKey("offset") ?
@@ -45,21 +44,50 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
         boolean includeColumnNames = request.queryParams.containsKey("includeNames") &&
                 Boolean.parseBoolean(request.queryParams.get("includeNames"));
         context.requestBodyReader.readRequestBody(request);
-        String sql = new String(request.body.asBytes(), StandardCharsets.UTF_8);
-        try {
-            TableData result = database.query(sql);
-            if (result == null) {
-                return new TextResponse(200, "OK", "{}");
-            }
-            SQLResponseStreamer streamer = new SQLResponseStreamer(result, offset, limit,
-                    includeColumnNames);
-            streamer.startDataGenerationThread();
-            Response response = new Response(streamer.getInputStream());
-            response.setContentType("application/json");
-            return response;
-        } catch (Exception e) {
-            return new TextResponse(420, "Method Failure", e.getMessage());
+        final String sql = new String(request.body.asBytes(), StandardCharsets.UTF_8);
+        if (sql.trim().isEmpty()) {
+            return StandardResponses.BAD_REQUEST("SQL query is empty");
         }
+
+        User user = checkUser(context);
+        Database database = this.database.get();
+        if (database == null) {
+            return StandardResponses.NOT_FOUND();
+        }
+
+        return database.runTransaction(db -> {
+            if (checkIsForbidden(db, user, CUSTOM_SQL_DATABASE_SUBJECT_CONSTANT,
+                    CUSTOM_SQL_DATABASE_OPERATION, null,
+                    User.DBRights.EXEC_SQL)) return StandardResponses.FORBIDDEN();
+
+            List<String> sqlStatements = Utils.splitSqlStatementsSQLite(sql);
+            try {
+                // Only the last statement can return data
+                // execute previous statements first
+                for (int i = 0; i < sqlStatements.size() - 1; i++) {
+                    String stmt = sqlStatements.get(i);
+                    TableData data = db.query(stmt);
+                    if (data != null) {
+                        data.close();
+                    }
+                }
+                // now execute the last statement and return its data
+                String lastSQLStat = sqlStatements.get(sqlStatements.size() - 1);
+
+                TableData result = db.query(lastSQLStat);
+                if (result == null) {
+                    return new TextResponse(200, "OK", "{}");
+                }
+                SQLResponseStreamer streamer = new SQLResponseStreamer(result, offset, limit,
+                        includeColumnNames);
+                streamer.startDataGenerationThread();
+                Response response = new Response(streamer.getInputStream());
+                response.setContentType("application/json");
+                return response;
+            } catch (Exception e) {
+                return new TextResponse(420, "Method Failure", e.getMessage());
+            }
+        });
     }
 
     private static class SQLResponseStreamer extends AbstractDataStreamer {

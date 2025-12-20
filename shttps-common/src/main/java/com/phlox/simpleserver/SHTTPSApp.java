@@ -49,6 +49,7 @@ import com.phlox.simpleserver.handlers.files.ThumbnailHandler;
 import com.phlox.simpleserver.handlers.files.ZipDownloadRequestHandler;
 import com.phlox.simpleserver.handlers.files.upload.UploadFileRequestHandler;
 import com.phlox.simpleserver.handlers.main.FilesRequestHandler;
+import com.phlox.simpleserver.handlers.system.StatusRequestHandler;
 import com.phlox.simpleserver.utils.Holder;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 import com.phlox.simpleserver.utils.ServerLogsCollector;
@@ -95,6 +96,8 @@ public class SHTTPSApp {
     private volatile int shutdownTimeout = 0;
     private final ScheduledExecutorService scheduledThreadPool = Executors.newScheduledThreadPool(1);
     private volatile ScheduledFuture<?> shutdownFuture = null;
+    public ServerVersionInfo serverVersionInfo = new ServerVersionInfo("SHTTPS", "unknown");
+    public long serverStartTimeMillis;
 
     public static SHTTPSApp init(SHTTPSConfig config, SHTTPSPlatformUtils platformUtils, SHTTPSDatabaseFabric databaseFabric) {
         if (instance != null) {
@@ -113,6 +116,7 @@ public class SHTTPSApp {
     }
 
     public static void destroy() {
+        SHTTPSApp instance = SHTTPSApp.instance;
         if (instance == null) {
             throw new IllegalStateException("App not initialized");
         }
@@ -127,7 +131,7 @@ public class SHTTPSApp {
             instance.database.set(null);
         }
         instance.scheduledThreadPool.shutdownNow();
-        instance = null;
+        SHTTPSApp.instance = null;
     }
 
     private SHTTPSApp(SHTTPSConfig config, SHTTPSPlatformUtils platformUtils, SHTTPSDatabaseFabric databaseFabric) {
@@ -207,15 +211,15 @@ public class SHTTPSApp {
         //Setup routes
         router.resetRoutes();
         //file handlers
-        router.addRoute("/api/file/download", Set.of("GET"), new StaticFileRequestHandler(config, authManager), authMiddlewares);
-        router.addRoute("/api/file/new-folder", Set.of("POST"), new NewFolderRequestHandler(config, authManager), authMiddlewares);
-        router.addRoute("/api/file/rename", Set.of("POST"), new RenameFileRequestHandler(config, authManager), authMiddlewares);
-        router.addRoute("/api/file/upload", Set.of("PUT"), new UploadFileRequestHandler(config, authManager), authMiddlewares);
-        router.addRoute("/api/file/delete", Set.of("DELETE"), new DeleteFileRequestHandler(config, authManager), authMiddlewares);
-        router.addRoute("/api/file/move", Set.of("POST"), new MoveFileRequestHandler(config, authManager), authMiddlewares);
-        router.addRoute("/api/file/list", Set.of("GET"), new FileListRequestHandler(config, authManager), authMiddlewares);
-        router.addRoute("/api/file/thumbnail", Set.of("GET"), new ThumbnailHandler(config, authManager), authMiddlewares);
-        router.addRoute("/api/file/zip", Set.of("POST"), new ZipDownloadRequestHandler(config, authManager), authMiddlewares);
+        router.addRoute("/api/file/download", Set.of("GET"), new StaticFileRequestHandler(config, authManager, userStore), authMiddlewares);
+        router.addRoute("/api/file/new-folder", Set.of("POST"), new NewFolderRequestHandler(config, authManager, userStore), authMiddlewares);
+        router.addRoute("/api/file/rename", Set.of("POST"), new RenameFileRequestHandler(config, authManager, userStore), authMiddlewares);
+        router.addRoute("/api/file/upload", Set.of("PUT"), new UploadFileRequestHandler(config, authManager, userStore), authMiddlewares);
+        router.addRoute("/api/file/delete", Set.of("DELETE"), new DeleteFileRequestHandler(config, authManager, userStore), authMiddlewares);
+        router.addRoute("/api/file/move", Set.of("POST"), new MoveFileRequestHandler(config, authManager, userStore), authMiddlewares);
+        router.addRoute("/api/file/list", Set.of("GET"), new FileListRequestHandler(config, authManager, userStore), authMiddlewares);
+        router.addRoute("/api/file/thumbnail", Set.of("GET"), new ThumbnailHandler(config, authManager, userStore), authMiddlewares);
+        router.addRoute("/api/file/zip", Set.of("POST"), new ZipDownloadRequestHandler(config, authManager, userStore), authMiddlewares);
 
         //database handlers
         router.addRoute("/api/db/schema", Set.of("GET"), new DBSchemaRequestHandler(database, config, authManager), authMiddlewares);
@@ -225,6 +229,9 @@ public class SHTTPSApp {
         router.addRoute("/api/db/delete", Set.of("DELETE"), new DBDeleteRequestHandler(database, config, authManager), authMiddlewares);
         router.addRoute("/api/db/query", Set.of("POST"), new DBCustomSQLRequestHandler(database, config, authManager), authMiddlewares);
         router.addRoute("/api/db/cell-data", Set.of("GET", "POST"), new DBSingleCellDataRequestHandler(database, config, authManager), authMiddlewares);
+
+        //system handlers
+        router.addRoute("/api/system/status", Set.of("GET"), new StatusRequestHandler(this, authManager), authMiddlewares);
 
         //auth handlers (if any)
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.WEB)) {
@@ -252,7 +259,7 @@ public class SHTTPSApp {
         router.addRouteByPathPrefix("/shttps-static-public",
                 new StaticAssetsRequestHandler("shttps-static-public", "/shttps-static-public", config), authMiddlewares);
 
-        FilesRequestHandler filesRequestHandler = new FilesRequestHandler(config, authManager);
+        FilesRequestHandler filesRequestHandler = new FilesRequestHandler(config, authManager, userStore);
         filesRequestHandler.renderFolders = config.getRenderFolders();
         filesRequestHandler.allowEditing = config.getAllowEditing();
         router.addRouteByPathPrefix("/", filesRequestHandler, authMiddlewares);
@@ -300,7 +307,9 @@ public class SHTTPSApp {
                 logger.e("Connection error from " + (address   != null   ? address.toString()    : "unknown address"));
             }
             @Override
-            public void onConnectionRequest(RequestContext context, Request request) {}
+            public void onConnectionRequest(RequestContext context, Request request) {
+                logger.d(request.method + ": " + request.path);
+            }
             @Override
             public void onConnectionResponse(RequestContext context, Request request, Response response) {}
 
@@ -364,6 +373,7 @@ public class SHTTPSApp {
         } else {
             srv.startListen(config.getPort());
         }
+        this.serverStartTimeMillis = System.currentTimeMillis();
         this.server = srv;
         setupShutdownTimeout();
     }
@@ -375,7 +385,11 @@ public class SHTTPSApp {
             server = null;
         }
 
-        rateLimitingMiddleware.shutdown();
+        RateLimitingMiddleware rateLimitingMiddleware = this.rateLimitingMiddleware;
+        if (rateLimitingMiddleware != null) {
+            rateLimitingMiddleware.shutdown();
+            this.rateLimitingMiddleware = null;
+        }
 
         ScheduledFuture<?> future = this.shutdownFuture;
         if (future != null) {
@@ -487,5 +501,14 @@ public class SHTTPSApp {
         void onServerStarted();
 
         void onServerStopped();
+    }
+
+    public static class ServerVersionInfo {
+        public String name;
+        public String version;
+        public ServerVersionInfo(String name, String version) {
+            this.name = name;
+            this.version = version;
+        }
     }
 }

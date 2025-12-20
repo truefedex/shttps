@@ -1,9 +1,9 @@
 let files = [];
 let uploadInProgress = false;
-let selectMode = false;
 let selectedFiles = [];
 let lastSelectedElement = null;
 let currentPath = decodeURIComponent(window.location.pathname);
+let currentSearchQuery = null;
 let touchscreen = window.matchMedia("(any-pointer: coarse)").matches;
 let allowEditing = false;
 
@@ -37,6 +37,7 @@ function renderFileList() {
     columnsTemplate += "1fr ";//itemWidth+"px ";
   }
   container.style.gridTemplateColumns = columnsTemplate;
+  container.dataset.viewMode = viewMode;
 
   switch (viewMode) {
     case "grid":
@@ -86,94 +87,129 @@ function renderFileList() {
 
   for (let i = 0; i < files.length; i++) {
     let file = files[i];
+    
+    // Create wrapper for file item (to support checkbox)
+    let fileItemWrapper = document.createElement("div");
+    fileItemWrapper.classList.add("file-item-wrapper");
+    
     let a = document.createElement("a");
     a.dataset.directory = file.directory;
-    let path = currentPath + (currentPath.endsWith("/") ? "" : "/") + file.name;
+    let path = currentPath + (currentPath.endsWith("/") ? "" : "/") + 
+      (file.relativePath != null ? file.relativePath : "") + file.name;
     if (file.directory) {
       path = path + "/";
     }
     let href = path.split("/").map(encodeURIComponent).join("/");
     a.setAttribute("href", href);
-    a.addEventListener('click', onFileItemClick);
-    if (iOS()) {
-      onLongPress(a, function (e) {
-        showContextMenu(e.pageX, e.pageY, href, file.directory);
+    a.setAttribute("title", file.name);
+    
+    // Add checkbox when deviceHasPointer == false
+    if (!deviceHasPointer) {
+      let checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.classList.add("file-checkbox");
+      checkbox.dataset.href = href;
+      checkbox.addEventListener('change', onCheckboxChange);
+      checkbox.addEventListener('click', function(e) {
+        e.stopPropagation(); // Prevent triggering file item click
       });
-    } else {
+      fileItemWrapper.appendChild(checkbox);
+    }
+    
+    a.addEventListener('click', onFileItemClick);
+    
+    // Set up event handlers based on deviceHasPointer
+    if (deviceHasPointer) {
+      // With pointer: right click shows context menu, double click opens
       a.addEventListener('contextmenu', function (e) {
         e.preventDefault();
         showContextMenu(e.pageX, e.pageY, href, file.directory);
       });
+      a.addEventListener('dblclick', function (e) {
+        e.preventDefault();
+        onFileItemOpen(href, file.directory);
+      });
+    } else {
+      // Without pointer: long press shows context menu
+      onLongPress(a, function (e) {
+        showContextMenu(e.pageX, e.pageY, href, file.directory);
+      });
     }
     a.classList.add("file-item");
-    let div = document.createElement("div");
-    if (file.directory) div.classList.add("folder");
-    switch (viewMode) {
-      case "table":
-        a.style.textDecoration = "none";
-        div.style.display = "flex";
-        let fileNameDiv = document.createElement("div");
-        fileNameDiv.innerText = file.name;
-        fileNameDiv.classList.add("table-file-name");
-        div.appendChild(fileNameDiv);
-        let modifiedDiv = document.createElement("div");
-        modifiedDiv.innerText = new Date(file.modified).toLocaleString().replace(",", "");
-        modifiedDiv.classList.add("table-file-date");
-        div.appendChild(modifiedDiv);
-        let sizeDiv = document.createElement("div");
-        if (!file.directory) {
-          sizeDiv.innerText = file.length;
+
+    if (viewMode == "grid") {
+      a.classList.add("grid-card");
+      let mediaWrapper = document.createElement("div");
+      mediaWrapper.classList.add("grid-card-media");
+      a.appendChild(mediaWrapper);
+
+      let fileExt = file.name.includes(".") ? file.name.split('.').pop().toLowerCase() : "";
+      if (!file.directory) {
+        let needThumbnail = false;
+        if (["jpg", "jpeg", "png", "gif", "bmp", "tga", "avi", "mp4", "3gp"].includes(fileExt)) {
+          needThumbnail = true;
         }
-        sizeDiv.classList.add("table-file-size");
-        div.appendChild(sizeDiv);
-        break;
-      case "grid":
-        a.style.textDecoration = "none";
-        div.style.height = "100%";
-        if (file.directory) {
-          div.innerText = file.name;
-        } else {
-          div.style.display = "flex";
-          div.style.flexDirection = "column";
-          let needThumbnail = false;
-          let fileExt = file.name.includes(".") ? file.name.split('.').pop().toLowerCase() : "";
-          if (["jpg", "jpeg", "png", "gif", "bmp", "tga", "avi", "mp4", "3gp"].includes(fileExt)) {
+        try {
+          let f = new File(file.name);
+          if (f.type.startsWith("image/") || f.type.startsWith("video/")) {
             needThumbnail = true;
           }
-          try {
-            let f = new File(file.name);
-            if (f.type.startsWith("image/") || f.type.startsWith("video/")) {
-              needThumbnail = true;
-            }
-          } catch (error) { }
-          if (needThumbnail) {
-            let thumbnail = document.createElement("img");
-            thumbnail.src = "/api/file/thumbnail?path=" + encodeURIComponent(path);
-            thumbnail.classList.add("grid-file-thumbnail");
-            thumbnail.addEventListener('error', function (e) {
-              e.target.src = "/shttps-static-public/file-browser/broken-thumbnail.png";
-              thumbnail.style["object-fit"] = "none";
-            });
-            div.appendChild(thumbnail);
-          } else {
-            let fileEXTDiv = document.createElement("div");
-            fileEXTDiv.innerText = fileExt;
-            fileEXTDiv.classList.add("grid-file-ext");
-            div.appendChild(fileEXTDiv);
-          }
+        } catch (error) { }
+        if (needThumbnail) {
+          let thumbnail = document.createElement("img");
+          thumbnail.src = "/api/file/thumbnail?path=" + encodeURIComponent(path);
+          thumbnail.classList.add("grid-file-thumbnail");
+          thumbnail.addEventListener('error', function (e) {
+            e.target.src = "/shttps-static-public/file-browser/broken-thumbnail.png";
+            thumbnail.style["object-fit"] = "contain";
+          });
+          mediaWrapper.appendChild(thumbnail);
+        } else {
+          let fileEXTDiv = document.createElement("div");
+          fileEXTDiv.innerText = fileExt ? fileExt : file.name.substring(0, 4).toUpperCase();
+          fileEXTDiv.classList.add("grid-file-ext");
+          mediaWrapper.appendChild(fileEXTDiv);
+        }
+      } else {
+        let folderPlaceholder = document.createElement("div");
+        folderPlaceholder.classList.add("grid-folder-placeholder");
+        folderPlaceholder.innerText = "📁";
+        mediaWrapper.appendChild(folderPlaceholder);
+      }
+      let fileNameOverlay = document.createElement("div");
+      fileNameOverlay.innerText = file.name;
+      fileNameOverlay.classList.add("grid-file-name");
+      a.appendChild(fileNameOverlay);
+    } else {
+      let div = document.createElement("div");
+      if (file.directory) div.classList.add("folder");
+      switch (viewMode) {
+        case "table":
+          a.style.textDecoration = "none";
+          div.style.display = "flex";
           let fileNameDiv = document.createElement("div");
           fileNameDiv.innerText = file.name;
-          fileNameDiv.classList.add("grid-file-name");
+          fileNameDiv.classList.add("table-file-name");
           div.appendChild(fileNameDiv);
-        }
-        break;
-
-      default://list
-        div.innerText = file.name;
-        break;
+          let modifiedDiv = document.createElement("div");
+          modifiedDiv.innerText = new Date(file.modified).toLocaleString().replace(",", "");
+          modifiedDiv.classList.add("table-file-date");
+          div.appendChild(modifiedDiv);
+          let sizeDiv = document.createElement("div");
+          if (!file.directory) {
+            sizeDiv.innerText = file.length;
+          }
+          sizeDiv.classList.add("table-file-size");
+          div.appendChild(sizeDiv);
+          break;
+        default://list
+          div.innerText = file.name;
+          break;
+      }
+      a.appendChild(div);
     }
-    a.appendChild(div);
-    container.appendChild(a);
+    fileItemWrapper.appendChild(a);
+    container.appendChild(fileItemWrapper);
     itemsInRow++;
     if (itemsInRow >= itemsPerRow) {
       itemsInRow = 0;
@@ -194,7 +230,7 @@ function tableSortChange(clickedSort) {
     localStorage.sort = clickedSort;
     localStorage.sortReversed = false;
   }
-  loadPath(currentPath);
+  loadPath(currentPath, currentSearchQuery);
 }
 
 function doUpload() {
@@ -213,8 +249,8 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
   if (uploadInProgress || !allowEditing) return;
   let xhr = new XMLHttpRequest();
   let formData = new FormData();
-  let oldTime = new Date();
-  let oldProgress = 0;
+  let lastSpeedUpdateTime = new Date();
+  let lastSpeedLoaded = 0;
   let conflicts = new Set();
   for (let i = 0; i < files.length; i++) {
     let file = files[i];
@@ -223,8 +259,10 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
     let fileElements = document.getElementById("files-container").childNodes;
     for (let j = 0; j < fileElements.length; j++) {
       let element = fileElements[j];
-      if (element.nodeName.toLowerCase() != 'a') continue;
-      let href = element.getAttribute("href");
+      // Handle both old structure (direct 'a' elements) and new structure (wrapped in div)
+      let a = element.nodeName.toLowerCase() == 'a' ? element : element.querySelector('a');
+      if (!a) continue;
+      let href = a.getAttribute("href");
       let path = href.split("/").map(decodeURIComponent).join("/");
       let upperLevelFileNameElement = relativePaths != null ? relativePaths[i] : file.name;
       if (upperLevelFileNameElement.startsWith("/")) {
@@ -252,17 +290,40 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
 
   let button = document.getElementById("upload-button");
   let textElement = button.querySelector(".button__text");
+  let speedElement = button.querySelector(".button__speed");
   textElement.textContent = "UPLOADING...";
+  if (speedElement) {
+    speedElement.textContent = "";
+    speedElement.style.visibility = "hidden";
+  }
+
+  function formatSpeed(bytesPerSecond) {
+    if (!isFinite(bytesPerSecond) || bytesPerSecond <= 0) return "";
+    if (bytesPerSecond >= 1024 * 1024) {
+      return (bytesPerSecond / (1024 * 1024)).toFixed(1) + " MB/s";
+    }
+    if (bytesPerSecond >= 1024) {
+      return (bytesPerSecond / 1024).toFixed(1) + " KB/s";
+    }
+    return Math.max(bytesPerSecond, 1).toFixed(0) + " B/s";
+  }
 
   xhr.upload.onprogress = function (event) {
-    let newTime = new Date();
-    let timeDiff = (newTime - oldTime) / 1000;
-    let progressDiff = (event.loaded - oldProgress) / 1000;
-    let kbps = progressDiff / timeDiff;
-    console.log('Uploaded ' + event.loaded / 1000 + ' kb from ' + event.total / 1000 + "(" + kbps + "kb/sec)");
-    oldTime = newTime;
-    oldProgress = event.loaded;
-
+    let now = new Date();
+    let timeSinceUpdate = (now - lastSpeedUpdateTime) / 1000;
+    if ((timeSinceUpdate >= 1) || event.loaded === event.total) {
+      let bytesDiff = event.loaded - lastSpeedLoaded;
+      let bytesPerSecond = timeSinceUpdate > 0 ? bytesDiff / timeSinceUpdate : 0;
+      if (speedElement) {
+        let speedText = formatSpeed(bytesPerSecond);
+        if (speedText) {
+          speedElement.textContent = speedText;
+          speedElement.style.visibility = "visible";
+        }
+      }
+      lastSpeedUpdateTime = now;
+      lastSpeedLoaded = event.loaded;
+    }
     let percent = event.loaded * 100 / event.total;
     button.querySelector(".button__progress").style.width = percent + "%";
   };
@@ -275,6 +336,10 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
     progressElement.offsetHeight; // Trigger a reflow, flushing the CSS changes
     progressElement.classList.remove('notransition');
     uploadInProgress = false;
+    if (speedElement) {
+      speedElement.textContent = "";
+      speedElement.style.visibility = "hidden";
+    }
 
     if (xhr.status == 204) {
       setTimeout(() => {//wait for server to process files
@@ -295,6 +360,10 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
     progressElement.offsetHeight;
     progressElement.classList.remove('notransition');
     uploadInProgress = false;
+    if (speedElement) {
+      speedElement.textContent = "";
+      speedElement.style.visibility = "hidden";
+    }
     
     // Handle network-level errors
     alert('Network error while uploading files. Please check your connection.');
@@ -306,91 +375,154 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
   uploadInProgress = true;
 }
 
-function onSelectModeFileClick(e) {
-  let a = e.currentTarget;
+function onCheckboxChange(e) {
+  let checkbox = e.currentTarget;
+  let href = checkbox.dataset.href;
+  let fileItemWrapper = checkbox.closest(".file-item-wrapper");
+  let a = fileItemWrapper ? fileItemWrapper.querySelector("a") : null;
+  
+  if (checkbox.checked) {
+    if (selectedFiles.indexOf(href) === -1) {
+      selectedFiles.push(href);
+    }
+    if (a) a.classList.add("selected-item");
+  } else {
+    let index = selectedFiles.indexOf(href);
+    if (index > -1) {
+      selectedFiles.splice(index, 1);
+    }
+    if (a) a.classList.remove("selected-item");
+  }
+  updateButtonStates();
+}
+
+function onFileItemOpen(href, isDirectory) {
+  if (isDirectory) {
+    let path = href.split("/").map(decodeURIComponent).join("/");
+    if (path.endsWith("/../")) {
+      let parts = path.split("/");
+      parts.pop(); // remove empty string after trailing slash
+      parts.pop(); // remove ".."
+      parts.pop(); // remove current folder
+      path = parts.join("/");
+      if (!path.startsWith("/")) {
+        path = "/" + path;
+      }
+      if (!path.endsWith("/")) {
+        path = path + "/";
+      }
+    }
+    loadPath(path);
+  } else {
+    window.location.href = href;
+  }
+}
+
+function clearAllSelections(options = {}) {
+  let { clearDom = true, updateButtons = true } = options;
+  if (clearDom) {
+    let container = document.getElementById("files-container");
+    if (container) {
+      let fileElements = container.childNodes;
+      for (let i = 0; i < fileElements.length; i++) {
+        let element = fileElements[i];
+        if (!element || element.nodeType !== 1) continue;
+        let elementA = element.nodeName.toLowerCase() == 'a' ? element : element.querySelector("a");
+        if (!elementA) continue;
+        elementA.classList.remove("selected-item");
+        if (!deviceHasPointer) {
+          let checkbox = element.querySelector(".file-checkbox");
+          if (checkbox) checkbox.checked = false;
+        }
+      }
+    }
+  }
+  selectedFiles = [];
+  lastSelectedElement = null;
+  if (updateButtons) {
+    updateButtonStates();
+  }
+}
+
+function toggleFileSelection(href, a, e) {
   if (a.textContent == "..") return;
-
-  let href = a.getAttribute("href");
-
-  if (e.shiftKey && lastSelectedElement != null) {
+  
+  // Check for Ctrl/Cmd key (for multi-select toggle)
+  let ctrlKey = e && (e.ctrlKey || e.metaKey);
+  
+  // Handle shift-click for range selection (only for pointer devices)
+  if (deviceHasPointer && e && e.shiftKey && lastSelectedElement != null) {
     let fileElements = document.getElementById("files-container").childNodes;
     let startIndex = -1;
     let endIndex = -1;
     for (let i = 0; i < fileElements.length; i++) {
       let element = fileElements[i];
-      if (element.nodeName.toLowerCase() != 'a') continue;
-      if (element == a) {
+      if (element.nodeName.toLowerCase() != 'div') continue;
+      let elementA = element.querySelector("a");
+      if (!elementA) continue;
+      if (elementA == a) {
         endIndex = i;
       }
-      if (element == lastSelectedElement) {
+      if (elementA == lastSelectedElement) {
         startIndex = i;
       }
     }
-    if (startIndex == -1 || endIndex == -1) return;
-    if (startIndex > endIndex) {
-      startIndex--;
-      let tmp = startIndex;
-      startIndex = endIndex;
-      endIndex = tmp;
-    } else {
-      startIndex++;
-    }
-    if (startIndex < 0 || endIndex < 0 || startIndex >= fileElements.length || endIndex >= fileElements.length) return;
-    for (let i = startIndex; i <= endIndex; i++) {
-      let element = fileElements[i];
-      if (element.nodeName.toLowerCase() != 'a') continue;
-      
-      element.classList.toggle("selected-item");
-      if (element.classList.contains("selected-item")) {
-        selectedFiles.push(element.getAttribute("href"));
-      } else {
-        let index = selectedFiles.indexOf(element.getAttribute("href"));
-        if (index > -1) {
-          selectedFiles.splice(index, 1);
+    if (startIndex != -1 && endIndex != -1) {
+      if (startIndex > endIndex) {
+        let tmp = startIndex;
+        startIndex = endIndex;
+        endIndex = tmp;
+      }
+      for (let i = startIndex; i <= endIndex; i++) {
+        let element = fileElements[i];
+        if (element.nodeName.toLowerCase() != 'div') continue;
+        let elementA = element.querySelector("a");
+        if (!elementA || elementA.textContent == "..") continue;
+        let elementHref = elementA.getAttribute("href");
+        let index = selectedFiles.indexOf(elementHref);
+        if (index === -1) {
+          selectedFiles.push(elementHref);
+          elementA.classList.add("selected-item");
         }
       }
+      lastSelectedElement = a;
+      updateButtonStates();
+      return;
     }
+  }
+  
+  // Handle selection based on modifier keys
+  if (deviceHasPointer && !ctrlKey) {
+    // Without Ctrl: clear all selections and select only this item
+    clearAllSelections({ updateButtons: false });
+    selectedFiles.push(href);
+    a.classList.add("selected-item");
   } else {
-    a.classList.toggle("selected-item");
-    if (a.classList.contains("selected-item")) {
-      selectedFiles.push(href);
+    // With Ctrl (or touch device): toggle this item
+    let index = selectedFiles.indexOf(href);
+    if (index > -1) {
+      selectedFiles.splice(index, 1);
+      a.classList.remove("selected-item");
+      if (!deviceHasPointer) {
+        let wrapper = a.closest(".file-item-wrapper");
+        let checkbox = wrapper ? wrapper.querySelector(".file-checkbox") : null;
+        if (checkbox) checkbox.checked = false;
+      }
     } else {
-      let index = selectedFiles.indexOf(href);
-      if (index > -1) {
-        selectedFiles.splice(index, 1);
+      selectedFiles.push(href);
+      a.classList.add("selected-item");
+      if (!deviceHasPointer) {
+        let wrapper = a.closest(".file-item-wrapper");
+        let checkbox = wrapper ? wrapper.querySelector(".file-checkbox") : null;
+        if (checkbox) checkbox.checked = true;
       }
     }
   }
-
   lastSelectedElement = a;
   updateButtonStates();
 }
 
-function onSelectModeClick(button) {
-  setSelectMode(!selectMode);
-}
-
-function setSelectMode(value) {
-  selectMode = value;
-  selectedFiles = [];
-  lastSelectedElement = null;
-  updateButtonStates();
-  let fileElements = document.getElementById("files-container").childNodes;
-  for (let i = 0; i < fileElements.length; i++) {
-    let element = fileElements[i];
-    if (element.nodeName.toLowerCase() != 'a') continue;
-    if ((!selectMode) && element.classList.contains("selected-item")) {
-      element.classList.remove("selected-item");
-    }
-  }
-}
-
 function updateButtonStates() {
-  let selectModeBtn = document.getElementById("select-button");
-  if (selectModeBtn) {
-    selectModeBtn.style["background-color"] = selectMode ? 'cadetblue' : '#555';
-    selectModeBtn.style["color"] = selectMode ? 'darkslategrey' : 'white';
-  }
   let renameBtn = document.getElementById("rename-button");
   if (renameBtn) {
     renameBtn.disabled = selectedFiles.length != 1;
@@ -405,7 +537,18 @@ function updateButtonStates() {
     if (clipboardJson != null) {
       clipboard = JSON.parse(clipboardJson);
     }
-    pasteBtn.textContent = clipboard != null ? ("PASTE " + clipboard.length + " ITEMS") : "PASTE";
+    let spanInsidePasteBtn = pasteBtn.querySelector("span");
+    spanInsidePasteBtn.textContent = clipboard != null ? ("PASTE " + clipboard.length + " ITEMS") : "PASTE";
+  }
+}
+
+function updateSearchButtonState() {
+  let searchBtn = document.getElementById("search-button");
+  if (!searchBtn) return;
+  if (currentSearchQuery && currentSearchQuery.trim() !== "") {
+    searchBtn.classList.add("toggled");
+  } else {
+    searchBtn.classList.remove("toggled");
   }
 }
 
@@ -468,8 +611,10 @@ function onPasteClick() {
   let conflicts = [];
   for (let i = 0; i < fileElements.length; i++) {
     let element = fileElements[i];
-    if (element.nodeName.toLowerCase() != 'a') continue;
-    let href = element.getAttribute("href");
+    // Handle both old structure (direct 'a' elements) and new structure (wrapped in div)
+    let a = element.nodeName.toLowerCase() == 'a' ? element : element.querySelector('a');
+    if (!a) continue;
+    let href = a.getAttribute("href");
     let path = href.split("/").map(decodeURIComponent).join("/");
     for (let j = 0; j < clipboard.length; j++) {
       let cp = clipboard[j];
@@ -549,8 +694,8 @@ function onPushToClipboardClick(action) {
   }
   sessionStorage.setItem("clipboard", JSON.stringify(decodedPaths));
   sessionStorage.setItem("clipboardAction", action);
-  if (selectMode) onSelectModeClick(document.getElementById("select-button"));
-  updateButtonStates();
+  // Clear selections after copying/cutting
+  clearAllSelections();
 }
 
 function onDeleteClick() {
@@ -617,12 +762,26 @@ function onZipClick() {
   form.submit();
   document.body.removeChild(form);
 
-  setSelectMode(false);
+  // Clear selections after zip download
+  clearAllSelections();
 }
 
-function loadPath(directoryPath) {
-  setSelectMode(false);
+function onSearchClick() {
+  if (currentSearchQuery && currentSearchQuery.trim() !== "") {
+    loadPath(currentPath, null);
+    return;
+  }
+  let searchQuery = prompt("Please enter search query. Use * for wildcard search. Example: *.jpg to search for all jpg files.");
+  if (searchQuery == null || searchQuery.trim() == "") return;
+  loadPath(currentPath, searchQuery);
+}
+
+function loadPath(directoryPath, searchQuery = null) {
+  // Clear selections when navigating to a new path
+  clearAllSelections({ clearDom: false });
   currentPath = directoryPath;
+  currentSearchQuery = searchQuery;
+  updateSearchButtonState();
   let sort = "default";
   let currentSortReversed = "false";
   let viewMode = localStorage.getItem("file-list-view-mode");
@@ -640,7 +799,9 @@ function loadPath(directoryPath) {
   }
   let req = new XMLHttpRequest();
   req.overrideMimeType("application/json");
-  req.open('GET', "/api/file/list?path=" + encodeURIComponent(directoryPath) + "&sort=" + sort + "&sort-reversed=" + currentSortReversed, true);
+  req.open('GET', "/api/file/list?path=" + encodeURIComponent(directoryPath) + 
+  "&sort=" + sort + "&sort-reversed=" + currentSortReversed + 
+  "&search=" + encodeURIComponent(searchQuery || ""), true);
   req.onload = function () {
     if (req.status != 200) {
       alert("Error while loading list of files: " + req.statusText + "\n" + req.responseText);
@@ -662,29 +823,16 @@ function loadPath(directoryPath) {
 
 function onFileItemClick(e) {
   e.preventDefault();
-  if (selectMode) {
-    onSelectModeFileClick(e);
-    return;
-  }
-  let href = e.currentTarget.getAttribute("href");
-  if (e.currentTarget.dataset.directory == "true") {
-    let path = href.split("/").map(decodeURIComponent).join("/");
-    if (path.endsWith("/../")) {
-      let parts = path.split("/");
-      parts.pop(); // remove empty string after trailing slash
-      parts.pop(); // remove ".."
-      parts.pop(); // remove current folder
-      path = parts.join("/");
-      if (!path.startsWith("/")) {
-        path = "/" + path;
-      }
-      if (!path.endsWith("/")) {
-        path = path + "/";
-      }
-    }
-    loadPath(path);
+  let a = e.currentTarget;
+  let href = a.getAttribute("href");
+  let isDirectory = a.dataset.directory == "true";
+  
+  if (deviceHasPointer) {
+    // With pointer: single click selects, double click opens (handled by dblclick listener)
+    toggleFileSelection(href, a, e);
   } else {
-    window.location.href = href;
+    // Without pointer: click opens file/folder
+    onFileItemOpen(href, isDirectory);
   }
 }
 
@@ -863,8 +1011,14 @@ function showContextMenu(x, y, href, isFolder) {
 function onMenuClick(e) {
   let menuButton = document.getElementById("menu-button");
   let mainMenu = document.getElementById("main-menu");
+  let mmStatus = document.getElementById("mm-status");
   let mmLogin = document.getElementById("mm-login");
   let mmDatabase = document.getElementById("mm-database");
+  if (mmStatus) {
+    mmStatus.onclick = function () {
+      window.location.href = "/shttps-static-public/status/index.html";
+    }
+  }
   if (mmDatabase) {
     mmDatabase.onclick = function () {
       window.location.href = "/shttps-static-public/db-browser/index.html";

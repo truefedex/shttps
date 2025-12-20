@@ -157,7 +157,10 @@ public class DatabaseImpl implements Database {
     }
 
     @Override
-    public TableData query(String query) throws Exception {
+    public TableData query(String query, Object[] args, boolean possiblyWriteOperation) throws Exception {
+        if (possiblyWriteOperation) {
+            return writeExecutor.submit(() -> simpleDBOperations.query(query)).get();
+        }
         return simpleDBOperations.query(query);
     }
 
@@ -268,12 +271,24 @@ public class DatabaseImpl implements Database {
         }
 
         @Override
-        public TableData query(String query) throws Exception {
+        public TableData query(String query, Object[] args, boolean possiblyWriteOperation) throws Exception {
             ManagedConnection connection = provideConnection();
 
-            Statement statement = connection.unwrap().createStatement();
+            Statement statement;
+            if (args != null && args.length > 0) {
+                PreparedStatement preparedStatement = connection.unwrap().prepareStatement(query);
+                for (int i = 0; i < args.length; i++) {
+                    Object value = args[i];
+                    setStatementValue(preparedStatement, i + 1, value);
+                }
+                statement = preparedStatement;
+            } else {
+                statement = connection.unwrap().createStatement();
+            }
             try {
-                ResultSet resultSet = statement.executeQuery(query);
+                ResultSet resultSet = statement instanceof PreparedStatement ?
+                            ((PreparedStatement)statement).executeQuery()    :
+                            statement.executeQuery(query);
                 return new TableDataImpl(connection, statement, resultSet);
             } catch (Exception e) {
                 connection.close();

@@ -1,7 +1,6 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
@@ -15,8 +14,11 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public class DBDeleteRequestHandler extends BaseDBRequestHandler {
+    public static final String DELETE_OPERATION = "DELETE";
+
     public DBDeleteRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
         super(database, config, authManager);
     }
@@ -26,15 +28,9 @@ public class DBDeleteRequestHandler extends BaseDBRequestHandler {
         if (!request.method.equals(Request.METHOD_DELETE)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_DELETE});
         }
-        Database database = this.database.get();
-        if (database == null) {
-            return StandardResponses.NOT_FOUND();
-        }
         if (!config.isAllowDatabaseTableDataEditingApi()) {
             return StandardResponses.FORBIDDEN("Database table data editing API is disabled");
         }
-        User user = checkUser(context);
-        if (checkIsForbidden(user, User.DBRights.DELETE)) return StandardResponses.FORBIDDEN("Insufficient rights");
         context.requestBodyReader.readRequestBody(request);
         String table = request.urlEncodedPostParams.get("table");
         if (table == null) {
@@ -54,12 +50,25 @@ public class DBDeleteRequestHandler extends BaseDBRequestHandler {
                 filtersArgs.add(filtersArgsJsonArray.get(i));
             }
         }
-        try {
-            int deletedRows = database.delete(table,
-                    filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]));
-            return StandardResponses.OK("{\"deleted_rows\":" + deletedRows + "}");
-        } catch (Exception e) {
-            return StandardResponses.INTERNAL_SERVER_ERROR("Failed to delete data: " + e.getMessage());
+
+        Database database = this.database.get();
+        if (database == null) {
+            return StandardResponses.NOT_FOUND();
         }
+
+        final User user = checkUser(context);
+
+        return database.runTransaction(db -> {
+            if (checkIsForbidden(db, user, table, DELETE_OPERATION, null, User.DBRights.DELETE))
+                return StandardResponses.FORBIDDEN();
+
+            try {
+                int deletedRows = db.delete(table,
+                        filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]));
+                return StandardResponses.OK("{\"deleted_rows\":" + deletedRows + "}");
+            } catch (Exception e) {
+                return StandardResponses.INTERNAL_SERVER_ERROR("Failed to delete data: " + e.getMessage());
+            }
+        });
     }
 }

@@ -1,7 +1,10 @@
 package com.phlox.simpleserver.auth;
 
+import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.SHTTPSConfig;
+import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.Holder;
+import com.phlox.simpleserver.utils.Utils;
 
 import org.json.JSONObject;
 import org.jspecify.annotations.NonNull;
@@ -11,6 +14,8 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 
 public class ConfigBasedUserStore implements UserStore {
     private final SHTTPSConfig config;
@@ -52,13 +57,28 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public synchronized boolean create(@NonNull User user) {
+    public synchronized void create(@NonNull User user) {
         if (isIdentityUsed(user.identity)) {
-            return false;
+            throw new IllegalStateException("Identity already used");
+        }
+        if (user.rootDir != null &&
+                DocumentFileUtils.checkOrCreateUserDir(config.getRootDir(), user.rootDir) == null) {
+            throw new IllegalStateException("Can not create user directory");
+        }
+
+        //we don't need to check role storage limit here because config-based users doesn't have roles
+        if (user.storageLimit != null) {
+            DocumentFile userRootDir;
+            if (user.rootDir != null) {
+                userRootDir = DocumentFileUtils.checkOrCreateUserDir(config.getRootDir(), user.rootDir);
+            } else {
+                userRootDir = config.getRootDir();
+            }
+            assert userRootDir != null;
+            user.usedStorage = userRootDir.calculateDirectorySize();
         }
         users.put(user.identity, user);
         config.setUsers(users.values());
-        return true;
     }
 
     @Override
@@ -69,10 +89,24 @@ public class ConfigBasedUserStore implements UserStore {
         while (isIdentityUsed(identity)) {
             identity = baseIdentity + i++;
         }
-        User user = new User(identity, "", null,
+
+        String rootDir = formatNewUserDir(config.getNewUserDirPattern(), identity);
+
+        User user = new User(identity, "", rootDir,
                 EnumSet.of(User.FileSystemRights.READ, User.FileSystemRights.LIST_CONTENTS),
-                EnumSet.of(User.DBRights.READ), null, System.currentTimeMillis(), null);
-        return create(user) ? user : null;
+                EnumSet.of(User.DBRights.READ), null, System.currentTimeMillis(), null, null,
+                EnumSet.of(User.SystemRights.READ_STATUS), 0);
+        create(user);
+        return user;
+    }
+
+    @Override
+    public synchronized boolean isUserDirUsed(String userDir) {
+        for (User user: users.values()) {
+            if (user.rootDir != null && user.rootDir.equals(userDir))
+                return true;
+        }
+        return false;
     }
 
     @Override
@@ -80,11 +114,11 @@ public class ConfigBasedUserStore implements UserStore {
         if (!users.containsKey(user.identity)) return false;
         users.put(user.identity, user);
         config.setUsers(users.values());
-        return false;
+        return true;
     }
 
     @Override
-    public boolean update(@NonNull String userIdentity, @NonNull String field, @Nullable Object value) {
+    public synchronized boolean update(@NonNull String userIdentity, @NonNull String field, @Nullable Object value) {
         User user = users.get(userIdentity);
         if (user == null) return false;
         JSONObject json = user.serialize();
@@ -114,12 +148,8 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     public synchronized void updateInMemoryUsersMap() {
-        updateInMemoryUsersMap(null);
-    }
-
-    public synchronized void updateInMemoryUsersMap(@Nullable List<User> withList) {
-        Map<String, User> users = new HashMap<>();
-        List<User> list = withList == null ? config.getUsers() : withList;
+        Map<String, User> users = new ConcurrentHashMap<>();
+        List<User> list = config.getUsers();
         for (User u : list) {
             users.put(u.identity, u);
         }
@@ -127,7 +157,7 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public void deleteAll() {
+    public synchronized void deleteAll() {
         users.clear();
         config.setUsers(users.values());
     }
@@ -138,12 +168,24 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public @Nullable User registerNewUser(@NonNull String identity, @NonNull String password) {
+    public synchronized @Nullable User registerNewUser(@NonNull String identity, @NonNull String password) {
         if (isIdentityUsed(identity)) {
             return null;
         }
         
         User newUser = new User(identity, password);
-        return create(newUser) ? newUser : null;
+        newUser.rootDir = formatNewUserDir(config.getNewUserDirPattern(), identity);
+        create(newUser);
+        return newUser;
+    }
+
+    @Override
+    public synchronized void updateUserAtomically(String identity, Updater<User> predicate) throws Exception {
+        User user = users.get(identity);
+        if (user == null) throw new IllegalStateException("User not found");
+        User updated = predicate.process(user);
+        if (updated != null) {
+            update(updated);
+        }
     }
 }

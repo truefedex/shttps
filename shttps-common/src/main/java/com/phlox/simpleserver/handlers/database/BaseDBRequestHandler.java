@@ -4,8 +4,10 @@ import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.request.RequestContext;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
+import com.phlox.simpleserver.auth.DBAccessRule;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.DatabaseOperations;
 import com.phlox.simpleserver.utils.Holder;
 
 import org.jspecify.annotations.NonNull;
@@ -13,6 +15,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 
 public abstract class BaseDBRequestHandler implements RequestHandler {
     protected final Holder<Database> database;
@@ -30,10 +33,12 @@ public abstract class BaseDBRequestHandler implements RequestHandler {
         return authManager.getAuthenticatedUser(context);
     }
 
-    protected boolean checkIsForbidden(@Nullable User user, User.DBRights... right) {
+    protected boolean checkIsForbidden(@NonNull DatabaseOperations db, @Nullable User user, @NonNull String subject,
+                                       @NonNull String operation, @Nullable Map<String, Object> operationParams,
+                                       User.DBRights... requestedRights) {
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.NONE)) return false;
         if (user == null) return true;
-        EnumSet<User.DBRights> dbRights = authManager.getUserRightsEvaluator().userDBRights(user);
-        return !dbRights.containsAll(List.of(right));
+        return !authManager.getUserRightsEvaluator().checkIsDBOperationAllowed(db, user, config.isStoreUsersInDatabase(), subject,
+                operation, operationParams, requestedRights);
     }
 }

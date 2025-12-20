@@ -1,10 +1,16 @@
 let SMALL_UI_MAX_SCREEN_SIZE = 500;
 let smallScreen = window.innerWidth < SMALL_UI_MAX_SCREEN_SIZE;
 
+const deviceHasPointer = window.matchMedia('(hover: hover)').matches
+
 function iOS() {
   return ['iPad','iPhone','iPod'].includes(navigator.platform)
   // iPad on iOS 13 detection
   || (navigator.userAgent.includes("Mac") && "ontouchend" in document)
+}
+
+function isAndroid() {
+  return /Android/i.test(navigator.userAgent);
 }
 
 function debounce(func, time){
@@ -16,7 +22,26 @@ function debounce(func, time){
   };
 }
 
-function onLongPress(element, callback) {
+function onLongPress(element, callback) {  
+  // On Android, use contextmenu event directly (it fires on long press)
+  if (isAndroid()) {    
+    element.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      // Create a synthetic event with pageX/pageY for compatibility
+      if (!e.pageX && e.touches && e.touches[0]) {
+        e.pageX = e.touches[0].clientX;
+        e.pageY = e.touches[0].clientY;
+      } else if (!e.pageX) {
+        e.pageX = e.clientX;
+        e.pageY = e.clientY;
+      }
+      callback(e);
+    });
+    return;
+  }
+  
+  // On iOS and other platforms, use touch-based timeout approach
   var timeoutId;
   
   element.addEventListener('touchstart', function(e) {
@@ -32,11 +57,17 @@ function onLongPress(element, callback) {
   });
 
   element.addEventListener('touchend', function () {
-    if (timeoutId) clearTimeout(timeoutId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
   });
 
   element.addEventListener('touchmove', function () {
-    if (timeoutId) clearTimeout(timeoutId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
   });
 }
 

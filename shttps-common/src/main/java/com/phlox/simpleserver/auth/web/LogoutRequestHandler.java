@@ -9,6 +9,7 @@ import com.phlox.server.utils.HTTPUtils;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -26,7 +27,7 @@ public class LogoutRequestHandler implements RequestHandler {
         Response response = StandardResponses.NO_CONTENT();
         Map<String, Object> options = new HashMap<>();
         options.put("Path", "/");
-        options.put("Expires ", -1);
+        options.put("Expires", new Date(System.currentTimeMillis() - 10000L));
         //options.put("Domain", "example.com");
         //options.put("Secure", true);
         options.put("HttpOnly", true);

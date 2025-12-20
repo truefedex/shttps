@@ -294,7 +294,7 @@ public class SimpleHttpServer {
             trackedSockets.add(socket);
         }
 
-        Request request;
+        Request request = null;
         DefaultRequestBodyReader requestBodyReader = new DefaultRequestBodyReader();
         try (socket;
              OutputStream output = new BufferedOutputStream(socket.getOutputStream());
@@ -332,17 +332,23 @@ public class SimpleHttpServer {
                 }
 
                 if (errDuringHandle != null || response == null ||
-                        !response.headers.containsKey(Response.HEADER_CONTENT_LENGTH) ||
-                        !requestBodyReader.bodyWasRead && request.shouldHaveABody()
+                        (!response.headers.containsKey(Response.HEADER_CONTENT_LENGTH)) ||
+                        ((!requestBodyReader.bodyWasRead) && request.shouldHaveABody())
                 ) {
                     keepAlive = false;
                 }
 
                 if (errDuringHandle != null) {
-                    String text = "Internal Server Error";
-                    response = new TextResponse(text + ": " + errDuringHandle.getMessage());
-                    response.code = 500;
-                    response.phrase = text;
+                    if (errDuringHandle instanceof SecurityException) {
+                        response = StandardResponses.FORBIDDEN(errDuringHandle.getMessage());
+                    } else if (errDuringHandle instanceof IllegalStateException) {
+                        response = StandardResponses.BAD_REQUEST(errDuringHandle.getMessage());
+                    } else {
+                        String text = "Internal Server Error";
+                        response = new TextResponse(text + ": " + errDuringHandle.getMessage());
+                        response.code = 500;
+                        response.phrase = text;
+                    }
                 } else if (response == null) {
                     String text = "Not Found";
                     response = new TextResponse(text);
@@ -377,6 +383,27 @@ public class SimpleHttpServer {
                 response.writeOut(output);
                 output.flush();
             }
+
+            if ((!requestBodyReader.bodyWasRead) && request.shouldHaveABody()) {
+                //enter socket to half-close mode to correctly close connection without RST
+                Thread.sleep(150);//to not let send to client FIN before response
+                socket.shutdownOutput();
+                socket.setSoTimeout(1000);
+
+                byte[] buf = new byte[8192];
+                int maxDrainBytes = 10 * 1024; // drain max 10kb
+                int drained = 0;
+
+                try {
+                    while (drained < maxDrainBytes) {
+                        int n = input.read(buf);
+                        if (n < 0) break; // client closed socked from his side
+                        drained += n;
+                    }
+                } catch (SocketTimeoutException ignore) {
+                    // client closed socked from his side
+                }
+            }
         } catch (SocketTimeoutException e) {
             logger.d("Client timed out: " + socket.getRemoteSocketAddress());
         } catch (Exception e) {
@@ -393,8 +420,14 @@ public class SimpleHttpServer {
                 trackedSockets.remove(socket);
             }
             try {
-                socket.shutdownOutput();
+                if (!socket.isOutputShutdown()) {
+                    socket.shutdownOutput();
+                }
+            } catch (IOException ignored) {}
+            try {
                 socket.shutdownInput();
+            } catch (IOException ignored) {}
+            try {
                 socket.close();
             } catch (IOException ignored) {}
             if (callback != null) {

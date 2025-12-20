@@ -8,13 +8,17 @@ import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 
 import java.io.File;
+import java.util.Map;
 
 public class RenameFileRequestHandler extends BaseFileRequestHandler {
-    public RenameFileRequestHandler(SHTTPSConfig config, AuthManager authManager) {
-        super(config, authManager);
+    public static final String RENAME_OPERATION = "RENAME";
+
+    public RenameFileRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
+        super(config, authManager, userStore);
     }
 
     @Override
@@ -22,11 +26,7 @@ public class RenameFileRequestHandler extends BaseFileRequestHandler {
         if (!config.getAllowEditing()) return StandardResponses.FORBIDDEN("Editing not allowed");
         if (!request.method.equals(Request.METHOD_POST)) return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_POST});
         if (!Request.CONTENT_TYPE_URL_ENCODED_FORM.equals(request.contentType) ) return StandardResponses.BAD_REQUEST();
-        User user = checkUser(context);
-        if (checkIsForbidden(user, User.FileSystemRights.CREATE,
-                User.FileSystemRights.DELETE,
-                User.FileSystemRights.READ,
-                User.FileSystemRights.UPDATE)) return StandardResponses.FORBIDDEN("Insufficient rights");
+
         context.requestBodyReader.readRequestBody(request);
 
         String destPath = request.urlEncodedPostParams.get("path");
@@ -34,6 +34,7 @@ public class RenameFileRequestHandler extends BaseFileRequestHandler {
             destPath = "/" + destPath;
         }
         DocumentFile root = config.getRootDir();
+        User user = checkUser(context);
         final DocumentFile destFile = DocumentFileUtils.findChildByPath(root, destPath, user);
 
         if (destFile == null) return StandardResponses.NOT_FOUND();
@@ -44,6 +45,12 @@ public class RenameFileRequestHandler extends BaseFileRequestHandler {
         if (newName.contains(File.separator)) {
             return StandardResponses.FORBIDDEN("Illegal name");
         }
+        if (checkIsForbidden(user, destPath, RENAME_OPERATION, Map.of(
+                "name", newName
+                ), User.FileSystemRights.CREATE,
+                User.FileSystemRights.DELETE,
+                User.FileSystemRights.READ,
+                User.FileSystemRights.UPDATE)) return StandardResponses.FORBIDDEN();
         if (destFile.renameTo(newName)) {
             return StandardResponses.NO_CONTENT();
         } else {

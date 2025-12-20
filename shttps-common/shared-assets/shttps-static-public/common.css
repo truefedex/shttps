@@ -137,27 +137,30 @@ body {
 /* Action Button */
 .action-button {
     border: none;
-    height: 36px;
     color: white;
-    padding: 8px 24px;
+    padding: 8px 14px;
     text-align: center;
     text-decoration: none;
     display: inline-block;
     font-size: 14px;
-    font-weight: 500;
     background-color: #306477;
     cursor: pointer;
     position: relative;
     overflow: hidden;
     border-radius: 6px;
     transition: all 0.2s ease-in-out;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .action-button:hover {
     background-color: #407487;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.action-button.toggled {
+    background-color: #4a8ea5;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15) inset,
+                0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
 .action-button:active {

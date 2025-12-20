@@ -46,6 +46,7 @@ public class Response {
 
     public Response(int code, String phrase) {
         this(code, phrase, null);
+        setContentLength(0);
     }
 
     public Response(String contentType, long contentLength, InputStream stream) {
@@ -76,14 +77,14 @@ public class Response {
     }
 
     protected String makeResponseHeader() {
-        StringBuilder headersStr = new StringBuilder("HTTP/1.1 " + code + " " + phrase + "\n");
+        StringBuilder headersStr = new StringBuilder("HTTP/1.1 " + code + " " + phrase + "\r\n");
         for (String key: headers.keys()) {
             List<String> values = headers.getAll(key);
             for (String value: values) {
-                headersStr.append(key).append(": ").append(value).append("\n");
+                headersStr.append(key).append(": ").append(value).append("\r\n");
             }
         }
-        return headersStr.append("\n").toString();
+        return headersStr.append("\r\n").toString();
     }
 
     public void writeOut(OutputStream output) throws IOException {
