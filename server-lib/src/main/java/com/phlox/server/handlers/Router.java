@@ -11,16 +11,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javax.naming.Context;
-
 public class Router implements RequestHandler {
     public static String ORIGINAL_PATH = "original_path";
     private final Map<String, Map<String, HandlerWithMiddlewares>> routes = new HashMap<>();//method -> path -> route
     private final RadixTree<HandlerWithMiddlewares> prefixedRoutes = new RadixTree<>();
 
-    public final Middlewares globalMiddlewares = new Middlewares();
+    private final Middlewares globalMiddlewares;
 
-    public final Listener listener;
+    private final Listener listener;
 
     private static class HandlerWithMiddlewares {
         final RequestHandler handler;
@@ -33,8 +31,8 @@ public class Router implements RequestHandler {
     }
 
     public static class Middlewares {
-        final List<Middleware> preMiddlewares = new ArrayList<>();
-        final List<Middleware> postMiddlewares = new ArrayList<>();
+        public final List<Middleware> preMiddlewares = new ArrayList<>();
+        public final List<Middleware> postMiddlewares = new ArrayList<>();
 
         public void addPreMiddleware(Middleware middleware) {
             preMiddlewares.add(middleware);
@@ -54,8 +52,9 @@ public class Router implements RequestHandler {
         void onRequestResolved(RequestContext context, Request request, Response response);
     }
 
-    public Router(Listener listener) {
+    public Router(Listener listener, Middlewares globalMiddlewares) {
         this.listener = listener;
+        this.globalMiddlewares = globalMiddlewares;
     }
 
     @Override

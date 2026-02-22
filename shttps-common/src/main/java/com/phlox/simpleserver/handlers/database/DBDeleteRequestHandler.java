@@ -59,7 +59,9 @@ public class DBDeleteRequestHandler extends BaseDBRequestHandler {
         final User user = checkUser(context);
 
         return database.runTransaction(db -> {
-            if (checkIsForbidden(db, user, table, DELETE_OPERATION, null, User.DBRights.DELETE))
+            if (checkIsForbidden(db, user, table, DELETE_OPERATION, Map.of(
+                    "filters", filtersJsonStr != null ? filtersJsonStr : ""
+            ), User.DBRights.DELETE))
                 return StandardResponses.FORBIDDEN();
 
             try {

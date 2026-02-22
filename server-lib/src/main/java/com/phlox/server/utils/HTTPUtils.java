@@ -28,7 +28,7 @@ public final class HTTPUtils {
         return dateFormat;
     }
 
-    public static void decodeURLEncodedNameValuePairs(String string, Map<String, String> out) {
+    public static void decodeURLEncodedNameValuePairs(String string, MultiMap<String, String> out) {
         String enc = "UTF-8";
         String[] params = string.split("&");
         for (int i = 0; i < params.length; i++) {
@@ -187,5 +187,15 @@ public final class HTTPUtils {
         }
 
         return ranges;
+    }
+
+    public static boolean isTextContentType(String contentType) {
+        return contentType.startsWith("text/") || 
+            contentType.equals("application/json") || 
+            contentType.equals("application/javascript") ||
+            contentType.equals("application/xml") ||
+            contentType.equals("application/xhtml+xml") ||
+            contentType.equals("application/rss+xml") ||
+            contentType.equals("application/atom+xml");
     }
 }

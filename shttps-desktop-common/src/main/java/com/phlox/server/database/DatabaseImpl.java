@@ -15,6 +15,7 @@ import com.phlox.simpleserver.utils.Holder;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -53,7 +54,7 @@ public class DatabaseImpl implements Database {
     }
 
     @Override
-    public Map<String, Object> getStatus() {
+    public Map<String, Object> getStatus() throws Exception {
         Map<String, Object> status = new HashMap<>();
         status.put("path", path);
         status.put("size", new File(path).length());
@@ -64,8 +65,6 @@ public class DatabaseImpl implements Database {
             if (rs.next()) {
                 tablesCount = rs.getInt(1);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
         status.put("tablesCount", tablesCount);
         return status;

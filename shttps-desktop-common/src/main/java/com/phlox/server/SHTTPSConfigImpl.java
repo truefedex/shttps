@@ -110,11 +110,6 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     }
 
     @Override
-    public boolean getUseBasicAuth() {
-        return json.optBoolean(KEY_USE_BASIC_AUTH, false);
-    }
-
-    @Override
     public String getUsername() {
         return json.optString(KEY_USERNAME, "");
     }
@@ -405,6 +400,17 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
         save();
     }
 
+    @Override
+    public void setJSONArray(String key, JSONArray value) {
+        json.put(key, value);
+        save();
+    }
+
+    @Override
+    public JSONArray getJsonArray(String key, JSONArray defaultValue) {
+        return json.optJSONArray(key, defaultValue);
+    }
+
     private void save() {
         if (batchModifications) {
             return;
@@ -427,11 +433,11 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
 
     public void saveDefaultValues() {
         startBatchModifications();
+        json.put(KEY_CONFIG_VERSION, SHTTPSConfig.CONFIG_VERSION);
         json.put(KEY_PORT, getPort());
         json.put(KEY_ALLOW_EDITING, getAllowEditing());
         json.put(KEY_RENDER_FOLDERS, getRenderFolders());
         json.put(KEY_ROOT_DIR, getRootDir() == null ? JSONObject.NULL : getRootDir().getUri());
-        json.put(KEY_USE_BASIC_AUTH, getUseBasicAuth());
         json.put(KEY_USERNAME, getUsername());
         json.put(KEY_PASSWORD, getPassword());
         //json.put(KEY_AUTOSTART, getAutostart());
@@ -454,6 +460,15 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
         json.put(KEY_USERS, getUsers());
         json.put(KEY_STORE_USERS_IN_DATABASE, isStoreUsersInDatabase());
         json.put(KEY_HOST, getHost());
+        json.put(KEY_VERIFY_HOST, getVerifyHost());
+        json.put(KEY_ALLOW_USER_REGISTRATION, isAllowedUserRegistration());
+        json.put(KEY_DEFAULT_ROLE_FOR_NEW_USER, getDefaultRoleForNewUser());
+        json.put(KEY_GLOBAL_RATE_LIMIT, getGlobalRateLimit());
+        json.put(KEY_RATE_LIMITER_TRUST_IP_HEADERS, getRateLimiterTrustToIPHeaders());
+        json.put(KEY_NEW_USER_DIR_PATTERN, getNewUserDirPattern());
+        json.put(KEY_ENABLE_CGI, isCGIEnabled());
+        json.put(KEY_CGI_FOLDER, getCGIFolder());
+        json.put(KEY_CGI_PATH_PREFIX, getCGIPathPrefix());
         endBatchModifications();
     }
 }

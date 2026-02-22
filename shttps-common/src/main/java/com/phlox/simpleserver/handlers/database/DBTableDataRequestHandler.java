@@ -4,12 +4,11 @@ import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
+import com.phlox.server.utils.MultiMap;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
-import com.phlox.simpleserver.database.DatabaseOperations;
-import com.phlox.simpleserver.database.DatabaseTransactionScope;
 import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.utils.AbstractDataStreamer;
 import com.phlox.simpleserver.utils.Holder;
@@ -36,7 +35,7 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
                 !request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_POST});
         }
-        Map<String, String> params;
+        MultiMap<String, String> params;
         if (request.method.equals(Request.METHOD_GET)) {
             params = request.queryParams;
         } else {
@@ -87,7 +86,8 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
                     "sortDir", sortDir != null ? sortDir : "",
                     "includeRowId", includeRowId,
                     "rowsAsObjects", rowsAsObjects,
-                    "includeTotal", includeTotal
+                    "includeTotal", includeTotal,
+                    "filters", filtersJsonStr != null ? filtersJsonStr : ""
             ), User.DBRights.READ))
                 return StandardResponses.FORBIDDEN();
             return null;

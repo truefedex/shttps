@@ -8,7 +8,7 @@ java {
 }
 
 dependencies {
-    api 'com.guardsquare:proguard-annotations:7.6.1'
+    api 'com.guardsquare:proguard-annotations:7.8.2'
     api 'org.jspecify:jspecify:1.0.0'
     
     // JUnit 5 dependencies

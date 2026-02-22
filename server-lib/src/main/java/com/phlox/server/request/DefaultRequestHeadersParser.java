@@ -28,13 +28,15 @@ public class DefaultRequestHeadersParser implements RequestHeadersParser {
                 parts = line.split(" ");
                 if (parts.length >= 2) {
                     request.method = parts[0].toUpperCase();
-                    String pathAndQuery = parts[1];
-                    int q = pathAndQuery.indexOf("?");
+                    request.rawPathAndQuery = parts[1];
+                    int q = request.rawPathAndQuery.indexOf("?");
                     if (q != -1) {
-                        request.path = URLDecoder.decode(pathAndQuery.substring(0, q), "UTF-8");
-                        HTTPUtils.decodeURLEncodedNameValuePairs(pathAndQuery.substring(q + 1), request.queryParams);
+                        String pathEncoded = request.rawPathAndQuery.substring(0, q);
+                        request.path = URLDecoder.decode(pathEncoded, "UTF-8");
+                        String queryEncoded = request.rawPathAndQuery.substring(q + 1);
+                        HTTPUtils.decodeURLEncodedNameValuePairs(queryEncoded, request.queryParams);
                     } else {
-                        request.path = URLDecoder.decode(pathAndQuery, "UTF-8");
+                        request.path = URLDecoder.decode(request.rawPathAndQuery, "UTF-8");
                     }
                 }
             } else {
@@ -49,7 +51,11 @@ public class DefaultRequestHeadersParser implements RequestHeadersParser {
         }
 
         if (request.headers.size() == 0) {
-            throw new IllegalArgumentException("Can not parse request headers");
+            if (request.method != null) {
+                throw new IllegalArgumentException("Can not parse request headers");
+            } else {
+                return null;
+            }
         }
 
         String contentTypeHeader = request.headers.get(Request.HEADER_CONTENT_TYPE);

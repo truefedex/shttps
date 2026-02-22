@@ -1,16 +1,15 @@
 package com.phlox.simpleserver;
 
 import com.phlox.server.SimpleHttpServer;
+import com.phlox.server.handlers.CORSMiddleware;
 import com.phlox.server.handlers.RateLimitingMiddleware;
 import com.phlox.server.handlers.RedirectsMiddleware;
 import com.phlox.server.handlers.Router;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
-import com.phlox.server.responses.TextResponse;
 import com.phlox.server.utils.HTTPUtils;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
-import com.phlox.server.utils.Utils;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.ConfigBasedUserStore;
@@ -31,6 +30,7 @@ import com.phlox.simpleserver.auth.web.WebAuthMiddleware;
 import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.DatabaseMigrator;
 import com.phlox.simpleserver.database.SHTTPSDatabaseFabric;
+import com.phlox.simpleserver.exec.CgiMiddleware;
 import com.phlox.simpleserver.handlers.database.DBCustomSQLRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBDeleteRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBInsertRequestHandler;
@@ -60,7 +60,6 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.net.UnknownHostException;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
@@ -86,8 +85,6 @@ public class SHTTPSApp {
 
     private final Holder<Database> database = new Holder<>(null);
     public final ServerLogsCollector logsCollector = new ServerLogsCollector(1000);
-
-    private final Router router = new Router(logsCollector);
     public RateLimitingMiddleware rateLimitingMiddleware;
     private UserStore userStore;
     private SessionManager sessionManager;
@@ -162,9 +159,9 @@ public class SHTTPSApp {
     }
 
     public synchronized void startServer() throws UnrecoverableKeyException, CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+        Router.Middlewares globalMiddlewares = new Router.Middlewares();
         //Setup middlewares
         Router.Middlewares authMiddlewares = new Router.Middlewares();
-        router.globalMiddlewares.reset();
 
         final String loginFormPath = "/shttps-static-public/auth/";
         AuthManager authManager;
@@ -190,10 +187,15 @@ public class SHTTPSApp {
         rateLimitingMiddleware = new RateLimitingMiddleware(
                 config.getGlobalRateLimit(),
                 1000 * 60,//minute
-                config.rateLimiterTrustToIPHeaders()
+                config.getRateLimiterTrustToIPHeaders()
         );
         if (config.getGlobalRateLimit() > 0) {
-            router.globalMiddlewares.addPreMiddleware(rateLimitingMiddleware);
+            globalMiddlewares.addPreMiddleware(rateLimitingMiddleware);
+        }
+
+        List<CORSMiddleware.CORSRule> corsRules = config.getCORSRules();
+        if (corsRules != null) {
+            globalMiddlewares.addPreMiddleware(new CORSMiddleware(corsRules));
         }
 
         RedirectsMiddleware redirectsMiddleware = new RedirectsMiddleware();
@@ -206,10 +208,10 @@ public class SHTTPSApp {
                 }
             }
         }
-        router.globalMiddlewares.addPreMiddleware(redirectsMiddleware);
+        globalMiddlewares.addPreMiddleware(redirectsMiddleware);
 
         //Setup routes
-        router.resetRoutes();
+        Router router = new Router(logsCollector, globalMiddlewares);
         //file handlers
         router.addRoute("/api/file/download", Set.of("GET"), new StaticFileRequestHandler(config, authManager, userStore), authMiddlewares);
         router.addRoute("/api/file/new-folder", Set.of("POST"), new NewFolderRequestHandler(config, authManager, userStore), authMiddlewares);
@@ -237,7 +239,7 @@ public class SHTTPSApp {
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.WEB)) {
             assert authManager instanceof WebAuthManager;
             Router.Middlewares loginMiddlewares = new Router.Middlewares();
-            loginMiddlewares.addPreMiddleware(new RateLimitingMiddleware(10, 1000 * 60, config.rateLimiterTrustToIPHeaders()));
+            loginMiddlewares.addPreMiddleware(new RateLimitingMiddleware(10, 1000 * 60, config.getRateLimiterTrustToIPHeaders()));
             router.addRoute("/api/user/login", Set.of("POST"), new LoginRequestHandler(authManager), loginMiddlewares);
 
             router.addRoute("/api/user/logout", Set.of("POST"), new LogoutRequestHandler(authManager), authMiddlewares);
@@ -245,31 +247,42 @@ public class SHTTPSApp {
             if (config.isAllowedUserRegistration()) {
                 CaptchaManager captchaManager = new CaptchaManager(platformUtils);
                 Router.Middlewares captchaMiddlewares = new Router.Middlewares();
-                captchaMiddlewares.addPreMiddleware(new RateLimitingMiddleware(5, 1000 * 60, config.rateLimiterTrustToIPHeaders()));
+                captchaMiddlewares.addPreMiddleware(new RateLimitingMiddleware(5, 1000 * 60, config.getRateLimiterTrustToIPHeaders()));
                 router.addRoute("/api/captcha", Set.of("GET"), new CaptchaRequestHandler(captchaManager), captchaMiddlewares);
 
                 Router.Middlewares userRegMiddlewares = new Router.Middlewares();
-                userRegMiddlewares.addPreMiddleware(new RateLimitingMiddleware(3, 1000 * 60, config.rateLimiterTrustToIPHeaders()));
+                userRegMiddlewares.addPreMiddleware(new RateLimitingMiddleware(3, 1000 * 60, config.getRateLimiterTrustToIPHeaders()));
                 router.addRoute("/api/user/register", Set.of("POST"),
                         new UserRegistrationRequestHandler((WebAuthManager) authManager, captchaManager), userRegMiddlewares);
             }
         }
 
+
+
         //build-in pages
         router.addRouteByPathPrefix("/shttps-static-public",
                 new StaticAssetsRequestHandler("shttps-static-public", "/shttps-static-public", config), authMiddlewares);
 
+
+        Router.Middlewares filesRequestHandlerMiddlewares = new Router.Middlewares();
+        filesRequestHandlerMiddlewares.preMiddlewares.addAll(authMiddlewares.preMiddlewares);
+        if (config.isCGIEnabled()) {
+            //CGI middleware will be added behind auth middleware
+            //but before any static file processing (except built-in assets files)
+            //Is it ideal place? Time will show
+            filesRequestHandlerMiddlewares.preMiddlewares.add(new CgiMiddleware(config, authManager));
+        }
         FilesRequestHandler filesRequestHandler = new FilesRequestHandler(config, authManager, userStore);
         filesRequestHandler.renderFolders = config.getRenderFolders();
         filesRequestHandler.allowEditing = config.getAllowEditing();
-        router.addRouteByPathPrefix("/", filesRequestHandler, authMiddlewares);
+        router.addRouteByPathPrefix("/", filesRequestHandler, filesRequestHandlerMiddlewares);
 
-
-        SimpleHttpServer srv = new SimpleHttpServer(router);
-        if (config.getVerifyHost()) {
-            srv.hostName = config.getHost();
+        Callback callback = SHTTPSApp.this.callback;
+        if (callback != null) {
+            callback.onRouterPrepared(router, filesRequestHandlerMiddlewares);
         }
-        srv.callback = new SimpleHttpServer.Callback() {
+
+        SimpleHttpServer.Callback serverCallback = new SimpleHttpServer.Callback() {
             @Override
             public void onServerStarted() {
                 logger.i("Server started");
@@ -287,40 +300,63 @@ public class SHTTPSApp {
                 }
             }
             @Override
-            public void onNewConnection(Socket socket, long connectionNumber) {
+            public void onNewConnection(Socket socket, long connectionId) {
                 SocketAddress address = socket.getRemoteSocketAddress();
-                logger.i("New connection #" + connectionNumber + " from " + (address != null ? address.toString() : "unknown address"));
+                logger.i("New connection #" + connectionId + " from " + (address != null ? address.toString() : "unknown address"));
                 Callback callback = SHTTPSApp.this.callback;
                 if (callback != null) {
                     callback.onNewConnection(socket);
                 }
                 setupShutdownTimeout();
             }
+
             @Override
-            public void onConnectionClosed(Socket socket) {
-                SocketAddress address = socket.getRemoteSocketAddress();
-                logger.i("Connection closed from " + (address  != null  ? address.toString()  : "unknown address"));
+            public void onConnectionTracked(Socket socket, long connectionId) {
+                Callback callback = SHTTPSApp.this.callback;
+                if (callback != null) {
+                    callback.onConnectionTracked(socket);
+                }
+            }
+
+            @Override
+            public void onConnectionClosed(Socket socket, String reason, long connectionId) {
+                if (reason == null) {
+                    logger.i("Connection #" + connectionId + " closed normally");
+                } else {
+                    logger.i("Connection #" + connectionId + " closed by reason: " + reason);
+                }
+                Callback callback = SHTTPSApp.this.callback;
+                if (callback != null) {
+                    callback.onConnectionClosed(socket, reason);
+                }
             }
             @Override
-            public void onConnectionError(Socket socket, Exception e) {
-                SocketAddress address = socket.getRemoteSocketAddress();
-                logger.e("Connection error from " + (address   != null   ? address.toString()    : "unknown address"));
+            public void onConnectionError(Socket socket, Exception e, long connectionId) {
+                logger.e("Connection #" + connectionId + " error: " + e.toString());
             }
             @Override
             public void onConnectionRequest(RequestContext context, Request request) {
-                logger.d(request.method + ": " + request.path);
+                logger.d("cn#" + request.connectionId + " >" + request.method + " " + request.path);
             }
             @Override
-            public void onConnectionResponse(RequestContext context, Request request, Response response) {}
+            public void onConnectionResponse(RequestContext context, Request request, Response response) {
+                logger.d("cn#" + request.connectionId + " <" + response.code + " " + response.phrase);
+            }
 
             @Override
-            public void onConnectionRejected(Socket socket, int reason) {
+            public void onConnectionRejected(Socket socket, int reason, long connectionId) {
                 Callback callback = SHTTPSApp.this.callback;
                 if (callback != null) {
                     callback.onConnectionRejected(socket, reason);
+                    logger.w("Connection #" + connectionId + " rejected reason: " + reason);
                 }
             }
         };
+
+        SimpleHttpServer srv = new SimpleHttpServer(router, serverCallback);
+        if (config.getVerifyHost()) {
+            srv.hostName = config.getHost();
+        }
 
         String[] allowedInterfaces = config.getAllowedNetworkInterfaces();
         if (allowedInterfaces != null && allowedInterfaces.length > 0) {
@@ -494,13 +530,17 @@ public class SHTTPSApp {
     };
 
     public interface Callback {
-        void onConnectionRejected(Socket socket, int reason);
+        default void onConnectionRejected(Socket socket, int reason) {}
 
-        void onNewConnection(Socket socket);
+        default void onNewConnection(Socket socket) {}
+        default void onConnectionTracked(Socket socket) {}
+        default void onConnectionClosed(Socket socket, String reason) {}
 
-        void onServerStarted();
+        default void onServerStarted() {}
 
-        void onServerStopped();
+        default void onServerStopped() {}
+
+        default void onRouterPrepared(Router router, Router.Middlewares filesRequestHandlerMiddlewares) {}
     }
 
     public static class ServerVersionInfo {

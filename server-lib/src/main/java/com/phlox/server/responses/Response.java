@@ -1,5 +1,6 @@
 package com.phlox.server.responses;
 
+import com.phlox.server.SimpleHttpServer;
 import com.phlox.server.utils.MultiMap;
 
 import java.io.IOException;
@@ -22,6 +23,14 @@ public class Response {
     public static final String HEADER_LOCATION = "Location";
     public static final String HEADER_ALLOW = "Allow";
     public static final String HEADER_CONTENT_DISPOSITION = "Content-Disposition";
+    public static final String HEADER_ACCESS_CONTROL_ALLOW_ORIGIN = "Access-Control-Allow-Origin";
+    public static final String HEADER_ACCESS_CONTROL_ALLOW_METHODS = "Access-Control-Allow-Methods";
+    public static final String HEADER_ACCESS_CONTROL_ALLOW_HEADERS = "Access-Control-Allow-Headers";
+    public static final String HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS = "Access-Control-Allow-Credentials";
+    public static final String HEADER_ACCESS_CONTROL_EXPOSE_HEADERS = "Access-Control-Expose-Headers";
+    public static final String HEADER_ACCESS_CONTROL_MAX_AGE = "Access-Control-Max-Age";
+    public static final String HEADER_VARY = "Vary";
+    public static final String HEADER_ORIGIN = "Origin";
 
     public int code = 200;
     public String phrase = StandardResponses.PHRASE_OK;
@@ -77,7 +86,8 @@ public class Response {
     }
 
     protected String makeResponseHeader() {
-        StringBuilder headersStr = new StringBuilder("HTTP/1.1 " + code + " " + phrase + "\r\n");
+        StringBuilder headersStr = new StringBuilder(SimpleHttpServer.HTTP_PROTOCOL + " " + code +
+                " " + phrase + "\r\n");
         for (String key: headers.keys()) {
             List<String> values = headers.getAll(key);
             for (String value: values) {

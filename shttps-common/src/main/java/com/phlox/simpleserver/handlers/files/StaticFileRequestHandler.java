@@ -78,7 +78,13 @@ public class StaticFileRequestHandler extends BaseFileRequestHandler {
                 }
             }
         }
-
+        if (HTTPUtils.isTextContentType(type)) {
+            String charset = config.getDefaultTextCharset();
+            if (charset == null || charset.isEmpty()) {
+                charset = StandardCharsets.UTF_8.name();
+            }
+            type += "; charset=" + charset;
+        }
         Response response;
         if (isHead) {
             response = new Response(type, file.length(), null);
