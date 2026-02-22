@@ -1,15 +1,13 @@
 package com.phlox.simpleserver.handlers.database;
 
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
+import com.phlox.server.utils.MultiMap;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
-import com.phlox.simpleserver.database.DatabaseOperations;
-import com.phlox.simpleserver.database.DatabaseTransactionScope;
 import com.phlox.simpleserver.utils.Holder;
 
 import org.json.JSONArray;
@@ -34,7 +32,7 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_POST});
         }
 
-        Map<String, String> params;
+        MultiMap<String, String> params;
         if (request.method.equals(Request.METHOD_GET)) {
             params = request.queryParams;
         } else {
@@ -68,7 +66,8 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
         User user = checkUser(context);
         return database.runTransaction(db -> {
             if (checkIsForbidden(db, user, table, READ_CELL_OPERATION, Map.of(
-                    "column", column
+                    "column", column,
+                    "filters", filtersJsonStr != null ? filtersJsonStr : ""
             ), User.DBRights.READ))
                 return StandardResponses.FORBIDDEN();
 

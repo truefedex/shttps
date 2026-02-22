@@ -41,7 +41,7 @@ public class User implements Serializable, Cloneable {
     }
 
     public enum SystemRights {
-        READ_STATUS
+        READ_STATUS, EXECUTE_HANDLER
     }
 
     public @NonNull String identity;

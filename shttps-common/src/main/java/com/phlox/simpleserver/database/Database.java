@@ -8,7 +8,7 @@ import java.util.Map;
 
 public interface Database extends AutoCloseable, DatabaseOperations {
     String getPath();
-    Map<String, Object> getStatus() throws IOException;
+    Map<String, Object> getStatus() throws Exception;
     @Override
     void close() throws Exception;
 

@@ -104,7 +104,7 @@ function renderFileList() {
     a.setAttribute("title", file.name);
     
     // Add checkbox when deviceHasPointer == false
-    if (!deviceHasPointer) {
+    if (!deviceHasPointer && allowEditing) {
       let checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.classList.add("file-checkbox");

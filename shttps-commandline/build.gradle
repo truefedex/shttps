@@ -1,13 +1,13 @@
 plugins {
     id 'java'
     id 'application'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'com.gradleup.shadow' version '9.3.1'
 }
 
 group = 'com.phlox.server'
-version = '2.5.0'
+version = '3.0.0'
 
-mainClassName = "com.phlox.server.Main"
+def mainClassName = "com.phlox.server.Main"
 
 application {
     mainClass = mainClassName

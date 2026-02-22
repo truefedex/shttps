@@ -13,6 +13,7 @@ import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 import com.phlox.simpleserver.utils.Utils;
 
 import java.io.BufferedInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 public class StaticAssetsRequestHandler implements RequestHandler {
@@ -81,6 +82,14 @@ public class StaticAssetsRequestHandler implements RequestHandler {
             if (mimeTypeFromExtension != null) {
                 type = mimeTypeFromExtension;
             }
+        }
+
+        if (HTTPUtils.isTextContentType(type)) {
+            String charset = config.getDefaultTextCharset();
+            if (charset == null || charset.isEmpty()) {
+                charset = StandardCharsets.UTF_8.name();
+            }
+            type += "; charset=" + charset;
         }
 
         Response response;

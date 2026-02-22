@@ -23,6 +23,18 @@ public class MultiMap<K, V> {
         ++size;
     }
 
+    public void putAll(K key, List<V> values) {
+        for (V value : values) {
+            put(key, value);
+        }
+    }
+
+    public void putAll(MultiMap<K, V> multiMap) {
+        for (K key : multiMap.keys()) {
+            putAll(key, multiMap.getAll(key));
+        }
+    }
+
     public List<V> getAll(K key) {
         return this.containsKey(key) ? treeMap.get(key) : new ArrayList<>();
     }

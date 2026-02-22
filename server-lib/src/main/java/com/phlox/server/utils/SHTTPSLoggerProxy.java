@@ -59,11 +59,6 @@ public final class SHTTPSLoggerProxy {
         private final java.util.logging.Logger logger;
         private final int levels;
 
-        static {
-            java.util.logging.Logger.getLogger("").setLevel(java.util.logging.Level.FINE);
-            java.util.logging.Logger.getLogger("").getHandlers()[0].setLevel(java.util.logging.Level.FINE);
-        }
-
         public TaggedJavaLogger(String tag, int levels) {
             this.logger = java.util.logging.Logger.getLogger(tag);
             this.logger.addHandler(new Handler() {

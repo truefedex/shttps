@@ -72,12 +72,14 @@ public class SimpleHttpServer {
     public static final int REASON_NETWORK_INTERFACE_NOT_ALLOWED = 2;
 
     private static final Logger logger = SHTTPSLoggerProxy.getLogger(SimpleHttpServer.class);
+    public static final String SERVER_NAME = "SHTTPS/3.x";
+    public static final String HTTP_PROTOCOL = "HTTP/1.1";
 
     @NonNull
     private final RequestHandler requestHandler;
 
     @Nullable
-    public Callback callback;
+    private final Callback callback;
 
     private volatile ServerSocket serverSocket;
     private final Set<Socket> trackedSockets = Collections.newSetFromMap(new ConcurrentHashMap<>());
@@ -94,30 +96,36 @@ public class SimpleHttpServer {
     public volatile Set<InetAddress> allowedClientAddresses = null;
 
     public volatile Map<String, String> additionalResponseHeaders = null;
-    public volatile int connectionKeepAliveTimeoutSeconds = 15;
+    public volatile int connectionMinimalReadTimeoutMilliseconds = 10000;
+    public volatile int connectionKeepAliveTimeoutSeconds = 30;
 
-    public AtomicLong connectionCount = new AtomicLong(0);
+    private final AtomicLong connectionHistoryCounter = new AtomicLong(0);
 
     public interface Callback {
         void onServerStarted();
 
         void onServerStopped();
 
-        void onNewConnection(Socket socket, long connectionNumber);
+        //An early stage of connection procession
+        void onNewConnection(Socket socket, long connectionId);
 
-        void onConnectionClosed(Socket socket);
+        //Connection established and passed initial checks
+        void onConnectionTracked(Socket socket, long connectionId);
 
-        void onConnectionError(Socket socket, Exception e);
+        void onConnectionClosed(Socket socket, String reason, long connectionId);
+
+        void onConnectionError(Socket socket, Exception e, long connectionId);
 
         void onConnectionRequest(RequestContext context, Request request);
 
         void onConnectionResponse(RequestContext context, Request request, Response response);
 
-        void onConnectionRejected(Socket socket, int reason);
+        void onConnectionRejected(Socket socket, int reason, long connectionId);
     }
 
-    public SimpleHttpServer(RequestHandler requestHandler) {
+    public SimpleHttpServer(@NonNull RequestHandler requestHandler, @Nullable Callback callback) {
         this.requestHandler = requestHandler;
+        this.callback = callback;
     }
 
     public void startListen(ServerSocket serverSocket) {
@@ -220,7 +228,7 @@ public class SimpleHttpServer {
                     continue;
                 }
 
-                long connectionNumber = connectionCount.incrementAndGet();
+                long connectionNumber = connectionHistoryCounter.incrementAndGet();
 
                 if (callback != null) {
                     callback.onNewConnection(socket, connectionNumber);
@@ -234,8 +242,8 @@ public class SimpleHttpServer {
                     } catch (IOException ignored) {
                     }
                     if (callback != null) {
-                        callback.onConnectionClosed(socket);
-                        callback.onConnectionRejected(socket, REASON_CLIENT_ADDRESS_NOT_ALLOWED);
+                        callback.onConnectionClosed(socket, "filtered by server's client whitelist", connectionNumber);
+                        callback.onConnectionRejected(socket, REASON_CLIENT_ADDRESS_NOT_ALLOWED, connectionNumber);
                     }
                     continue;
                 }
@@ -261,15 +269,15 @@ public class SimpleHttpServer {
                         } catch (IOException ignored) {
                         }
                         if (callback != null) {
-                            callback.onConnectionClosed(socket);
-                            callback.onConnectionRejected(socket, REASON_NETWORK_INTERFACE_NOT_ALLOWED);
+                            callback.onConnectionClosed(socket, "forbidden network interface", connectionNumber);
+                            callback.onConnectionRejected(socket, REASON_NETWORK_INTERFACE_NOT_ALLOWED, connectionNumber);
                         }
                         continue;
                     }
                 }
 
                 final Socket finalSocket = socket;
-                threadPoolExecutor.execute(() -> handleConnection(finalSocket));
+                threadPoolExecutor.execute(() -> handleConnection(finalSocket, connectionNumber));
             }
             try {
                 ServerSocket ss = serverSocket;
@@ -289,18 +297,24 @@ public class SimpleHttpServer {
         }
     };
 
-    private void handleConnection(final Socket socket) {
+    private void handleConnection(final Socket socket, long connectionNumber) {
         synchronized (trackedSockets) {
             trackedSockets.add(socket);
         }
+        if (callback != null) {
+            callback.onConnectionTracked(socket, connectionNumber);
+        }
 
+        String connectionCloseReason = null;
         Request request = null;
         DefaultRequestBodyReader requestBodyReader = new DefaultRequestBodyReader();
         try (socket;
              OutputStream output = new BufferedOutputStream(socket.getOutputStream());
              InputStream input = new BufferedInputStream(socket.getInputStream())) {
 
-            socket.setSoTimeout(connectionKeepAliveTimeoutSeconds * 1000);
+            int soTimeout = Math.max(connectionMinimalReadTimeoutMilliseconds,
+                    connectionKeepAliveTimeoutSeconds * 1000);
+            socket.setSoTimeout(soTimeout);
             socket.setKeepAlive(true);
             boolean keepAlive = true;
 
@@ -308,7 +322,13 @@ public class SimpleHttpServer {
                 RequestContext requestContext = new RequestContext(requestBodyReader);
 
                 request = requestHeadersParser.readRequestHeaders(input, socket.getInetAddress().getHostAddress());
+                if (request == null) {
+                    connectionCloseReason = "No request data";
+                    return;
+                }
+
                 keepAlive = !request.requestToCloseConnection;
+                request.connectionId = connectionNumber;
 
                 if (callback != null) {
                     callback.onConnectionRequest(requestContext, request);
@@ -332,8 +352,10 @@ public class SimpleHttpServer {
                 }
 
                 if (errDuringHandle != null || response == null ||
+                        connectionKeepAliveTimeoutSeconds <= 0 ||
                         (!response.headers.containsKey(Response.HEADER_CONTENT_LENGTH)) ||
-                        ((!requestBodyReader.bodyWasRead) && request.shouldHaveABody())
+                        ((!requestBodyReader.bodyWasRead) && request.shouldHaveABody() ||
+                        Request.CONNECTION_CLOSE.equalsIgnoreCase(request.headers.get(Request.HEADER_CONNECTION)))
                 ) {
                     keepAlive = false;
                 }
@@ -356,17 +378,16 @@ public class SimpleHttpServer {
                     response.phrase = text;
                 }
 
-                for (Map.Entry<String, String> entry : requestContext.additionalResponseHeaders.entrySet()) {
-                    response.headers.put(entry.getKey(), entry.getValue());
-                }
+                response.headers.putAll(requestContext.additionalResponseHeaders);
 
-                response.headers.put(Response.HEADER_SERVER, SimpleHttpServer.class.getSimpleName());
-                //keepAlive = false;
-                if (keepAlive) {
-                    response.headers.put(Response.HEADER_CONNECTION, "Keep-Alive");
-                    response.headers.put(Response.HEADER_KEEP_ALIVE, "timeout=" + connectionKeepAliveTimeoutSeconds);
-                } else {
-                    response.headers.put(Response.HEADER_CONNECTION, Request.CONNECTION_CLOSE);
+                response.headers.put(Response.HEADER_SERVER, SERVER_NAME);
+                if (!response.headers.containsKey(Response.HEADER_CONNECTION)) {
+                    if (keepAlive) {
+                        response.headers.put(Response.HEADER_CONNECTION, "Keep-Alive");
+                        response.headers.put(Response.HEADER_KEEP_ALIVE, "timeout=" + connectionKeepAliveTimeoutSeconds);
+                    } else {
+                        response.headers.put(Response.HEADER_CONNECTION, Request.CONNECTION_CLOSE);
+                    }
                 }
 
                 Map<String, String> additionalResponseHeaders = this.additionalResponseHeaders;
@@ -405,14 +426,14 @@ public class SimpleHttpServer {
                 }
             }
         } catch (SocketTimeoutException e) {
-            logger.d("Client timed out: " + socket.getRemoteSocketAddress());
+            connectionCloseReason = "timeout";
         } catch (Exception e) {
             if (e instanceof SocketException && e.getMessage().contains("Connection reset")) {
-                logger.d("Client closed connection: " + socket.getRemoteSocketAddress());
+                connectionCloseReason = "closed by client";
             } else {
-                logger.stackTrace(e);
+                connectionCloseReason = e.getClass().getSimpleName();
                 if (callback != null) {
-                    callback.onConnectionError(socket, e);
+                    callback.onConnectionError(socket, e, connectionNumber);
                 }
             }
         } finally {
@@ -431,7 +452,7 @@ public class SimpleHttpServer {
                 socket.close();
             } catch (IOException ignored) {}
             if (callback != null) {
-                callback.onConnectionClosed(socket);
+                callback.onConnectionClosed(socket, connectionCloseReason, connectionNumber);
             }
         }
     }

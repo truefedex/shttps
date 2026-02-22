@@ -12,6 +12,7 @@ import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.handlers.HandlersUtils;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.middleware.intentsenders.IntentSender;
 import com.phlox.simpleserver.utils.KeyStoreCrypt;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 import com.phlox.simpleserver.utils.docfile.MediaStoreFileCollectionFile;
@@ -41,6 +42,10 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
 
     private static final String ALIAS_CONFIG_PREFIX = "config_";
 
+    private static final String KEY_ENABLE_INTENT_SENDING_HANDLERS = "enable_intent_sending_handlers";
+    private static final String KEY_INTENT_SENDING_HANDLERS_URL_PATH_PREFIX = "intent_sending_handlers_url_path_prefix";
+    private static final String KEY_INTENT_SENDERS = "intent_senders";
+
     public SHTTPSConfigAndroid(Context context, String prefName, SHTTPSPlatformUtils platformUtils) {
         this.context = context;
         this.keyStoreCrypt = new KeyStoreCrypt(context);
@@ -52,19 +57,9 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
         SHTTPSConfig.super.runMigrations();
     }
 
-    @SuppressLint("NewApi")
     @Override
     public DocumentFile getRootDir() {
-        String rootDirStr;
-        if (prefs.contains(KEY_LEGACY_TYPO_ROOT_DIR)) {
-            rootDirStr = prefs.getString(KEY_LEGACY_TYPO_ROOT_DIR, null);
-            prefs.edit()
-                .remove(KEY_LEGACY_TYPO_ROOT_DIR)
-                .putString(KEY_ROOT_DIR, rootDirStr)
-                .apply();
-        } else {
-            rootDirStr = prefs.getString(KEY_ROOT_DIR, null);
-        }
+        String rootDirStr = prefs.getString(KEY_ROOT_DIR, null);
         if (rootDirStr != null) {
             if (rootDirStr.startsWith(MediaStoreFileCollectionFile.MEDIASTORE_FILES_DUMMY_URI)) {
                 String relativePath = rootDirStr.substring(MediaStoreFileCollectionFile.MEDIASTORE_FILES_DUMMY_URI.length());
@@ -113,11 +108,6 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     @Override
     public void setPort(int value) {
         prefs.edit().putInt(KEY_PORT, value).apply();
-    }
-
-    @Override
-    public boolean getUseBasicAuth() {
-        return prefs.getBoolean(KEY_USE_BASIC_AUTH, false);
     }
 
     @Override
@@ -423,6 +413,57 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
         prefs.edit().putString(KEY_AUTH_MODE, value.name()).apply();
     }
 
+    // Android-specific settings. Not handled automatically by SHTTPSApp
+    
+    public boolean isEnableIntentSendingHandlers() {
+        return prefs.getBoolean(KEY_ENABLE_INTENT_SENDING_HANDLERS, false);
+    }
+
+    public void setEnableIntentSendingHandlers(boolean value) {
+        prefs.edit().putBoolean(KEY_ENABLE_INTENT_SENDING_HANDLERS, value).apply();
+    }
+
+    public String getIntentSendingHandlersUrlPathPrefix() {
+        return prefs.getString(KEY_INTENT_SENDING_HANDLERS_URL_PATH_PREFIX, "/intent");
+    }
+
+    public void setIntentSendingHandlersUrlPathPrefix(String value) {
+        prefs.edit().putString(KEY_INTENT_SENDING_HANDLERS_URL_PATH_PREFIX, value).apply();
+    }
+
+    public List<IntentSender> getIntentSenders() {
+        String jsonArray = prefs.getString(KEY_INTENT_SENDERS, null);
+        if (jsonArray == null) return null;
+        List<IntentSender> result = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(jsonArray);
+            for (int i = 0; i < array.length(); i++) {
+                result.add(IntentSender.deserialize(array.getJSONObject(i)));
+            }
+            return result;
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    public void setIntentSenders(List<IntentSender> value) {
+        if (value == null) {
+            prefs.edit().remove(KEY_INTENT_SENDERS).apply();
+            return;
+        }
+        JSONArray array = new JSONArray();
+        for (IntentSender intentSender : value) {
+            try {
+                array.put(intentSender.serialize());
+            } catch (JSONException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        prefs.edit().putString(KEY_INTENT_SENDERS, array.toString()).apply();
+    }
+
+    // General utility methods
+
     @Override
     public int getInt(String key, int defaultValue) {
         return prefs.getInt(key, defaultValue);
@@ -453,18 +494,37 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
         prefs.edit().putString(key, value).apply();
     }
 
-    // Android-only settings. This is historically managed by Android App and not SHTTPS itself
-    // This is kept for backward compatibility currently but should be moved out of SHTTPSConfig
-
-    @Deprecated
-    public boolean getAutostart() {
-        return prefs.getBoolean(KEY_AUTOSTART, false);
+    @Override
+    public JSONArray getJsonArray(String key, JSONArray defaultValue) {
+        if (!prefs.contains(key)) {
+            return defaultValue;
+        }
+        JSONArray array = new JSONArray();
+        for (String s : prefs.getStringSet(key, new HashSet<>())) {
+            try {
+                array.put(new JSONObject(s));
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+        }
+        return array;
     }
 
-    @Deprecated
-    public boolean getRunningState() {
-        return prefs.getBoolean(KEY_RUNNING_STATE, false);
+    @Override
+    public void setJSONArray(String key, JSONArray value) {
+        if (value == null) {
+            prefs.edit().remove(key).apply();
+            return;
+        }
+        HashSet<String> stringSet = new HashSet<>();
+        for (int i = 0; i < value.length(); ++i) {
+            JSONObject jObject = value.optJSONObject(i);
+            if (jObject != null) {
+                stringSet.add(jObject.toString());
+            }
+        }
+
+        prefs.edit().putStringSet(key, stringSet).apply();
     }
 
-    // End of Android-only settings
 }

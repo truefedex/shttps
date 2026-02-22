@@ -6,11 +6,12 @@ import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class ServerLogsCollector implements Router.Listener {
     final int maxLogSize;
-    public final ConcurrentLinkedQueue<LogEntry> logs = new ConcurrentLinkedQueue<>();
+    public final ConcurrentLinkedDeque<LogEntry> logs = new ConcurrentLinkedDeque<>();
     public Listener listener;
 
     public interface Listener {
@@ -46,10 +47,10 @@ public class ServerLogsCollector implements Router.Listener {
         LogEntry logEntry = new LogEntry(request.time, System.currentTimeMillis(),
                 request, response);
 
-        logs.offer(logEntry);
+        logs.addFirst(logEntry);
 
         while (logs.size() > maxLogSize) {
-            logs.poll();
+            logs.pollLast();
         }
         Listener listener = this.listener;
         if (listener != null) {

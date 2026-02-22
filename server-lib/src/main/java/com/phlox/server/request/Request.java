@@ -31,6 +31,9 @@ public class Request {
     public static final String HEADER_CONNECTION  =  "connection";
     public static final String HEADER_USER_AGENT  =  "user-agent";
     public static final String HEADER_ACCEPT  =  "accept";
+    public static final String HEADER_ORIGIN = "origin";
+    public static final String HEADER_ACCESS_CONTROL_REQUEST_METHOD = "access-control-request-method";
+    public static final String HEADER_ACCESS_CONTROL_REQUEST_HEADERS = "access-control-request-headers";
 
     public static final String CONTENT_TYPE_MULTIPART_FORM = "multipart/form-data";
     public static final String CONTENT_TYPE_URL_ENCODED_FORM = "application/x-www-form-urlencoded";
@@ -39,21 +42,23 @@ public class Request {
     public static final String CONNECTION_CLOSE = "close";
 
     public String method;
+    public String rawPathAndQuery;
     public String path;
-    public Map<String, String> queryParams = new HashMap<>();
+    public MultiMap<String, String> queryParams = new MultiMap<>();
     public Map<String, String> cookies = new HashMap<>();
-    public Map<String, String> urlEncodedPostParams = new HashMap<>();
+    public MultiMap<String, String> urlEncodedPostParams = new MultiMap<>();
     public String hostAddress;
     public MultiMap<String, String> headers = new MultiMap<>();
     public ScannerInputStream input;
     public String contentType;
     public String boundary;
     public String charset;
-    public long contentLength;
+    public long contentLength = -1;
     public boolean requestToCloseConnection = true;
     public RequestBody body;
     public Set<FormDataPart> multipartData = new HashSet<>();
     public long time = System.currentTimeMillis();
+    public long connectionId;
 
     public boolean shouldHaveABody() {
         return method.equals("POST") || method.equals("PUT") || method.equals("PATCH");

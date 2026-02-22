@@ -232,7 +232,8 @@ public class TableDataImpl implements TableData {
                 case java.sql.Types.BIGINT: case java.sql.Types.BOOLEAN:
                 case java.sql.Types.TINYINT: case java.sql.Types.SMALLINT:
                 case java.sql.Types.INTEGER: case java.sql.Types.NUMERIC:
-                    return resultSet.getLong(columnIndex);
+                    long longResult = resultSet.getLong(columnIndex);
+                    return resultSet.wasNull() ? JSONObject.NULL : longResult;
 
                 case java.sql.Types.BLOB:
                     //noinspection EmptyTryBlock
@@ -248,15 +249,12 @@ public class TableDataImpl implements TableData {
                     }
 
                 case java.sql.Types.DOUBLE: case java.sql.Types.FLOAT: case java.sql.Types.REAL:
-                    return resultSet.getDouble(columnIndex);
+                    double doubleResult = resultSet.getDouble(columnIndex);
+                    return resultSet.wasNull() ? JSONObject.NULL : doubleResult;
 
                 default:
                     String strValue = resultSet.getString(columnIndex);
-                    if (resultSet.wasNull()) {
-                        return JSONObject.NULL;
-                    } else {
-                        return strValue;
-                    }
+                    return resultSet.wasNull() ? JSONObject.NULL : strValue;
             }
         } catch (Exception e) {
             logger.e("Error converting column to JSON", e);

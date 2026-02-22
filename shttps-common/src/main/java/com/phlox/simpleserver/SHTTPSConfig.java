@@ -1,10 +1,16 @@
 package com.phlox.simpleserver;
 
+import com.phlox.server.handlers.CORSMiddleware;
 import com.phlox.server.handlers.RedirectsMiddleware;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.exec.CgiType;
 import com.phlox.simpleserver.utils.Utils;
 
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.jspecify.annotations.Nullable;
 
 import java.security.KeyStore;
 import java.util.ArrayList;
@@ -20,8 +26,6 @@ import proguard.annotation.Keep;
 
 public interface SHTTPSConfig {
     int CONFIG_VERSION = 4;
-
-    String KEY_LEGACY_TYPO_ROOT_DIR = "rot_dir";
     String KEY_ROOT_DIR = "root_dir";
     String KEY_RENDER_FOLDERS = "render_folders";
     String KEY_ALLOW_EDITING = "allow_editing";
@@ -29,8 +33,6 @@ public interface SHTTPSConfig {
     @Deprecated String KEY_USE_BASIC_AUTH = "use_basic_auth";
     String KEY_USERNAME = "username";
     String KEY_PASSWORD = "password";
-    String KEY_AUTOSTART = "autostart";
-    String KEY_RUNNING_STATE = "running_state";
     String KEY_REDIRECT_TO_INDEX = "redirect_to_index";
     String KEY_USE_TLS = "use_tls";
     String KEY_TLS_CERT = "tls_cert";
@@ -53,7 +55,15 @@ public interface SHTTPSConfig {
     String KEY_VERIFY_HOST = "verify_host";
     String KEY_ALLOW_USER_REGISTRATION = "allow_user_registration";
     String KEY_DEFAULT_ROLE_FOR_NEW_USER = "default_new_user_role";
+    String KEY_GLOBAL_RATE_LIMIT = "global_rate_limit";
+    String KEY_RATE_LIMITER_TRUST_IP_HEADERS = "rate_limiter_trust_ip_headers";
     String KEY_NEW_USER_DIR_PATTERN = "new_user_dir_pattern";
+    String KEY_ENABLE_CGI = "enable_cgi";
+    String KEY_CGI_FOLDER = "cgi_folder";
+    String KEY_CGI_PATH_PREFIX = "cgi_path_prefix";
+    String KEY_CGI_TYPES = "cgi_types";
+    String KEY_CORS_RULES = "cors_rules";
+    String KEY_DEFAULT_TEXT_CHARSET = "default_text_charset";
 
     default void runMigrations() {
         if (getConfigVersion() == CONFIG_VERSION) return;
@@ -71,7 +81,7 @@ public interface SHTTPSConfig {
             setConfigVersion(3);
         }
         if (getConfigVersion() == 3) {
-            if (getUseBasicAuth()) {
+            if (getBoolean(KEY_USE_BASIC_AUTH, false)) {
                 setAuthMode(AuthMode.WEB);
             }
             if (!getUsername().isEmpty()) {
@@ -108,9 +118,6 @@ public interface SHTTPSConfig {
     int getPort();
 
     void setPort(int value);
-
-    @Deprecated
-    boolean getUseBasicAuth();
 
     @Deprecated
     String getUsername();
@@ -236,19 +243,19 @@ public interface SHTTPSConfig {
     }
 
     default int getGlobalRateLimit() {
-        return getInt("global_rate_limit", 0);
+        return getInt(KEY_GLOBAL_RATE_LIMIT, 0);
     }
 
     default void setGlobalRateLimit(int requestsPerMinute) {
-        setInt("global_rate_limit", requestsPerMinute);
+        setInt(KEY_GLOBAL_RATE_LIMIT, requestsPerMinute);
     }
 
-    default boolean rateLimiterTrustToIPHeaders() {
-        return getBoolean("rate_limiter_trust_ip_headers", false);
+    default boolean getRateLimiterTrustToIPHeaders() {
+        return getBoolean(KEY_RATE_LIMITER_TRUST_IP_HEADERS, false);
     }
 
     default void setRateLimiterTrustToIPHeaders(boolean value) {
-        setBoolean("rate_limiter_trust_ip_headers", value);
+        setBoolean(KEY_RATE_LIMITER_TRUST_IP_HEADERS, value);
     }
 
     default void setNewUserDirPattern(String pattern) {
@@ -257,6 +264,114 @@ public interface SHTTPSConfig {
 
     default String getNewUserDirPattern() {
         return getString(KEY_NEW_USER_DIR_PATTERN, "");
+    }
+
+    default boolean isCGIEnabled() {
+        return getBoolean(KEY_ENABLE_CGI, false);
+    }
+
+    default void setCGIEnabled(boolean enabled) {
+        setBoolean(KEY_ENABLE_CGI, enabled);
+    }
+
+    default @Nullable String getCGIFolder() {
+        return getString(KEY_CGI_FOLDER, null);
+    }
+
+    default void setCGIFolder(@Nullable String folder) {
+        setString(KEY_CGI_FOLDER, folder);
+    }
+
+    default @Nullable String getCGIPathPrefix() {
+        return getString(KEY_CGI_PATH_PREFIX, "/cgi-bin");
+    }
+
+    default void setCGIPathPrefix(@Nullable String prefix) {
+        setString(KEY_CGI_PATH_PREFIX, prefix);
+    }
+
+    default @Nullable List<CgiType> getCGITypes() {
+        JSONArray jCgiTypes = getJsonArray(KEY_CGI_TYPES, null);
+        if (jCgiTypes == null) return null;
+        ArrayList<CgiType> cgiTypes = new ArrayList<>(jCgiTypes.length());
+        for (int i = 0; i < jCgiTypes.length(); ++i) {
+            Object obj = jCgiTypes.opt(i);
+            if (obj instanceof JSONObject) {
+                cgiTypes.add(CgiType.deserialize((JSONObject) obj));
+            }
+        }
+        return cgiTypes;
+    }
+    default void setCGITypes(@Nullable List<CgiType> list) {
+        JSONArray jCgiTypes = new JSONArray();
+        if (list != null) {
+            for (CgiType type : list) {
+                jCgiTypes.put(type.serialize());
+            }
+        }
+        setJSONArray(KEY_CGI_TYPES, jCgiTypes);
+    }
+
+    default @Nullable List<CORSMiddleware.CORSRule> getCORSRules() {
+        JSONArray jCorsRules = getJsonArray(KEY_CORS_RULES, null);
+        if (jCorsRules == null) return null;
+        ArrayList<CORSMiddleware.CORSRule> corsRules = new ArrayList<>(jCorsRules.length());
+        for (int i = 0; i < jCorsRules.length(); ++i) {
+            Object obj = jCorsRules.opt(i);
+            if (obj instanceof JSONObject) {
+                JSONObject json = (JSONObject) obj;
+                CORSMiddleware.CORSRule corsRule = new CORSMiddleware.CORSRule();
+                corsRule.origin = json.optString("origin", "*");
+                String allowMethods = json.optString("allow_methods", null);
+                if (allowMethods != null && !allowMethods.isEmpty()) {
+                    corsRule.allowMethods = allowMethods.split(",");
+                }
+                String allowHeaders = json.optString("allow_headers", null);
+                if (allowHeaders != null && !allowHeaders.isEmpty()) {
+                    corsRule.allowHeaders = allowHeaders.split(",");
+                }
+                if (json.has("allow_credentials")) {
+                    corsRule.allowCredentials = json.getBoolean("allow_credentials");
+                }
+                String exposeHeaders = json.optString("expose_headers", null);
+                if (exposeHeaders != null && !exposeHeaders.isEmpty()) {
+                    corsRule.exposeHeaders = exposeHeaders.split(",");
+                }
+                int maxAge = json.optInt("max_age", 0);
+                if (maxAge > 0) {
+                    corsRule.maxAge = maxAge;
+                }
+                corsRules.add(corsRule);
+            }
+        }
+        return corsRules;
+    }
+
+    default void setCORSRules(@Nullable List<CORSMiddleware.CORSRule> list) {
+        JSONArray jCorsRules = new JSONArray();
+        if (list != null) {
+            for (CORSMiddleware.CORSRule corsRule : list) {
+                JSONObject json = new JSONObject();
+                json.put("origin", corsRule.origin != null ? corsRule.origin : "");
+                json.put("allow_methods", corsRule.allowMethods != null ? String.join(",", corsRule.allowMethods) : "");
+                json.put("allow_headers", corsRule.allowHeaders != null ? String.join(",", corsRule.allowHeaders) : "");
+                if (corsRule.allowCredentials != null) {
+                    json.put("allow_credentials", corsRule.allowCredentials);
+                }
+                json.put("expose_headers", corsRule.exposeHeaders != null ? String.join(",", corsRule.exposeHeaders) : "");
+                json.put("max_age", corsRule.maxAge);
+                jCorsRules.put(json);
+            }
+        }
+        setJSONArray(KEY_CORS_RULES, jCorsRules);
+    }
+
+    default @Nullable String getDefaultTextCharset() {
+        return getString(KEY_DEFAULT_TEXT_CHARSET, null);
+    }
+
+    default void setDefaultTextCharset(@Nullable String charset) {
+        setString(KEY_DEFAULT_TEXT_CHARSET, charset);
     }
 
     int getInt(String key, int defaultValue);
@@ -270,6 +385,11 @@ public interface SHTTPSConfig {
     String getString(String key, String defaultValue);
 
     void setString(String key, String value);
+    JSONArray getJsonArray(String key, JSONArray defaultValue);
+
+    /* Store array of JSONObject (other types currently not supported!) */
+    void setJSONArray(String key, JSONArray value);
+
 
     @Keep
     enum AuthMode {

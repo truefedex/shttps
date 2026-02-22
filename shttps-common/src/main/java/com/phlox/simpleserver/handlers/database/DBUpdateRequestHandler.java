@@ -71,7 +71,8 @@ public class DBUpdateRequestHandler extends BaseDBRequestHandler {
         User user = checkUser(context);
         return database.runTransaction(db -> {
             if (checkIsForbidden(db, user, table, UPDATE_OPERATION, Map.of(
-                    "values", rowJson.toString()
+                    "values", rowJson.toString(),
+                    "filters", filtersJsonStr != null ? filtersJsonStr : ""
             ), User.DBRights.UPDATE))
                 return StandardResponses.FORBIDDEN();
             try {
