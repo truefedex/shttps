@@ -60,7 +60,7 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
 
     @Override
     public OutputStream openOutputStream(String fileUri) throws FileNotFoundException {
-        return Objects.requireNonNull(ctx.getContentResolver().openOutputStream(Uri.parse(fileUri)));
+        return Objects.requireNonNull(ctx.getContentResolver().openOutputStream(Uri.parse(fileUri), "wt"));
     }
 
     @SuppressLint("NewApi")//for ImageDecoder.DecodeException

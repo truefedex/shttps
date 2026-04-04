@@ -4,6 +4,7 @@ import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
+import com.phlox.server.utils.MultiMap;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -38,8 +39,7 @@ public class CORSMiddleware implements  Middleware {
                 CORSRule corsRule = corsRuleForOrigin(origin);
                 if (corsRule != null) {
                     Response response = StandardResponses.NO_CONTENT();
-                    response.headers.put(Response.HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin);
-                    response.headers.put(Response.HEADER_VARY, Response.HEADER_ORIGIN);
+                    addAllowOriginHeader(corsRule, origin, response.headers);
                     List<String> allowedMethods;
                     if (corsRule.allowMethods != null) {
                         allowedMethods = Arrays.asList(corsRule.allowMethods);
@@ -93,11 +93,19 @@ public class CORSMiddleware implements  Middleware {
             String origin = request.headers.get(Request.HEADER_ORIGIN);
             CORSRule corsRule = corsRuleForOrigin(origin);
             if (corsRule != null) {
-                context.additionalResponseHeaders.put(Response.HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin);
-                context.additionalResponseHeaders.put(Response.HEADER_VARY, Response.HEADER_ORIGIN);
+                addAllowOriginHeader(corsRule, origin, context.additionalResponseHeaders);
             }
         }
         return null;
+    }
+
+    private void addAllowOriginHeader(CORSRule rule, String origin, MultiMap<String, String> headers) {
+        if ("*".equals(rule.origin)) {
+            headers.put(Response.HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        } else {
+            headers.put(Response.HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+            headers.put(Response.HEADER_VARY, Response.HEADER_ORIGIN);
+        }
     }
 
     private CORSRule corsRuleForOrigin(String origin) {

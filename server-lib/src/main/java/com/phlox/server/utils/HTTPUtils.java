@@ -142,15 +142,15 @@ public final class HTTPUtils {
         return sb.toString();
     }
 
-    public static Map<String, String> parseHttpHeaders(String headersString) {
-        Map<String, String> headers = new HashMap<>();
+    public static MultiMap<String, String> parseHttpHeaders(String headersString) {
+        MultiMap<String, String> headers = new MultiMap<>();
         String[] lines = headersString.split("\n");
         for (String line : lines) {
-            String[] header = line.split(":");
+            String[] header = line.split(":", 2);
             if (header.length == 2) {
                 String key = header[0].trim();
                 String value = header[1].trim();
-                if (key.length() > 0 && value.length() > 0) {
+                if (!key.isEmpty() && !value.isEmpty()) {
                     headers.put(key, value);
                 }
             }

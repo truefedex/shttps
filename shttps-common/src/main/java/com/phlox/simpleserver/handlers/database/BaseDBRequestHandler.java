@@ -10,6 +10,8 @@ import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.DatabaseOperations;
 import com.phlox.simpleserver.utils.Holder;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -40,5 +42,18 @@ public abstract class BaseDBRequestHandler implements RequestHandler {
         if (user == null) return true;
         return !authManager.getUserRightsEvaluator().checkIsDBOperationAllowed(db, user, config.isStoreUsersInDatabase(), subject,
                 operation, operationParams, requestedRights);
+    }
+
+    protected JSONObject normalizeFilters(String filtersJsonStr) {
+        if (filtersJsonStr != null) {
+            JSONObject filtersJson = new JSONObject(filtersJsonStr);
+            if (!filtersJson.has("clauses") || !filtersJson.has("args") ||
+                    !(filtersJson.get("clauses") instanceof JSONArray) || !(filtersJson.get("args") instanceof JSONArray)) {
+                throw new IllegalArgumentException("filters JSON must contain 'clauses' and 'args' array fields");
+            }
+            return filtersJson;
+        } else {
+            return new JSONObject().put("clauses", new JSONArray()).put("args", new JSONArray());
+        }
     }
 }

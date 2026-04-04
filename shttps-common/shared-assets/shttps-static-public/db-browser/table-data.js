@@ -1,5 +1,6 @@
 let mainUI = document.getElementById('mainUI');
 let tableTitle = document.getElementById('table-name');
+let refreshButton = document.getElementById('refresh-button');
 let newRecordButton = document.getElementById('new-record-button');
 let deleteRowsButton = document.getElementById('delete-rows-button');
 let editRowButton = document.getElementById('edit-row-button');
@@ -57,6 +58,12 @@ function onPageLoad() {
         if (confirmation) {
             deleteSelectedRows();
         }
+    });
+
+    refreshButton.addEventListener('click', () => {
+        fetchTableSchema(() => {
+            fetchTableData();
+        });
     });
 
     newRecordButton.addEventListener('click', () => {

@@ -118,6 +118,7 @@ public class CgiProcessLauncher extends ExternalProcessLauncher {
             int b = processInput.read();
             if (b == -1) {
                 // Stream ended before headers complete
+                logger.w("CGI process output ended before headers were complete");
                 return StandardResponses.INTERNAL_SERVER_ERROR(headerBuffer.toString());
             }
 

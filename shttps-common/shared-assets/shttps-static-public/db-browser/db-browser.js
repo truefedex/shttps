@@ -201,7 +201,7 @@ function onMenuClick(e) {
     let mmBackToFiles = document.getElementById("mm-back-to-files");
     if (mmBackToFiles) {
         mmBackToFiles.onclick = function () {
-            window.location.href = "/";
+            window.location.href = "/?forceContents=true";
         };
     }
     let rect = menuButton.getBoundingClientRect();

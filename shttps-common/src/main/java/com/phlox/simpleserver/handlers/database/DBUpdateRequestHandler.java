@@ -45,16 +45,14 @@ public class DBUpdateRequestHandler extends BaseDBRequestHandler {
         List<String> filters = new ArrayList<>();
         List<Object> filtersArgs = new ArrayList<>();
         String filtersJsonStr = request.urlEncodedPostParams.get("filters");
-        if (filtersJsonStr != null) {
-            JSONObject filtersJson = new JSONObject(filtersJsonStr);
-            JSONArray filtersJsonArray = filtersJson.getJSONArray("clauses");
-            JSONArray filtersArgsJsonArray = filtersJson.getJSONArray("args");
-            for (int i = 0; i < filtersJsonArray.length(); i++) {
-                filters.add(filtersJsonArray.getString(i));
-            }
-            for (int i = 0; i < filtersArgsJsonArray.length(); i++) {
-                filtersArgs.add(filtersArgsJsonArray.get(i));
-            }
+        JSONObject filtersJson = normalizeFilters(filtersJsonStr);
+        JSONArray filtersJsonArray = filtersJson.getJSONArray("clauses");
+        JSONArray filtersArgsJsonArray = filtersJson.getJSONArray("args");
+        for (int i = 0; i < filtersJsonArray.length(); i++) {
+            filters.add(filtersJsonArray.getString(i));
+        }
+        for (int i = 0; i < filtersArgsJsonArray.length(); i++) {
+            filtersArgs.add(filtersArgsJsonArray.get(i));
         }
         JSONObject rowJson;
         try {
@@ -72,7 +70,7 @@ public class DBUpdateRequestHandler extends BaseDBRequestHandler {
         return database.runTransaction(db -> {
             if (checkIsForbidden(db, user, table, UPDATE_OPERATION, Map.of(
                     "values", rowJson.toString(),
-                    "filters", filtersJsonStr != null ? filtersJsonStr : ""
+                    "filters", filtersJson.toString()
             ), User.DBRights.UPDATE))
                 return StandardResponses.FORBIDDEN();
             try {

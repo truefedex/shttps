@@ -53,7 +53,7 @@ function refreshCaptcha() {
     captchaImage.onerror = function() {
         registerButton.disabled = false;
         registerButton.textContent = 'Register';
-        showRateLimitMessage('registerErrorMessage', 'Failed to load captcha. Please try again.');
+        showRateLimitMessage('registerErrorMessage', 'Failed to load captcha. Please try again later.');
     };
 }
 

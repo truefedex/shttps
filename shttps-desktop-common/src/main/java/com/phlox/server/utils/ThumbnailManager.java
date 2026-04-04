@@ -32,7 +32,7 @@ public class ThumbnailManager {
         if (!file.exists()) {
             throw new FileNotFoundException("File not found: " + filePath);
         }
-        String mimeType = platformUtils.getMimeType(RawDocumentFile.FILE_URI_PREFIX + filePath);
+        String mimeType = platformUtils.getMimeType(file.toURI().toString());
         if (mimeType == null || !mimeType.startsWith("image/")) {
             throw new SHTTPSPlatformUtils.UnknownFormatException("Unsupported video format: " + mimeType);
         }
@@ -71,7 +71,7 @@ public class ThumbnailManager {
 
     private SHTTPSPlatformUtils.ImageData loadThumbnail(File thumbnailFile) throws IOException {
         SHTTPSPlatformUtils.ImageData thumbnail = new SHTTPSPlatformUtils.ImageData();
-        thumbnail.mimeType = platformUtils.getMimeType(RawDocumentFile.FILE_URI_PREFIX + thumbnailFile.getAbsolutePath());
+        thumbnail.mimeType = platformUtils.getMimeType(thumbnailFile.toURI().toString());
         thumbnail.data = Files.readAllBytes(thumbnailFile.toPath());
         return thumbnail;
     }

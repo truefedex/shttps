@@ -174,7 +174,7 @@ public final class DatabaseMigrator {
                     "'expression' TEXT," +
                     "PRIMARY KEY('role_name', 'subject', 'operation')" +
                     ");");
-            database.execute("CREATE INDEX db_access_rule_role_index ON 'shttps_db_access_rule'('role_name')");
+            database.execute("CREATE INDEX IF NOT EXISTS db_access_rule_role_index ON 'shttps_db_access_rule'('role_name')");
             database.execute("CREATE TABLE IF NOT EXISTS 'shttps_fs_access_rule' (" +
                     "'role_name' TEXT NOT NULL REFERENCES 'user_role' ON DELETE CASCADE ON UPDATE CASCADE," +
                     "'subject' TEXT NOT NULL," +
@@ -183,7 +183,7 @@ public final class DatabaseMigrator {
                     "'expression' TEXT," +
                     "PRIMARY KEY('role_name', 'subject', 'operation')" +
                     ");");
-            database.execute("CREATE INDEX fs_access_rule_role_index ON 'shttps_fs_access_rule'('role_name')");
+            database.execute("CREATE INDEX IF NOT EXISTS fs_access_rule_role_index ON 'shttps_fs_access_rule'('role_name')");
             database.execute("create table IF NOT EXISTS 'user'" +
                     " ( 'identity' text primary key, " +
                     "'password' text not null, " +
@@ -201,6 +201,8 @@ public final class DatabaseMigrator {
         } else {
             database.execute("DROP TABLE IF EXISTS user");
             database.execute("DROP TABLE IF EXISTS user_role");
+            database.execute("DROP TABLE IF EXISTS shttps_db_access_rule");
+            database.execute("DROP TABLE IF EXISTS shttps_fs_access_rule");
         }
     }
 }

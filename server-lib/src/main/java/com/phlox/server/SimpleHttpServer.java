@@ -9,6 +9,7 @@ import com.phlox.server.request.RequestHeadersParser;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.responses.TextResponse;
+import com.phlox.server.utils.MultiMap;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.SHTTPSLoggerProxy.Logger;
 
@@ -35,6 +36,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -95,7 +97,7 @@ public class SimpleHttpServer {
 
     public volatile Set<InetAddress> allowedClientAddresses = null;
 
-    public volatile Map<String, String> additionalResponseHeaders = null;
+    public volatile MultiMap<String, String> additionalResponseHeaders = null;
     public volatile int connectionMinimalReadTimeoutMilliseconds = 10000;
     public volatile int connectionKeepAliveTimeoutSeconds = 30;
 
@@ -390,10 +392,13 @@ public class SimpleHttpServer {
                     }
                 }
 
-                Map<String, String> additionalResponseHeaders = this.additionalResponseHeaders;
+                MultiMap<String, String> additionalResponseHeaders = this.additionalResponseHeaders;
                 if (additionalResponseHeaders != null) {
-                    for (Map.Entry<String, String> entry: additionalResponseHeaders.entrySet()) {
-                        response.headers.put(entry.getKey(), entry.getValue());
+                    for (String key: additionalResponseHeaders.keys()) {
+                        List<String> values = additionalResponseHeaders.getAll(key);
+                        for (int i = 0; i < values.size(); i++) {
+                            response.headers.put(key, values.get(i));
+                        }
                     }
                 }
 

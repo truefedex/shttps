@@ -28,25 +28,30 @@ public class WebAuthMiddleware implements Middleware {
         User user = authManager.authenticate(context, request);
         if (user == null) {
             if (request.path != null && request.path.startsWith(loginRedirectPath)) {
-                //set cookie to indicate that registration is allowed
-                Map<String, Object> options = Map.of(
-                        "Path", "/",
-                        "HttpOnly", false,
-                        "SameSite", "Lax",
-                        "Max-Age", 60
-                );
-                context.additionalResponseHeaders.put("Set-Cookie",
-                        HTTPUtils.buildSetCookieHeader("registration_allowed",
-                                registrationAllowed ? "1" : "0", options));
+                addRegAllowedHeader(context);
                 return null; // Allow access to login page and related resources
             }
             if (request.method.equals(Request.METHOD_GET) &&
                     (request.contentType == null || "text/html".equals(request.contentType))) {
+                addRegAllowedHeader(context);
                 return StandardResponses.REDIRECT(loginRedirectPath, "Found", 302);
             } else {
                 return StandardResponses.UNAUTHORIZED();
             }
         }
         return null;
+    }
+
+    private void addRegAllowedHeader(RequestContext context) {
+        //set cookie to indicate that registration is allowed
+        Map<String, Object> options = Map.of(
+                "Path", "/",
+                "HttpOnly", false,
+                "SameSite", "Lax",
+                "Max-Age", 60
+        );
+        context.additionalResponseHeaders.put("Set-Cookie",
+                HTTPUtils.buildSetCookieHeader("registration_allowed",
+                        registrationAllowed ? "1" : "0", options));
     }
 }

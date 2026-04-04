@@ -9,6 +9,7 @@ import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.utils.HTTPUtils;
+import com.phlox.server.utils.MultiMap;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.auth.AuthManager;
@@ -380,7 +381,7 @@ public class SHTTPSApp {
 
         String customResponseHeadersStr = config.getCustomHeaders();
         if (!customResponseHeadersStr.isEmpty()) {
-            Map<String, String> customResponseHeadersMap = HTTPUtils.parseHttpHeaders(customResponseHeadersStr);
+            MultiMap<String, String> customResponseHeadersMap = HTTPUtils.parseHttpHeaders(customResponseHeadersStr);
             if (!customResponseHeadersMap.isEmpty()) {
                 srv.additionalResponseHeaders = customResponseHeadersMap;
             }

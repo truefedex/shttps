@@ -97,4 +97,8 @@ public class MultiMap<K, V> {
 
         return printMultiMap.toString();
     }
+
+    public boolean isEmpty() {
+        return treeMap.isEmpty();
+    }
 }

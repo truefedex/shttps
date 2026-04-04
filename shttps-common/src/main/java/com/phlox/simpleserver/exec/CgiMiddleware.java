@@ -75,7 +75,7 @@ public class CgiMiddleware implements Middleware {
         }
         
         String requestPath = rawPath;
-        if (cgiPathPrefix != null) {
+        if (cgiPathPrefix != null && !cgiPathPrefix.isEmpty() && !"/".equals(cgiPathPrefix)) {
             if (!requestPath.startsWith(cgiPathPrefix)) {
                 return null;
             } else {
@@ -148,7 +148,7 @@ public class CgiMiddleware implements Middleware {
         
         if (cgiScriptFile == null) {
             if (isCgiDirMixedWithStaticFilesDir) {
-                if (cgiPathPrefix == null) {
+                if (cgiPathPrefix == null || cgiPathPrefix.isEmpty() || "/".equals(cgiPathPrefix)) {
                     //next in pipeline we have a FilesRequestHandler that should have a chance
                     // to handle request normally
                     return null;

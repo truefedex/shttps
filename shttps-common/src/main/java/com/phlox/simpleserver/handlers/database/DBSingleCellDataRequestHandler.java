@@ -47,16 +47,14 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
         List<String> filters = new ArrayList<>();
         List<Object> filtersArgs = new ArrayList<>();
         String filtersJsonStr = params.get("filters");
-        if (filtersJsonStr != null) {
-            JSONObject filtersJson = new JSONObject(filtersJsonStr);
-            JSONArray filtersJsonArray = filtersJson.getJSONArray("clauses");
-            JSONArray filtersArgsJsonArray = filtersJson.getJSONArray("args");
-            for (int i = 0; i < filtersJsonArray.length(); i++) {
-                filters.add(filtersJsonArray.getString(i));
-            }
-            for (int i = 0; i < filtersArgsJsonArray.length(); i++) {
-                filtersArgs.add(filtersArgsJsonArray.get(i));
-            }
+        JSONObject filtersJson = normalizeFilters(filtersJsonStr);
+        JSONArray filtersJsonArray = filtersJson.getJSONArray("clauses");
+        JSONArray filtersArgsJsonArray = filtersJson.getJSONArray("args");
+        for (int i = 0; i < filtersJsonArray.length(); i++) {
+            filters.add(filtersJsonArray.getString(i));
+        }
+        for (int i = 0; i < filtersArgsJsonArray.length(); i++) {
+            filtersArgs.add(filtersArgsJsonArray.get(i));
         }
 
         Database database = this.database.get();
@@ -67,7 +65,7 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
         return database.runTransaction(db -> {
             if (checkIsForbidden(db, user, table, READ_CELL_OPERATION, Map.of(
                     "column", column,
-                    "filters", filtersJsonStr != null ? filtersJsonStr : ""
+                    "filters", filtersJson.toString()
             ), User.DBRights.READ))
                 return StandardResponses.FORBIDDEN();
 

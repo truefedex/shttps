@@ -10,10 +10,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.util.ArrayList;
 
 public class RawDocumentFile extends DocumentFile {
-    public static final String FILE_URI_PREFIX = "file://";
+    public static final String FILE_URI_PREFIX = "file:/";
     private File mFile;
 
     public static File getFile(DocumentFile document) {
@@ -57,7 +58,7 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public String getUri() {
-        return FILE_URI_PREFIX + mFile.getAbsolutePath();
+        return mFile.toURI().toString();
     }
 
     @Override
@@ -216,11 +217,13 @@ public class RawDocumentFile extends DocumentFile {
         return mFile;
     }
 
-    public static String fileUriToFilePath(String uri) {
-        if (!uri.startsWith(FILE_URI_PREFIX)) {
-            throw new IllegalArgumentException("Invalid file uri: " + uri);
+    public static String fileUriToFilePath(String uriString) {
+        try {
+            URI uri = new java.net.URI(uriString);
+            return new File(uri).getAbsolutePath();
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid file uri: " + uriString, e);
         }
-        return uri.substring(FILE_URI_PREFIX.length());
     }
 
     @Override

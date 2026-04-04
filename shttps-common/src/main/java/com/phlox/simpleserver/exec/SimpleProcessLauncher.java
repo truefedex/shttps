@@ -38,7 +38,7 @@ public class SimpleProcessLauncher extends ExternalProcessLauncher {
             command.addAll(Arrays.asList(executeWithArr));
         }
         //command.add(cgiScriptFile.getAbsolutePath());
-        command.add("\"" + cgiScriptFile.getAbsolutePath() + "\"");
+        command.add(cgiScriptFile.getAbsolutePath());
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);
