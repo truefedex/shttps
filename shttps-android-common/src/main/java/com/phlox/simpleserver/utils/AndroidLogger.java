@@ -49,6 +49,13 @@ public class AndroidLogger implements SHTTPSLoggerProxy.Logger {
     }
 
     @Override
+    public void w(String message, Throwable t) {
+        if ((logLevels & SHTTPSLoggerProxy.Logger.WARNING) != 0) {
+            Log.w(tag, message, t);
+        }
+    }
+
+    @Override
     public void stackTrace(Throwable t) {
         if ((logLevels & SHTTPSLoggerProxy.Logger.STACK_TRACE) != 0) {
             Log.e(tag, Log.getStackTraceString(t));

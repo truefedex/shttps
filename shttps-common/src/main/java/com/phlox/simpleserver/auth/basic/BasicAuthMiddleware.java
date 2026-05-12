@@ -1,6 +1,7 @@
 package com.phlox.simpleserver.auth.basic;
 
-import com.phlox.server.handlers.Middleware;
+import com.phlox.server.handlers.router.middleware.HandlerExecutionChain;
+import com.phlox.server.handlers.router.middleware.Middleware;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
@@ -17,13 +18,13 @@ public class BasicAuthMiddleware implements Middleware {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request) throws Exception {
+    public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
         User user = authManager.authenticate(context, request);
         if (user == null) {
             Response response = StandardResponses.UNAUTHORIZED();
             response.headers.put(Response.HEADER_WWW_AUTHENTICATE, "Basic realm=\"Authentication required\", charset=\"UTF-8\"");
             return response;
         }
-        return null;
+        return chain.proceed(context, request);
     }
 }

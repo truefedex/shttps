@@ -101,4 +101,14 @@ public class MultiMap<K, V> {
     public boolean isEmpty() {
         return treeMap.isEmpty();
     }
+
+    public void forEach(BiConsumer<K, List<V>> consumer) {
+        for (Map.Entry<K, List<V>> entry : treeMap.entrySet()) {
+            consumer.accept(entry.getKey(), entry.getValue());
+        }
+    }
+
+     public interface BiConsumer<K, V> {
+        void accept(K key, V value);
+    }
 }

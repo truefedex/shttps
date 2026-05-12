@@ -1,7 +1,7 @@
 plugins {
     id 'java'
     id 'application'
-    id 'com.gradleup.shadow' version '9.3.1'
+    id 'com.gradleup.shadow'
 }
 
 group = 'com.phlox.server'
@@ -17,8 +17,8 @@ dependencies {
     implementation project(path: ':server-lib')
     implementation project(path: ':shttps-common')
     implementation project(path: ':shttps-desktop-common')
-    implementation 'info.picocli:picocli:4.7.6'
-    annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
+    implementation libs.picocli
+    annotationProcessor libs.picocli.codegen
 }
 
 java {

@@ -37,6 +37,7 @@ public final class SHTTPSLoggerProxy {
         void e(String message, Throwable t);
         void i(String message);
         void w(String message);
+        void w(String message, Throwable t);
         void stackTrace(Throwable t);
     }
 
@@ -51,6 +52,8 @@ public final class SHTTPSLoggerProxy {
         public void i(String message) {}
         @Override
         public void w(String message) {}
+        @Override
+        public void w(String message, Throwable t) {}
         @Override
         public void stackTrace(Throwable t) {}
     }
@@ -138,6 +141,20 @@ public final class SHTTPSLoggerProxy {
                 record.setSourceClassName(logger.getName());
                 record.setLoggerName(logger.getName());
                 logger.log(record);
+            }
+        }
+
+        @Override
+        public void w(String message, Throwable t) {
+            if ((levels & Logger.WARNING) != 0) {
+                LogRecord record = new LogRecord(java.util.logging.Level.WARNING, message);
+                record.setSourceClassName(logger.getName());
+                record.setLoggerName(logger.getName());
+                record.setThrown(t);
+                logger.log(record);
+                if ((levels & Logger.STACK_TRACE) != 0) {
+                    t.printStackTrace();
+                }
             }
         }
 

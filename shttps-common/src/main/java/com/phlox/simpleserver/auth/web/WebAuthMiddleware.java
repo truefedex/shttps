@@ -1,6 +1,7 @@
 package com.phlox.simpleserver.auth.web;
 
-import com.phlox.server.handlers.Middleware;
+import com.phlox.server.handlers.router.middleware.HandlerExecutionChain;
+import com.phlox.server.handlers.router.middleware.Middleware;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
@@ -24,25 +25,26 @@ public class WebAuthMiddleware implements Middleware {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request) throws Exception {
+    public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
         User user = authManager.authenticate(context, request);
         if (user == null) {
             if (request.path != null && request.path.startsWith(loginRedirectPath)) {
-                addRegAllowedHeader(context);
-                return null; // Allow access to login page and related resources
+                return addRegAllowedHeader(chain.proceed(context, request)); // Allow access to login page and related resources
             }
             if (request.method.equals(Request.METHOD_GET) &&
                     (request.contentType == null || "text/html".equals(request.contentType))) {
-                addRegAllowedHeader(context);
-                return StandardResponses.REDIRECT(loginRedirectPath, "Found", 302);
+                return addRegAllowedHeader(
+                        StandardResponses.REDIRECT(loginRedirectPath, "Found", 302)
+                );
             } else {
                 return StandardResponses.UNAUTHORIZED();
             }
         }
-        return null;
+        return chain.proceed(context, request);
     }
 
-    private void addRegAllowedHeader(RequestContext context) {
+    private Response addRegAllowedHeader(Response response) {
+        if (response == null) return null;
         //set cookie to indicate that registration is allowed
         Map<String, Object> options = Map.of(
                 "Path", "/",
@@ -50,8 +52,9 @@ public class WebAuthMiddleware implements Middleware {
                 "SameSite", "Lax",
                 "Max-Age", 60
         );
-        context.additionalResponseHeaders.put("Set-Cookie",
+        response.headers.put("Set-Cookie",
                 HTTPUtils.buildSetCookieHeader("registration_allowed",
                         registrationAllowed ? "1" : "0", options));
+        return response;
     }
 }

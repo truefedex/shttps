@@ -1,5 +1,7 @@
-package com.phlox.server.handlers;
+package com.phlox.server.handlers.router.middleware.impl;
 
+import com.phlox.server.handlers.router.middleware.HandlerExecutionChain;
+import com.phlox.server.handlers.router.middleware.Middleware;
 import com.phlox.server.platform.Base64;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
@@ -29,9 +31,9 @@ public class BasicAuthMiddleware implements Middleware {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request) throws Exception {
+    public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
         if (!authEnabled) {
-            return null;
+            return chain.proceed(context, request);
         }
         String authorization = request.headers.get(Request.HEADER_AUTHORIZATION);
         if ((maxAttempts == -1 || currentAttempts.get() < maxAttempts) &&
@@ -44,7 +46,7 @@ public class BasicAuthMiddleware implements Middleware {
             if (values.length == 2 && values[0].equals(username) && values[1].equals(password)) {
                 currentAttempts.set(0);
                 context.data.put(CONTEXT_KEY_BASIC_AUTH_USERNAME, username);
-                return null;
+                return chain.proceed(context, request);
             } else {
                 synchronized (this) {
                     //wait for 3 seconds to prevent brute force attacks

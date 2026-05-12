@@ -1,0 +1,45 @@
+[versions]
+agp = "9.2.1"
+shadow = "9.4.1"
+
+proguard-annotations = "7.9.1"
+jspecify = "1.0.0"
+
+junit5 = "5.9.2"
+junit-platform5 = "1.9.2"
+junit-bom = "6.0.1"
+
+org-json = "20251224"
+
+sqlite = "3.53.0.0"
+slf4j = "2.0.17"
+picocli = "4.7.7"
+
+compile-sdk = "37"
+min-sdk = "24"
+target-sdk = "36"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+
+[libraries]
+proguard-annotations = { module = "com.guardsquare:proguard-annotations", version.ref = "proguard-annotations" }
+jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
+
+junit5-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit5" }
+junit5-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit5" }
+junit5-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform5" }
+
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit-bom" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+
+json = { module = "org.json:json", version.ref = "org-json" }
+
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+picocli-codegen = { module = "info.picocli:picocli-codegen", version.ref = "picocli" }

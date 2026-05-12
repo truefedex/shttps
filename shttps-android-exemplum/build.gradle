@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace 'com.phlox.shttps_android_exemplum'
-    compileSdk 36
+    compileSdk Integer.parseInt(libs.versions.compile.sdk.get())
 
     defaultConfig {
         applicationId "com.phlox.shttps_android_exemplum"
         minSdk 30
-        targetSdk 36
+        targetSdk Integer.parseInt(libs.versions.target.sdk.get())
         versionCode 1
         versionName "1.0"
     }

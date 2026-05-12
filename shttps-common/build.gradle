@@ -9,10 +9,11 @@ java {
 
 dependencies {
     implementation project(path: ':server-lib')
-    implementation 'org.json:json:20250517'
+    implementation libs.json
 
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
+    testImplementation libs.junit5.jupiter.api
+    testRuntimeOnly libs.junit5.jupiter.engine
+    testRuntimeOnly libs.junit5.platform.launcher
 }
 
 test {
