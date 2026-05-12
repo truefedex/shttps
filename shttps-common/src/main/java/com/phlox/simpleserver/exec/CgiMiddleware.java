@@ -1,6 +1,7 @@
 package com.phlox.simpleserver.exec;
 
-import com.phlox.server.handlers.Middleware;
+import com.phlox.server.handlers.router.middleware.HandlerExecutionChain;
+import com.phlox.server.handlers.router.middleware.Middleware;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
@@ -65,7 +66,7 @@ public class CgiMiddleware implements Middleware {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request) throws Exception {
+    public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
         // Get the raw path (before URL decoding) to preserve path structure
         String rawPath = request.rawPathAndQuery;
         // Remove query string from rawPath if present
@@ -77,7 +78,7 @@ public class CgiMiddleware implements Middleware {
         String requestPath = rawPath;
         if (cgiPathPrefix != null && !cgiPathPrefix.isEmpty() && !"/".equals(cgiPathPrefix)) {
             if (!requestPath.startsWith(cgiPathPrefix)) {
-                return null;
+                return chain.proceed(context, request); // Not a CGI request, let other handlers try to handle it
             } else {
                 requestPath = requestPath.substring(cgiPathPrefix.length());
             }
@@ -151,7 +152,7 @@ public class CgiMiddleware implements Middleware {
                 if (cgiPathPrefix == null || cgiPathPrefix.isEmpty() || "/".equals(cgiPathPrefix)) {
                     //next in pipeline we have a FilesRequestHandler that should have a chance
                     // to handle request normally
-                    return null;
+                    return chain.proceed(context, request);
                 } else {
                     //next in pipeline we have a FilesRequestHandler but request starts with
                     // cgi prefix so we already know that it can not be handled by FilesRequestHandler

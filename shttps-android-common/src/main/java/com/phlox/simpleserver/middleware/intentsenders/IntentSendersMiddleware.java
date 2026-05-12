@@ -5,15 +5,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 
-import com.phlox.server.handlers.Middleware;
+import com.phlox.server.handlers.router.middleware.HandlerExecutionChain;
+import com.phlox.server.handlers.router.middleware.Middleware;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
-import com.phlox.server.responses.TextResponse;
 import com.phlox.server.utils.MultiMap;
 import com.phlox.simpleserver.SHTTPSConfigAndroid;
-import com.phlox.simpleserver.middleware.intentsenders.IntentSender;
 
 import java.io.ByteArrayInputStream;
 import java.util.List;
@@ -32,10 +31,10 @@ public class IntentSendersMiddleware implements Middleware {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request) throws Exception {
+    public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
         String path = request.path;
         if (!path.startsWith(urlPathPrefix)) {
-            return null;
+            return chain.proceed(context, request);
         }
         path = path.substring(urlPathPrefix.length());
         MultiMap<String, String> params = request.queryParams;
@@ -51,7 +50,7 @@ public class IntentSendersMiddleware implements Middleware {
             }
         }
         if (sender == null) {
-            return null;
+            return chain.proceed(context, request);
         }
         if (sender.target.equals(IntentSender.IntentTarget.ORDERED_BROADCAST)) {
             CompletableFuture<Response> future = new CompletableFuture<>();

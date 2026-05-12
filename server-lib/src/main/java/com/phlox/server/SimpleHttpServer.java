@@ -380,8 +380,6 @@ public class SimpleHttpServer {
                     response.phrase = text;
                 }
 
-                response.headers.putAll(requestContext.additionalResponseHeaders);
-
                 response.headers.put(Response.HEADER_SERVER, SERVER_NAME);
                 if (!response.headers.containsKey(Response.HEADER_CONNECTION)) {
                     if (keepAlive) {

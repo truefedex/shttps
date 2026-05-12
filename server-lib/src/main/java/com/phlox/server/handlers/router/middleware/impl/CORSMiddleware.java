@@ -1,5 +1,7 @@
-package com.phlox.server.handlers;
+package com.phlox.server.handlers.router.middleware.impl;
 
+import com.phlox.server.handlers.router.middleware.HandlerExecutionChain;
+import com.phlox.server.handlers.router.middleware.Middleware;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
@@ -13,7 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class CORSMiddleware implements  Middleware {
+public class CORSMiddleware implements Middleware {
     private final Map<String, CORSRule> corsRules = new HashMap<>();
     public static class CORSRule implements Serializable {
         public String origin;
@@ -31,7 +33,7 @@ public class CORSMiddleware implements  Middleware {
     }
 
     @Override
-    public Response handleRequest(RequestContext context, Request request) throws Exception {
+    public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
         //handle OPTIONS
         if (request.method.equals(Request.METHOD_OPTIONS)) {
             String origin = request.headers.get(Request.HEADER_ORIGIN);
@@ -88,15 +90,17 @@ public class CORSMiddleware implements  Middleware {
             return response;
         }
 
-        //handle all other requests
+        Response response = chain.proceed(context, request);
+        if (response == null) return null;
+
         if (request.headers.containsKey(Request.HEADER_ORIGIN)) {
             String origin = request.headers.get(Request.HEADER_ORIGIN);
             CORSRule corsRule = corsRuleForOrigin(origin);
             if (corsRule != null) {
-                addAllowOriginHeader(corsRule, origin, context.additionalResponseHeaders);
+                addAllowOriginHeader(corsRule, origin, response.headers);
             }
         }
-        return null;
+        return response;
     }
 
     private void addAllowOriginHeader(CORSRule rule, String origin, MultiMap<String, String> headers) {

@@ -4,10 +4,10 @@ plugins {
 
 android {
     namespace 'com.phlox.shttps_android_common'
-    compileSdk 36
+    compileSdk Integer.parseInt(libs.versions.compile.sdk.get())
 
     defaultConfig {
-        minSdk 24
+        minSdk Integer.parseInt(libs.versions.min.sdk.get())
         
         consumerProguardFiles "consumer-rules.pro"
     }

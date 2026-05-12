@@ -1,13 +1,12 @@
 package com.phlox.simpleserver.utils;
 
-import com.phlox.server.handlers.Router;
+import com.phlox.server.handlers.router.Router;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class ServerLogsCollector implements Router.Listener {
     final int maxLogSize;

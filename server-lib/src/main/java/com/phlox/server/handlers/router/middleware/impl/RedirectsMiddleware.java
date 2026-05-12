@@ -1,5 +1,7 @@
-package com.phlox.server.handlers;
+package com.phlox.server.handlers.router.middleware.impl;
 
+import com.phlox.server.handlers.router.middleware.HandlerExecutionChain;
+import com.phlox.server.handlers.router.middleware.Middleware;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
@@ -16,7 +18,7 @@ public class RedirectsMiddleware implements Middleware {
     private final List<RedirectRule> redirectRules = new ArrayList<>();
 
     @Override
-    public Response handleRequest(RequestContext context, Request request) throws Exception {
+    public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
         String path = request.path;
         context.data.put(ORIGINAL_PATH, path);
         for (RedirectRule rule : redirectRules) {
@@ -26,7 +28,7 @@ public class RedirectsMiddleware implements Middleware {
                 return response;
             }
         }
-        return null;
+        return chain.proceed(context, request);
     }
 
     public void addRedirectRule(RedirectRule rule) {
@@ -44,8 +46,6 @@ public class RedirectsMiddleware implements Middleware {
         public int code;
         public boolean enabled;
         public String comment;
-        @Deprecated
-        public boolean shttpsInternal = false;
 
         private Pattern fromPattern;
 

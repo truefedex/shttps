@@ -1,6 +1,7 @@
 package com.phlox.simpleserver.database;
 
 import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
 
 import com.phlox.server.utils.Utils;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
@@ -46,5 +47,14 @@ public class DatabaseFabricAndroid implements SHTTPSDatabaseFabric {
         }
 
         return new DatabaseAndroid(context, databaseDirectory, uniqueDatabaseName);
+    }
+
+    @Override
+    public boolean deleteDatabase(String path) {
+        if (path == null || path.isEmpty()) return true;
+        File f = new File(path);
+        if (!f.exists()) return true;
+        // SQLiteDatabase.deleteDatabase removes the main file plus -journal, -shm, -wal companions.
+        return SQLiteDatabase.deleteDatabase(f);
     }
 }

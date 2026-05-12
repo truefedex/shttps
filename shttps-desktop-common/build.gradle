@@ -21,13 +21,13 @@ sourceSets {
 dependencies {
     implementation project(path: ':server-lib')
     implementation project(path: ':shttps-common')
-    implementation 'org.json:json:20251224'
-    implementation 'org.xerial:sqlite-jdbc:3.51.1.0'
-    implementation 'org.slf4j:slf4j-simple:2.0.17'
+    implementation libs.json
+    implementation libs.sqlite.jdbc
+    implementation libs.slf4j.simple
 
-    testImplementation platform('org.junit:junit-bom:6.0.1')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
 }
 
 test {

@@ -1,5 +1,7 @@
-package com.phlox.server.handlers;
+package com.phlox.server.handlers.router.middleware.impl;
 
+import com.phlox.server.handlers.router.middleware.HandlerExecutionChain;
+import com.phlox.server.handlers.router.middleware.Middleware;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
@@ -77,9 +79,9 @@ public class RateLimitingMiddleware implements Middleware {
     }
     
     @Override
-    public Response handleRequest(RequestContext context, Request request) throws Exception {
+    public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
         if (!enabled) {
-            return null; // Allow request to proceed
+            return chain.proceed(context, request);
         }
         
         // Initialize cleanup executor lazily on first request
@@ -108,12 +110,14 @@ public class RateLimitingMiddleware implements Middleware {
         if (currentCount > maxRequests) {
             return createRateLimitExceededResponse(currentCount, maxRequests, timeWindowMs);
         }
-        
+
+        Response response = chain.proceed(context, request);
+        if (response == null) return null;
         // Add rate limit headers to response
-        context.additionalResponseHeaders.put("rate_limit_remaining", Integer.toString(maxRequests - currentCount));
-        context.additionalResponseHeaders.put("rate_limit_reset", Long.toString(entry.getWindowStart() + timeWindowMs));
+        response.headers.put("rate_limit_remaining", Integer.toString(maxRequests - currentCount));
+        response.headers.put("rate_limit_reset", Long.toString(entry.getWindowStart() + timeWindowMs));
         
-        return null; // Allow request to proceed
+        return response;
     }
     
     private void initializeCleanupExecutor() {

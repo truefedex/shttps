@@ -2,7 +2,7 @@ package com.phlox.server;
 
 import static com.phlox.server.utils.docfile.RawDocumentFile.fileUriToFilePath;
 
-import com.phlox.server.handlers.RedirectsMiddleware;
+import com.phlox.server.handlers.router.middleware.impl.RedirectsMiddleware;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.server.utils.docfile.RawDocumentFile;
@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@SuppressWarnings({"deprecation"})
 public class SHTTPSConfigImpl implements SHTTPSConfig {
     private static final String ALIAS_CONFIG_PREFIX = "config_";
     private final JSONObject json;
@@ -188,6 +189,70 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
         }
         json.put(KEY_TLS_CERT, new String(value));
         save();
+    }
+
+    @Override
+    public byte[] getTLSCertBytes() {
+        // On desktop the certificate is stored on disk and KEY_TLS_CERT contains the file path.
+        String path = json.optString(KEY_TLS_CERT, null);
+        if (path == null || path.isEmpty()) return null;
+        try {
+            File certFile = new File(path);
+            if (!certFile.exists() || !certFile.isFile()) {
+                logger.w("TLS certificate file does not exist: " + path);
+                return null;
+            }
+            return Files.readAllBytes(certFile.toPath());
+        } catch (IOException e) {
+            logger.e("Failed to read TLS certificate bytes from: " + path, e);
+            return null;
+        }
+    }
+
+    /**
+     * Default name of the file used to store an imported TLS keystore alongside the config file
+     * when no existing certificate path is set. The actual extension is irrelevant - the keystore
+     * type is decided by {@link #getTLSCert()} based on the .bks vs anything-else suffix.
+     */
+    public static final String IMPORTED_TLS_CERT_FILE_NAME = "imported_tls_cert.pfx";
+
+    @Override
+    public void installTLSCertBytes(byte[] bytes) {
+        if (bytes == null) {
+            // Clear the cert.
+            setTLSCert(null);
+            return;
+        }
+        try {
+            // Prefer overwriting the contents of the *existing* certificate file so that any
+            // directory permissions or external references stay valid. Only fall back to a
+            // default location next to the config file when no path has been set yet.
+            String existingPath = json.optString(KEY_TLS_CERT, null);
+            File certFile;
+            if (existingPath != null && !existingPath.isEmpty()) {
+                certFile = new File(existingPath);
+                File parent = certFile.getAbsoluteFile().getParentFile();
+                if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                    logger.e("Failed to create directory for TLS cert: " + parent);
+                    return;
+                }
+            } else {
+                File parent = file.getAbsoluteFile().getParentFile();
+                if (parent == null) parent = new File(".");
+                if (!parent.exists() && !parent.mkdirs()) {
+                    logger.e("Failed to create directory for imported TLS cert: " + parent);
+                    return;
+                }
+                certFile = new File(parent, IMPORTED_TLS_CERT_FILE_NAME);
+            }
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(certFile)) {
+                fos.write(bytes);
+            }
+            json.put(KEY_TLS_CERT, certFile.getAbsolutePath());
+            save();
+        } catch (IOException e) {
+            logger.e("Failed to install imported TLS certificate", e);
+        }
     }
 
     @Override

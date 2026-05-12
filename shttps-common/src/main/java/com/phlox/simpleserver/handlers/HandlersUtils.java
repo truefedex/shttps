@@ -1,13 +1,8 @@
 package com.phlox.simpleserver.handlers;
 
-import com.phlox.server.handlers.RedirectsMiddleware;
-import com.phlox.server.handlers.Router;
+import com.phlox.server.handlers.router.middleware.impl.RedirectsMiddleware;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
-
-import java.util.HashSet;
-import java.util.Set;
 
 public class HandlersUtils {
     private HandlersUtils() {
@@ -20,7 +15,6 @@ public class HandlersUtils {
         json.put("from", rule.from);
         json.put("to", rule.to);
         json.put("comment", rule.comment);
-        json.put("shttps_internal", rule.shttpsInternal);
         return json;
     }
 
@@ -30,10 +24,7 @@ public class HandlersUtils {
         String from = json.optString("from", "");
         String to = json.optString("to", "");
         String comment = json.optString("comment", "");
-        boolean shttpsInternal = json.optBoolean("shttps_internal", false);
-        RedirectsMiddleware.RedirectRule rule = new RedirectsMiddleware.RedirectRule(
+        return new RedirectsMiddleware.RedirectRule(
                 from, to, code, enabled, comment);
-        rule.shttpsInternal = shttpsInternal;
-        return rule;
     }
 }

@@ -1,10 +1,12 @@
 package com.phlox.simpleserver;
 
 import com.phlox.server.SimpleHttpServer;
-import com.phlox.server.handlers.CORSMiddleware;
-import com.phlox.server.handlers.RateLimitingMiddleware;
-import com.phlox.server.handlers.RedirectsMiddleware;
-import com.phlox.server.handlers.Router;
+import com.phlox.server.handlers.router.middleware.Middleware;
+import com.phlox.server.handlers.router.middleware.impl.CORSMiddleware;
+import com.phlox.server.handlers.router.middleware.impl.CustomHeadersMiddleware;
+import com.phlox.server.handlers.router.middleware.impl.RateLimitingMiddleware;
+import com.phlox.server.handlers.router.middleware.impl.RedirectsMiddleware;
+import com.phlox.server.handlers.router.Router;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
@@ -67,6 +69,7 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -160,9 +163,9 @@ public class SHTTPSApp {
     }
 
     public synchronized void startServer() throws UnrecoverableKeyException, CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
-        Router.Middlewares globalMiddlewares = new Router.Middlewares();
+        List<Middleware> globalMiddlewares = new ArrayList<>();
         //Setup middlewares
-        Router.Middlewares authMiddlewares = new Router.Middlewares();
+        List<Middleware> authMiddlewares = new ArrayList<>();
 
         final String loginFormPath = "/shttps-static-public/auth/";
         AuthManager authManager;
@@ -171,14 +174,14 @@ public class SHTTPSApp {
             case BASIC_AUTH:
                 authManager = new BasicAuthManager(provideUserStore());
                 BasicAuthMiddleware authMiddleware = new BasicAuthMiddleware(authManager);
-                authMiddlewares.addPreMiddleware(authMiddleware);
+                authMiddlewares.add(authMiddleware);
                 break;
             case WEB:
                 authManager = new WebAuthManager(provideUserStore(),
                         provideSessionManager(false));
                 WebAuthMiddleware authMiddleware1 = new WebAuthMiddleware(authManager,
                         loginFormPath, config.isAllowedUserRegistration());
-                authMiddlewares.addPreMiddleware(authMiddleware1);
+                authMiddlewares.add(authMiddleware1);
                 break;
             default:
                 authManager = new DummyAuthManager();
@@ -191,25 +194,31 @@ public class SHTTPSApp {
                 config.getRateLimiterTrustToIPHeaders()
         );
         if (config.getGlobalRateLimit() > 0) {
-            globalMiddlewares.addPreMiddleware(rateLimitingMiddleware);
+            globalMiddlewares.add(rateLimitingMiddleware);
         }
 
         List<CORSMiddleware.CORSRule> corsRules = config.getCORSRules();
         if (corsRules != null) {
-            globalMiddlewares.addPreMiddleware(new CORSMiddleware(corsRules));
+            globalMiddlewares.add(new CORSMiddleware(corsRules));
         }
 
-        RedirectsMiddleware redirectsMiddleware = new RedirectsMiddleware();
+
         List<RedirectsMiddleware.RedirectRule> redirectRules = config.getRedirectRules();
-        redirectsMiddleware.setRedirectRules(Collections.emptyList());
         if (redirectRules != null) {
+            RedirectsMiddleware redirectsMiddleware = new RedirectsMiddleware();
+            redirectsMiddleware.setRedirectRules(Collections.emptyList());
             for (RedirectsMiddleware.RedirectRule rule : redirectRules) {
                 if (rule.enabled) {
                     redirectsMiddleware.addRedirectRule(rule);
                 }
             }
+            globalMiddlewares.add(redirectsMiddleware);
         }
-        globalMiddlewares.addPreMiddleware(redirectsMiddleware);
+
+        List<CustomHeadersMiddleware.Rule> customHeadersRules = config.getHeadersOverrides();
+        if (customHeadersRules != null) {
+            globalMiddlewares.add(new CustomHeadersMiddleware(customHeadersRules));
+        }
 
         //Setup routes
         Router router = new Router(logsCollector, globalMiddlewares);
@@ -239,20 +248,20 @@ public class SHTTPSApp {
         //auth handlers (if any)
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.WEB)) {
             assert authManager instanceof WebAuthManager;
-            Router.Middlewares loginMiddlewares = new Router.Middlewares();
-            loginMiddlewares.addPreMiddleware(new RateLimitingMiddleware(10, 1000 * 60, config.getRateLimiterTrustToIPHeaders()));
+            List<Middleware> loginMiddlewares = new ArrayList<>();
+            loginMiddlewares.add(new RateLimitingMiddleware(10, 1000 * 60, config.getRateLimiterTrustToIPHeaders()));
             router.addRoute("/api/user/login", Set.of("POST"), new LoginRequestHandler(authManager), loginMiddlewares);
 
             router.addRoute("/api/user/logout", Set.of("POST"), new LogoutRequestHandler(authManager), authMiddlewares);
 
             if (config.isAllowedUserRegistration()) {
                 CaptchaManager captchaManager = new CaptchaManager(platformUtils);
-                Router.Middlewares captchaMiddlewares = new Router.Middlewares();
-                captchaMiddlewares.addPreMiddleware(new RateLimitingMiddleware(5, 1000 * 60, config.getRateLimiterTrustToIPHeaders()));
+                List<Middleware> captchaMiddlewares = new ArrayList<>();
+                captchaMiddlewares.add(new RateLimitingMiddleware(5, 1000 * 60, config.getRateLimiterTrustToIPHeaders()));
                 router.addRoute("/api/captcha", Set.of("GET"), new CaptchaRequestHandler(captchaManager), captchaMiddlewares);
 
-                Router.Middlewares userRegMiddlewares = new Router.Middlewares();
-                userRegMiddlewares.addPreMiddleware(new RateLimitingMiddleware(3, 1000 * 60, config.getRateLimiterTrustToIPHeaders()));
+                List<Middleware> userRegMiddlewares = new ArrayList<>();
+                userRegMiddlewares.add(new RateLimitingMiddleware(3, 1000 * 60, config.getRateLimiterTrustToIPHeaders()));
                 router.addRoute("/api/user/register", Set.of("POST"),
                         new UserRegistrationRequestHandler((WebAuthManager) authManager, captchaManager), userRegMiddlewares);
             }
@@ -265,13 +274,12 @@ public class SHTTPSApp {
                 new StaticAssetsRequestHandler("shttps-static-public", "/shttps-static-public", config), authMiddlewares);
 
 
-        Router.Middlewares filesRequestHandlerMiddlewares = new Router.Middlewares();
-        filesRequestHandlerMiddlewares.preMiddlewares.addAll(authMiddlewares.preMiddlewares);
+        List<Middleware> filesRequestHandlerMiddlewares = new ArrayList<>(authMiddlewares);
         if (config.isCGIEnabled()) {
             //CGI middleware will be added behind auth middleware
             //but before any static file processing (except built-in assets files)
             //Is it ideal place? Time will show
-            filesRequestHandlerMiddlewares.preMiddlewares.add(new CgiMiddleware(config, authManager));
+            filesRequestHandlerMiddlewares.add(new CgiMiddleware(config, authManager));
         }
         FilesRequestHandler filesRequestHandler = new FilesRequestHandler(config, authManager, userStore);
         filesRequestHandler.renderFolders = config.getRenderFolders();
@@ -541,7 +549,7 @@ public class SHTTPSApp {
 
         default void onServerStopped() {}
 
-        default void onRouterPrepared(Router router, Router.Middlewares filesRequestHandlerMiddlewares) {}
+        default void onRouterPrepared(Router router, List<Middleware> filesRequestHandlerMiddlewares) {}
     }
 
     public static class ServerVersionInfo {

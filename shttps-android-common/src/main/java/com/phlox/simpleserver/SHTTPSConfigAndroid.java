@@ -1,12 +1,11 @@
 package com.phlox.simpleserver;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.text.TextUtils;
 
-import com.phlox.server.handlers.RedirectsMiddleware;
+import com.phlox.server.handlers.router.middleware.impl.RedirectsMiddleware;
 import com.phlox.server.platform.Base64;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
@@ -178,6 +177,25 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
         } catch (Exception e) {
             logger.e("Failed to set TLS cert", e);
         }
+    }
+
+    @Override
+    public byte[] getTLSCertBytes() {
+        // On Android the certificate raw bytes are stored Base64-encoded in shared preferences.
+        String encoded = prefs.getString(KEY_TLS_CERT, null);
+        if (encoded == null || encoded.isEmpty()) return null;
+        try {
+            return Base64.decode(encoded);
+        } catch (Exception e) {
+            logger.e("Failed to decode TLS cert bytes", e);
+            return null;
+        }
+    }
+
+    @Override
+    public void installTLSCertBytes(byte[] bytes) {
+        // On Android setTLSCert(byte[]) already takes raw keystore bytes and Base64-encodes them.
+        setTLSCert(bytes);
     }
 
     @Override

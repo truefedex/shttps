@@ -6,6 +6,7 @@ import com.phlox.simpleserver.database.SHTTPSDatabaseFabric;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
 
+import java.io.File;
 import java.io.InputStream;
 
 public class DatabaseFabricImpl implements SHTTPSDatabaseFabric {
@@ -39,5 +40,17 @@ public class DatabaseFabricImpl implements SHTTPSDatabaseFabric {
         }
         return openDatabase(databaseFile.getAbsolutePath());*/
         throw new RuntimeException("Not implemented");
+    }
+
+    @Override
+    public boolean deleteDatabase(String path) {
+        if (path == null || path.isEmpty()) return true;
+        File f = new File(path);
+        boolean ok = !f.exists() || f.delete();
+        // Remove SQLite companion files if any.
+        new File(path + "-journal").delete();
+        new File(path + "-wal").delete();
+        new File(path + "-shm").delete();
+        return ok;
     }
 }
