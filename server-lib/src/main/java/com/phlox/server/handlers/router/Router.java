@@ -21,6 +21,7 @@ public class Router implements RequestHandler {
     private final RadixTree<HandlerExecutionChain> prefixedRoutes = new RadixTree<>();
 
     private final List<Middleware> globalMiddlewares;
+    private final HandlerExecutionChain notFoundChain;
 
     private final Listener listener;
 
@@ -31,6 +32,7 @@ public class Router implements RequestHandler {
     public Router(Listener listener, List<Middleware> globalMiddlewares) {
         this.listener = listener;
         this.globalMiddlewares = globalMiddlewares;
+        this.notFoundChain = new DefaultHandlerExecutionChain(globalMiddlewares.toArray(new Middleware[0]), null);
     }
 
     @Override
@@ -54,14 +56,17 @@ public class Router implements RequestHandler {
 
     private HandlerExecutionChain findMatchingChain(String method, String path) {
         Map<String, HandlerExecutionChain> methodRoutes = routes.get(method);
-        if (methodRoutes == null) {
-            return null;
+        if (methodRoutes != null) {
+            HandlerExecutionChain handler = methodRoutes.get(path);
+            if (handler != null) {
+                return handler;
+            }
         }
-        HandlerExecutionChain handler = methodRoutes.get(path);
-        if (handler != null) {
-            return handler;
+        HandlerExecutionChain prefixedHandler = prefixedRoutes.findLongestPrefix(path);
+        if (prefixedHandler != null) {
+            return prefixedHandler;
         }
-        return prefixedRoutes.findLongestPrefix(path);
+        return notFoundChain;
     }
 
     public void addRoute(String path, Set<String> methods, RequestHandler handler, List<Middleware> middlewares) {
