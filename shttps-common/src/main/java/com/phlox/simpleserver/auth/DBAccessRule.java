@@ -1,8 +1,8 @@
 package com.phlox.simpleserver.auth;
 
 import org.json.JSONObject;
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class DBAccessRule {
     public static final String DB_ACCESS_RULES_TABLE_NAME = "shttps_db_access_rule";
@@ -12,15 +12,15 @@ public class DBAccessRule {
     public static final String FIELD_ALLOW = "allow";
     public static final String FIELD_EXPRESSION = "expression";
 
-    public final @NonNull String roleName;
-    public final @NonNull String subject;//table or view name
-    public final @NonNull String operation;// SELECT, INSERT, UPDATE, DELETE, etc.
+    public final @NotNull String roleName;
+    public final @NotNull String subject;//table or view name
+    public final @NotNull String operation;// SELECT, INSERT, UPDATE, DELETE, etc.
     public final boolean allow;// allow or deny operation
     public final @Nullable String expression;// optional expression for dynamic allow/deny calculation
 
-    public DBAccessRule(@NonNull String roleName,
-                        @NonNull String subject,
-                        @NonNull String operation,
+    public DBAccessRule(@NotNull String roleName,
+                        @NotNull String subject,
+                        @NotNull String operation,
                         boolean allow,
                         @Nullable String expression) {
         this.roleName = roleName;

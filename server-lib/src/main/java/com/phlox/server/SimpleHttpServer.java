@@ -1,9 +1,12 @@
 package com.phlox.server;
 
 import com.phlox.server.handlers.RequestHandler;
+import com.phlox.server.request.BodyInputStream;
 import com.phlox.server.request.DefaultRequestBodyReader;
 import com.phlox.server.request.DefaultRequestHeadersParser;
+import com.phlox.server.request.ExpectContinueBodyStream;
 import com.phlox.server.request.Request;
+import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.request.RequestHeadersParser;
 import com.phlox.server.responses.Response;
@@ -13,8 +16,8 @@ import com.phlox.server.utils.MultiMap;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.SHTTPSLoggerProxy.Logger;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -37,7 +40,6 @@ import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -76,8 +78,13 @@ public class SimpleHttpServer {
     private static final Logger logger = SHTTPSLoggerProxy.getLogger(SimpleHttpServer.class);
     public static final String SERVER_NAME = "SHTTPS/3.x";
     public static final String HTTP_PROTOCOL = "HTTP/1.1";
+    //how much of an unread request body we are willing to drain to keep the connection reusable
+    private static final int MAX_UNREAD_BODY_DRAIN_BYTES = 64 * 1024;
+    private static final int UNREAD_BODY_DRAIN_READ_TIMEOUT_MS = 1000;
+    private static final byte[] RESPONSE_100_CONTINUE =
+            (HTTP_PROTOCOL + " 100 Continue\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
 
-    @NonNull
+    @NotNull
     private final RequestHandler requestHandler;
 
     @Nullable
@@ -125,7 +132,7 @@ public class SimpleHttpServer {
         void onConnectionRejected(Socket socket, int reason, long connectionId);
     }
 
-    public SimpleHttpServer(@NonNull RequestHandler requestHandler, @Nullable Callback callback) {
+    public SimpleHttpServer(@NotNull RequestHandler requestHandler, @Nullable Callback callback) {
         this.requestHandler = requestHandler;
         this.callback = callback;
     }
@@ -148,18 +155,10 @@ public class SimpleHttpServer {
         startListen(new ServerSocket(port));
     }
 
-    public void startListen(int port, byte[] p12cert, String password) throws IOException, KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException {
+    public void startListen(int port, byte[] p12cert, String keyStorePassword, String keyPassword) throws IOException, KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException {
         KeyStore ks = KeyStore.getInstance("PKCS12");
-        ks.load(new ByteArrayInputStream(p12cert), password.toCharArray());
-        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        kmf.init(ks, password.toCharArray());
-
-        SSLContext sc = SSLContext.getInstance("TLS");
-        sc.init(kmf.getKeyManagers(), null, null);
-
-        SSLServerSocketFactory ssf = sc.getServerSocketFactory();
-        SSLServerSocket serverSocket = (SSLServerSocket) ssf.createServerSocket(port);
-        startListen(serverSocket);
+        ks.load(new ByteArrayInputStream(p12cert), keyStorePassword.toCharArray());
+        startListen(port, ks, keyPassword);
     }
 
     public void startListen(int port, KeyStore ks, String keyPassword) throws IOException, KeyStoreException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException {
@@ -309,7 +308,7 @@ public class SimpleHttpServer {
 
         String connectionCloseReason = null;
         Request request = null;
-        DefaultRequestBodyReader requestBodyReader = new DefaultRequestBodyReader();
+        RequestBodyReader requestBodyReader = new DefaultRequestBodyReader();
         try (socket;
              OutputStream output = new BufferedOutputStream(socket.getOutputStream());
              InputStream input = new BufferedInputStream(socket.getInputStream())) {
@@ -343,10 +342,20 @@ public class SimpleHttpServer {
                     break;
                 }
 
+                //the client waits for an interim "100 Continue" response before sending the
+                //body; send it lazily on the first body read, so handlers that reject the
+                //request early (auth, locks, quota) never make the client upload the body
+                if (request.expectContinue && request.bodyStream != null &&
+                        !request.bodyStream.isFullyConsumed()) {
+                    request.bodyStream = new ExpectContinueBodyStream(request.bodyStream, () -> {
+                        output.write(RESPONSE_100_CONTINUE);
+                        output.flush();
+                    });
+                }
+
                 Response response = null;
                 Throwable errDuringHandle = null;
                 try {
-                    requestBodyReader.bodyWasRead = false;
                     response = requestHandler.handleRequest(requestContext, request);
                 } catch (Throwable e) {
                     logger.stackTrace(e);
@@ -355,11 +364,29 @@ public class SimpleHttpServer {
 
                 if (errDuringHandle != null || response == null ||
                         connectionKeepAliveTimeoutSeconds <= 0 ||
-                        (!response.headers.containsKey(Response.HEADER_CONTENT_LENGTH)) ||
-                        ((!requestBodyReader.bodyWasRead) && request.shouldHaveABody() ||
-                        Request.CONNECTION_CLOSE.equalsIgnoreCase(request.headers.get(Request.HEADER_CONNECTION)))
+                        Request.CONNECTION_CLOSE.equalsIgnoreCase(request.headers.get(Request.HEADER_CONNECTION))
                 ) {
                     keepAlive = false;
+                }
+
+                //if the handler left the request body (partially) unread, the connection can only be
+                //reused after those bytes are consumed. Drain a bounded amount, otherwise close
+                BodyInputStream bodyStream = request.bodyStream;
+                if (keepAlive && bodyStream != null && !bodyStream.isFullyConsumed()) {
+                    if (bodyStream.isDetached()) {
+                        //body reading was handed off to another thread (e.g. CGI stdin pump),
+                        //we can not safely touch the stream or reuse the connection
+                        keepAlive = false;
+                    } else {
+                        int prevTimeout = socket.getSoTimeout();
+                        socket.setSoTimeout(UNREAD_BODY_DRAIN_READ_TIMEOUT_MS);
+                        try {
+                            keepAlive = bodyStream.drainRemaining(MAX_UNREAD_BODY_DRAIN_BYTES);
+                        } catch (IOException e) {
+                            keepAlive = false;
+                        }
+                        socket.setSoTimeout(prevTimeout);
+                    }
                 }
 
                 if (errDuringHandle != null) {
@@ -380,13 +407,27 @@ public class SimpleHttpServer {
                     response.phrase = text;
                 }
 
-                response.headers.put(Response.HEADER_SERVER, SERVER_NAME);
+                //make the response length explicit, otherwise clients have to wait for the
+                //connection to close to detect the end of the response body
+                if (!response.headers.containsKey(Response.HEADER_CONTENT_LENGTH) &&
+                        response.code != 204 && response.code != 304 && response.code / 100 != 1 &&
+                        !Request.METHOD_HEAD.equals(request.method)) {
+                    if (response.getStream() == null) {
+                        response.setContentLength(0);
+                    } else {
+                        //body of unknown length is delimited by closing the connection
+                        //(chunked responses are not supported)
+                        keepAlive = false;
+                    }
+                }
+
+                response.headers.add(Response.HEADER_SERVER, SERVER_NAME);
                 if (!response.headers.containsKey(Response.HEADER_CONNECTION)) {
                     if (keepAlive) {
-                        response.headers.put(Response.HEADER_CONNECTION, "Keep-Alive");
-                        response.headers.put(Response.HEADER_KEEP_ALIVE, "timeout=" + connectionKeepAliveTimeoutSeconds);
+                        response.headers.add(Response.HEADER_CONNECTION, "Keep-Alive");
+                        response.headers.add(Response.HEADER_KEEP_ALIVE, "timeout=" + connectionKeepAliveTimeoutSeconds);
                     } else {
-                        response.headers.put(Response.HEADER_CONNECTION, Request.CONNECTION_CLOSE);
+                        response.headers.add(Response.HEADER_CONNECTION, Request.CONNECTION_CLOSE);
                     }
                 }
 
@@ -395,7 +436,7 @@ public class SimpleHttpServer {
                     for (String key: additionalResponseHeaders.keys()) {
                         List<String> values = additionalResponseHeaders.getAll(key);
                         for (int i = 0; i < values.size(); i++) {
-                            response.headers.put(key, values.get(i));
+                            response.headers.add(key, values.get(i));
                         }
                     }
                 }
@@ -408,7 +449,7 @@ public class SimpleHttpServer {
                 output.flush();
             }
 
-            if ((!requestBodyReader.bodyWasRead) && request.shouldHaveABody()) {
+            if (request != null && request.bodyStream != null && !request.bodyStream.isFullyConsumed()) {
                 //enter socket to half-close mode to correctly close connection without RST
                 Thread.sleep(150);//to not let send to client FIN before response
                 socket.shutdownOutput();

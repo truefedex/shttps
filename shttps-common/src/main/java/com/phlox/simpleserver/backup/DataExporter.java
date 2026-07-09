@@ -9,7 +9,7 @@ import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.database.Database;
 
 import org.json.JSONObject;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.FileInputStream;

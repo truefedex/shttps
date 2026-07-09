@@ -8,10 +8,11 @@ public final class DocumentFileUtils {
     }
 
     public static DocumentFile findChildByPath(DocumentFile root, String path, String pathPrefix) {
+        if (path.contains("../") || path.contains("..\\")) throw new SecurityException("Invalid path");
         if (pathPrefix != null) {
             path = pathPrefix + path;
         }
-        if ("/".equals(path) || "".equals(path)) {
+        if ("/".equals(path) || path.isEmpty()) {
             return root;
         }
         if (path.startsWith("/")) {

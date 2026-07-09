@@ -7,7 +7,6 @@ import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.HTTPUtils;
 import com.phlox.simpleserver.auth.AuthManager;
-import com.phlox.simpleserver.auth.User;
 
 import java.util.Date;
 import java.util.HashMap;
@@ -32,7 +31,7 @@ public class LogoutRequestHandler implements RequestHandler {
         //options.put("Secure", true);
         options.put("HttpOnly", true);
         options.put("SameSite", "Lax");
-        response.headers.put("Set-Cookie",
+        response.headers.add("Set-Cookie",
                 HTTPUtils.buildSetCookieHeader(
                         WebAuthManager.COOKIE_KEY_SESSION_ID, "", options
                 ));

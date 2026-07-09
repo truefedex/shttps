@@ -9,8 +9,8 @@ import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.auth.basic.AuthenticationException;
 import com.phlox.simpleserver.utils.Utils;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
@@ -22,21 +22,21 @@ public class WebAuthManager implements AuthManager {
     private static final long INITIAL_BACKOFF_MS = 1000; // 1 second
     private static final long MAX_BACKOFF_MS = 30000; // 30 seconds
     private static final long BACKOFF_RESET_MS = 300000; // 5 minutes
-    private final @NonNull UserStore userStore;
-    protected @NonNull SessionManager sessionManager;
+    private final @NotNull UserStore userStore;
+    protected @NotNull SessionManager sessionManager;
 
     private final @Nullable User guestUser;
     private final AtomicLong failedAttempts = new AtomicLong(0);
     private volatile long lastAttemptTime = 0;
 
-    public WebAuthManager(@NonNull UserStore userStore, @NonNull SessionManager sessionManager) {
+    public WebAuthManager(@NotNull UserStore userStore, @NotNull SessionManager sessionManager) {
         this.userStore = userStore;
         this.sessionManager = sessionManager;
         this.guestUser = userStore.find(User.GUEST_IDENTITY);
     }
 
     @Override
-    public @Nullable User getAuthenticatedUser(@NonNull RequestContext context) {
+    public @Nullable User getAuthenticatedUser(@NotNull RequestContext context) {
         Object user = context.data.get(CONTEXT_KEY_WEB_AUTH_USER);
         return user instanceof User ? (User) user : null;
     }
@@ -104,7 +104,7 @@ public class WebAuthManager implements AuthManager {
     }
 
     @Override
-    public void logout(@NonNull RequestContext context, @NonNull Request request) {
+    public void logout(@NotNull RequestContext context, @NotNull Request request) {
         String sessionId = request.cookies.get(COOKIE_KEY_SESSION_ID);
         if (sessionId != null) {
             sessionManager.invalidateSession(sessionId);
@@ -113,7 +113,7 @@ public class WebAuthManager implements AuthManager {
     }
 
     @Override
-    public @NonNull UserRightsEvaluator getUserRightsEvaluator() {
+    public @NotNull UserRightsEvaluator getUserRightsEvaluator() {
         return userStore.provideUserRightsEvaluator();
     }
 
@@ -123,7 +123,7 @@ public class WebAuthManager implements AuthManager {
      * @param password desired user password
      * @return validation result with error message if invalid, null if user registered successfully
      */
-    public @Nullable String registerUser(@NonNull String identity, @NonNull String password) {
+    public @Nullable String registerUser(@NotNull String identity, @NotNull String password) {
         // Validate identity
         if (identity.length() < 5) {
             return "Identity must be at least 5 characters long";

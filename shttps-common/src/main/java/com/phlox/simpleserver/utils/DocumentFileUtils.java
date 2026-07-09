@@ -3,7 +3,7 @@ package com.phlox.simpleserver.utils;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.auth.User;
 
-import org.jspecify.annotations.NonNull;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -12,11 +12,10 @@ import java.util.regex.Pattern;
 
 public final class DocumentFileUtils {
     public static DocumentFile findChildByPath(DocumentFile root, String path, User user) {
-        if (path.contains("../") || path.contains("..\\")) throw new SecurityException("Invalid path");
         return com.phlox.server.utils.docfile.DocumentFileUtils.findChildByPath(root, path, user != null ? user.rootDir : null);
     }
 
-    public static DocumentFile checkOrCreateUserDir(@NonNull DocumentFile root, @NonNull String userDir) {
+    public static DocumentFile checkOrCreateUserDir(@NotNull DocumentFile root, @NotNull String userDir) {
         String[] folders = userDir.replace('\\', '/').split("/");
         DocumentFile current = root;
         for (String folderName: folders) {
@@ -34,7 +33,7 @@ public final class DocumentFileUtils {
         return current;
     }
 
-    public static ArrayList<DocumentFile> searchRecursive(@NonNull DocumentFile rootDir, @NonNull String pattern, int maxResults) {
+    public static ArrayList<DocumentFile> searchRecursive(@NotNull DocumentFile rootDir, @NotNull String pattern, int maxResults) {
         if (!rootDir.isDirectory()) {
             throw new IllegalArgumentException("rootDir must be a directory");
         }

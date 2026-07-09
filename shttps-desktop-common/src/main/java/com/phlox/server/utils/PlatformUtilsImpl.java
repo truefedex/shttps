@@ -5,6 +5,10 @@ import static com.phlox.server.utils.docfile.RawDocumentFile.fileUriToFilePath;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
+import org.xmlpull.v1.XmlSerializer;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -126,5 +130,15 @@ public class PlatformUtilsImpl implements SHTTPSPlatformUtils {
     @Override
     public ImageData generateCaptchaImage(String code, int width, int height) {
         return CaptchaImageGenerator.generateCaptchaImage(code, width, height);
+    }
+
+    @Override
+    public XmlSerializer newXMLSerializer() {
+        return new org.kxml2.io.KXmlSerializer();
+    }
+
+    @Override
+    public XmlPullParser newXMLPullParser() throws XmlPullParserException {
+        return new org.kxml2.io.KXmlParser();
     }
 }

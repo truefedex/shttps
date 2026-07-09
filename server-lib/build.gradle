@@ -9,7 +9,7 @@ java {
 
 dependencies {
     api libs.proguard.annotations
-    api libs.jspecify
+    api libs.jetbrains.annotations
 
     testImplementation libs.junit5.jupiter.api
     testRuntimeOnly libs.junit5.jupiter.engine

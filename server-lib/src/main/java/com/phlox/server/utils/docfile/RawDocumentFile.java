@@ -10,12 +10,34 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 
 public class RawDocumentFile extends DocumentFile {
     public static final String FILE_URI_PREFIX = "file:/";
     private File mFile;
+    private FileAttributes mAttributes;
+
+    /**
+     * Metadata snapshot obtained with a single readAttributes() call and cached for the
+     * lifetime of this instance (instances are short-lived, typically one request).
+     * Mutating operations on this instance reset the cache, but external filesystem
+     * changes made after the first metadata query are not observed.
+     */
+    private static class FileAttributes {
+        boolean exists;
+        boolean directory;   // like File.isDirectory(): attribute of the symlink target
+        boolean regularFile; // like File.isFile(): attribute of the symlink target
+        boolean symbolicLink;
+        long length;
+        long lastModified;
+        long created;
+    }
 
     public static File getFile(DocumentFile document) {
         if (document instanceof RawDocumentFile) {
@@ -29,6 +51,40 @@ public class RawDocumentFile extends DocumentFile {
         mFile = file;
     }
 
+    private FileAttributes getAttributes() {
+        FileAttributes attributes = mAttributes;
+        if (attributes == null) {
+            attributes = readAttributes(mFile);
+            mAttributes = attributes;
+        }
+        return attributes;
+    }
+
+    private static FileAttributes readAttributes(File file) {
+        final FileAttributes result = new FileAttributes();
+        try {
+            Path path = file.toPath();
+            BasicFileAttributes attrs = Files.readAttributes(path, BasicFileAttributes.class);
+            result.exists = true;
+            result.directory = attrs.isDirectory();
+            result.regularFile = attrs.isRegularFile();
+            result.length = attrs.size();
+            result.lastModified = attrs.lastModifiedTime().toMillis();
+            long created = attrs.creationTime().toMillis();
+            // Filesystems without birth time support report 0 here
+            result.created = created > 0 ? created : result.lastModified;
+            result.symbolicLink = Files.isSymbolicLink(path);
+        } catch (IOException | RuntimeException e) {
+            // Missing file or broken symlink: keep File-compatible defaults
+            // (exists=false, length=0, lastModified=0)
+        }
+        return result;
+    }
+
+    private void invalidateAttributes() {
+        mAttributes = null;
+    }
+
     @Override
     public DocumentFile createFile(String mimeType, String displayName) {
         final File target = new File(mFile, displayName);
@@ -36,6 +92,7 @@ public class RawDocumentFile extends DocumentFile {
             if (!target.createNewFile()) {
                 throw new RuntimeException("Can not create file: " + displayName);
             }
+            invalidateAttributes();
             return new RawDocumentFile(this, target);
         } catch (IOException e) {
             e.printStackTrace();
@@ -50,6 +107,7 @@ public class RawDocumentFile extends DocumentFile {
             return null;
         }
         if (target.mkdirs()) {
+            invalidateAttributes();
             return new RawDocumentFile(this, target);
         } else {
             return null;
@@ -67,9 +125,8 @@ public class RawDocumentFile extends DocumentFile {
     }
 
     @Override
-    
     public String getType() {
-        if (mFile.isDirectory()) {
+        if (getAttributes().directory) {
             return null;
         } else {
             return getTypeForName(mFile.getName());
@@ -78,12 +135,13 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public boolean isDirectory() {
-        return mFile.isDirectory();
+        final FileAttributes attributes = getAttributes();
+        return attributes.directory && !attributes.symbolicLink;
     }
 
     @Override
     public boolean isFile() {
-        return mFile.isFile();
+        return getAttributes().regularFile;
     }
 
     @Override
@@ -93,12 +151,17 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public long lastModified() {
-        return mFile.lastModified();
+        return getAttributes().lastModified;
+    }
+
+    @Override
+    public long created() {
+        return getAttributes().created;
     }
 
     @Override
     public long length() {
-        return mFile.length();
+        return getAttributes().length;
     }
 
     @Override
@@ -114,12 +177,14 @@ public class RawDocumentFile extends DocumentFile {
     @Override
     public boolean delete() {
         deleteContents(mFile);
-        return mFile.delete();
+        boolean result = mFile.delete();
+        invalidateAttributes();
+        return result;
     }
 
     @Override
     public boolean exists() {
-        return mFile.exists();
+        return getAttributes().exists;
     }
 
     public interface ListFilesFallback {
@@ -149,6 +214,7 @@ public class RawDocumentFile extends DocumentFile {
         final File target = new File(mFile.getParentFile(), displayName);
         if (mFile.renameTo(target)) {
             mFile = target;
+            invalidateAttributes();
             return true;
         } else {
             return false;
@@ -186,14 +252,29 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public boolean copyTo(DocumentFile destDir) {
-        return Utils.copyFileOrDir(mFile, new File(((RawDocumentFile)destDir).mFile, mFile.getName()));
+        return copyTo(destDir, mFile.getName());
     }
 
     @Override
     public boolean moveTo(DocumentFile destDir) {
-        return Utils.moveFileOrDir(mFile, new File(((RawDocumentFile)destDir).mFile, mFile.getName()));
+        return moveTo(destDir, mFile.getName());
     }
-    
+
+    @Override
+    public boolean copyTo(DocumentFile destDir, String destName) {
+        boolean result = Utils.copyFileOrDir(mFile, new File(((RawDocumentFile)destDir).mFile, destName));
+        ((RawDocumentFile)destDir).invalidateAttributes();
+        return result;
+    }
+
+    @Override
+    public boolean moveTo(DocumentFile destDir, String destName) {
+        boolean result = Utils.moveFileOrDir(mFile, new File(((RawDocumentFile)destDir).mFile, destName));
+        invalidateAttributes();
+        ((RawDocumentFile)destDir).invalidateAttributes();
+        return result;
+    }
+
     @Override
     public DocumentFile findFile(String displayName) {
         File file = new File(mFile, displayName);
@@ -210,6 +291,7 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public OutputStream openOutputStream() throws FileNotFoundException {
+        invalidateAttributes();
         return new FileOutputStream(mFile);
     }
 
@@ -227,14 +309,21 @@ public class RawDocumentFile extends DocumentFile {
     }
 
     @Override
-    public String getRelativePath(DocumentFile file) {
-        if (!isDirectory() || file == null) {
+    public String getRelativePath(DocumentFile directOrIndirectChild) {
+        if (!isDirectory() || directOrIndirectChild == null) {
             return null;
         }
         String baseUri = getUri();
-        String fileUri = file.getUri();
+        String fileUri = directOrIndirectChild.getUri();
         if (fileUri.startsWith(baseUri)) {
-            return fileUri.substring(baseUri.length());
+            String rawRelativeUriPart = fileUri.substring(baseUri.length());
+            try {
+                return URLDecoder.decode(
+                        rawRelativeUriPart.replace("+", "%2B"),// so that the '+' in the name doesn't become a space
+                        "UTF-8");
+            } catch (UnsupportedEncodingException e) {
+                throw new RuntimeException(e);
+            }
         }
         return null;
     }

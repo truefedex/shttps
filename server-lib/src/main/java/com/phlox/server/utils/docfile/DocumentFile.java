@@ -45,6 +45,7 @@ public abstract class DocumentFile {
     public abstract boolean isVirtual();
 
     public abstract long lastModified();
+    public abstract long created();
 
     public abstract long length();
 
@@ -69,8 +70,10 @@ public abstract class DocumentFile {
     public abstract boolean renameTo(String displayName);
 
     public abstract boolean copyTo(DocumentFile destDir);
+    public abstract boolean copyTo(DocumentFile destDir, String destName);
 
     public abstract boolean moveTo(DocumentFile destDir);
+    public abstract boolean moveTo(DocumentFile destDir, String destName);
 
     public abstract long getStorageSize();
     public abstract long getStorageFreeSpace();
@@ -109,7 +112,7 @@ public abstract class DocumentFile {
 
     public abstract OutputStream openOutputStream() throws FileNotFoundException;
 
-    public abstract String getRelativePath(DocumentFile file);
+    public abstract String getRelativePath(DocumentFile directOrIndirectChild);
 
     @Override
     public boolean equals(Object o) {

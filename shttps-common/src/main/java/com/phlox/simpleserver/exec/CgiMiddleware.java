@@ -13,8 +13,8 @@ import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.utils.Utils;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -22,15 +22,15 @@ import java.util.List;
 
 public class CgiMiddleware implements Middleware {
     private final @Nullable String cgiPathPrefix;
-    private final @NonNull String cgiFolder;
-    private final @NonNull List<CgiType> cgiTypes;
-    private final @NonNull AuthManager authManager;
+    private final @NotNull String cgiFolder;
+    private final @NotNull List<CgiType> cgiTypes;
+    private final @NotNull AuthManager authManager;
     private final SHTTPSConfig.AuthMode authMode;
     private boolean isCgiDirMixedWithStaticFilesDir = false;
     private final SimpleProcessLauncher simplePl;
     private final CgiProcessLauncher cgiPl;
 
-    public CgiMiddleware(@NonNull SHTTPSConfig config, AuthManager authManager) {
+    public CgiMiddleware(@NotNull SHTTPSConfig config, AuthManager authManager) {
         this.authManager = authManager;
         this.cgiPathPrefix = config.getCGIPathPrefix();
         this.authMode = config.getAuthMode();

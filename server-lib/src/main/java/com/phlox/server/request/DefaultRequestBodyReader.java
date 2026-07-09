@@ -2,12 +2,13 @@ package com.phlox.server.request;
 
 import com.phlox.server.utils.HTTPUtils;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
+import com.phlox.server.utils.ScannerInputStream;
 import com.phlox.server.utils.Utils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -20,46 +21,39 @@ public class DefaultRequestBodyReader implements RequestBodyReader {
 
     static final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(DefaultRequestBodyReader.class);
 
-    public boolean bodyWasRead = false;
-
     @Override
-    public void readRequestBody(Request request, BinaryDataConsumer customBinaryDataConsumer) throws Exception {
-        BinaryDataConsumer binaryDataConsumer = customBinaryDataConsumer != null ? customBinaryDataConsumer : new DefaultBinaryDataConsumer();
-        if (Request.CONTENT_TYPE_MULTIPART_FORM.equals(request.contentType)) {
-            loadMultipartFormData(request, binaryDataConsumer);
-        } else if (Request.CONTENT_TYPE_URL_ENCODED_FORM.equals(request.contentType)) {
-            loadURLEncodedFormData(request);
-        } else if (request.contentLength > 0) {
-            try (OutputStream os = binaryDataConsumer.prepareBinaryOutputForRequestBodyData(request)) {
-                Utils.copyStream(request.input, os, request.contentLength);
-            }
-        }
-        bodyWasRead = true;
-    }
-
-    private void loadURLEncodedFormData(Request request) throws IOException {
-        String data;
-        if (request.contentLength != 0) {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            Utils.copyStream(request.input, baos, request.contentLength);
-            data = baos.toString(DEFAULT_CHARSET_NAME);
-        } else {
-            data = request.input.nextLine("UTF-8");
-        }
-        if (data == null) {
+    public void readRequestBody(Request request, RequestBodyConsumer customRequestBodyConsumer) throws Exception {
+        RequestBodyConsumer requestBodyConsumer = customRequestBodyConsumer != null ? customRequestBodyConsumer : new DefaultRequestBodyConsumer();
+        BodyInputStream body = request.bodyStream;
+        if (body == null || body.isFullyConsumed()) {
             return;
         }
+        if (Request.CONTENT_TYPE_MULTIPART_FORM.equals(request.contentType)) {
+            loadMultipartFormData(request, new ScannerInputStream(body), requestBodyConsumer);
+        } else if (Request.CONTENT_TYPE_URL_ENCODED_FORM.equals(request.contentType)) {
+            loadURLEncodedFormData(request, body);
+        } else {
+            try (OutputStream os = requestBodyConsumer.prepareBinaryOutputForRequestBodyData(request)) {
+                Utils.copyStream(body, os);
+            }
+        }
+    }
+
+    private void loadURLEncodedFormData(Request request, InputStream body) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        Utils.copyStream(body, baos);
+        String data = baos.toString(DEFAULT_CHARSET_NAME);
         HTTPUtils.decodeURLEncodedNameValuePairs(data, request.urlEncodedPostParams);
     }
 
-    private void loadMultipartFormData(Request request, BinaryDataConsumer binaryDataConsumer) throws Exception {
+    private void loadMultipartFormData(Request request, ScannerInputStream input, RequestBodyConsumer requestBodyConsumer) throws Exception {
         String currentBoundary = "--" + request.boundary;
         Map<String, String> partHeaders = new HashMap<>();
 
         // Read until we find the first boundary delimiter, ignoring any preamble
         String line;
         do {
-            line = request.input.nextLine();
+            line = input.nextLine();
             if (line == null) {
                 return;
             }
@@ -68,7 +62,7 @@ public class DefaultRequestBodyReader implements RequestBodyReader {
         do {
             partHeaders.clear();
             // Read headers until empty line
-            while ((line = request.input.nextLine("UTF-8")) != null && !line.isEmpty()) {
+            while ((line = input.nextLine("UTF-8")) != null && !line.isEmpty()) {
                 logger.d(line);
                 int j = line.indexOf(":");
                 if (j != -1) {
@@ -98,14 +92,14 @@ public class DefaultRequestBodyReader implements RequestBodyReader {
 
             // Read part body until next boundary
             byte[] boundaryBytes = ("\r\n" + currentBoundary).getBytes(DEFAULT_CHARSET_NAME);
-            try (OutputStream output = binaryDataConsumer.prepareBinaryOutputForMultipartData(request, contentType, name, fileName, partHeaders)) {
-                boolean foundDelimiter = request.input.readUntilDelimiter(boundaryBytes, output);
+            try (OutputStream output = requestBodyConsumer.prepareBinaryOutputForMultipartData(request, contentType, name, fileName, partHeaders)) {
+                boolean foundDelimiter = input.readUntilDelimiter(boundaryBytes, output);
                 if (!foundDelimiter) {
                     return;
                 }
 
                 // Check if this is the final boundary
-                line = request.input.nextLine();
+                line = input.nextLine();
                 if (line == null || line.equals("--")) {
                     break;
                 }

@@ -36,7 +36,7 @@ public class LoginRequestHandler implements RequestHandler {
             //options.put("Secure", true);
             options.put("HttpOnly", true);
             options.put("SameSite", "Lax");
-            response.headers.put("Set-Cookie",
+            response.headers.add("Set-Cookie",
                     HTTPUtils.buildSetCookieHeader(
                             WebAuthManager.COOKIE_KEY_SESSION_ID, sessionId, options
                     ));

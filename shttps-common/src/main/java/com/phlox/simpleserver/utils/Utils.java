@@ -2,8 +2,12 @@ package com.phlox.simpleserver.utils;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -119,111 +123,6 @@ public class Utils {
         return Pattern.compile(sb.toString(), Pattern.CASE_INSENSITIVE);
     }
 
-    public static List<String> splitSqlStatementsSQLite(String sql) {
-        List<String> result = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-
-        boolean inSingle = false;   // '...'
-        boolean inDouble = false;   // "..."
-        boolean inLineComment = false;  // --
-        boolean inBlockComment = false; // /* ... */
-
-        int len = sql.length();
-
-        for (int i = 0; i < len; i++) {
-            char c = sql.charAt(i);
-            char next = (i + 1 < len) ? sql.charAt(i + 1) : '\0';
-
-            // --- Handle comments ---
-
-            // Line comment --
-            if (!inSingle && !inDouble && !inBlockComment &&
-                    c == '-' && next == '-') {
-                inLineComment = true;
-                current.append(c);
-                continue;
-            }
-
-            // End of line comment
-            if (inLineComment && c == '\n') {
-                inLineComment = false;
-            }
-
-            // Block comment /* ... */
-            if (!inSingle && !inDouble && !inLineComment &&
-                    c == '/' && next == '*') {
-                inBlockComment = true;
-                current.append(c);
-                continue;
-            }
-
-            // End block comment */
-            if (inBlockComment && c == '*' && next == '/') {
-                inBlockComment = false;
-                current.append(c);
-                current.append(next);
-                i++;
-                continue;
-            }
-
-            if (inLineComment || inBlockComment) {
-                current.append(c);
-                continue;
-            }
-
-            // --- Handle string literals ---
-
-            // single-quoted strings: '...'
-            if (!inDouble && c == '\'') {
-                // check for escaped ''
-                if (inSingle && next == '\'') {
-                    current.append(c);
-                    current.append(next);
-                    i++;
-                    continue;
-                }
-
-                inSingle = !inSingle;
-                current.append(c);
-                continue;
-            }
-
-            // double-quoted strings: "..."
-            if (!inSingle && c == '"') {
-                // check for escaped ""
-                if (inDouble && next == '"') {
-                    current.append(c);
-                    current.append(next);
-                    i++;
-                    continue;
-                }
-
-                inDouble = !inDouble;
-                current.append(c);
-                continue;
-            }
-
-            // --- Statement separator ---
-            if (!inSingle && !inDouble && c == ';') {
-                String stmt = current.toString().trim();
-                if (!stmt.isEmpty()) {
-                    result.add(stmt);
-                }
-                current.setLength(0);
-                continue;
-            }
-
-            current.append(c);
-        }
-
-        String tail = current.toString().trim();
-        if (!tail.isEmpty()) {
-            result.add(tail);
-        }
-
-        return result;
-    }
-
     public static Map<String, Object> toMap(JSONObject jsonObject) {
         Map<String, Object> results = new HashMap<String, Object>();
         for (String key : jsonObject.keySet()) {
@@ -258,5 +157,30 @@ public class Utils {
             }
         }
         return results;
+    }
+
+    public static @Nullable String getParentPath(@Nullable String normalizedPath) {
+        if (normalizedPath == null || normalizedPath.isEmpty()) {
+            return null;
+        }
+
+        Path nioPath = Paths.get(normalizedPath.replace('\\', '/'));
+        Path parent = nioPath.getParent();
+
+        if (parent == null) {
+            return null;
+        }
+
+        return parent.toString().replace('\\', '/');
+    }
+
+    /** Joins two path segments with a single slash, avoiding a doubled one when
+     *  base already ends with '/' (e.g. the root "/"). Lock paths are compared
+     *  literally, so "//name" would not match a lock held on "/name". */
+    public static @NotNull String joinPaths(@NotNull String base, @NotNull String child) {
+        if (base.endsWith("/")) {
+            return base + child;
+        }
+        return base + "/" + child;
     }
 }

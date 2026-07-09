@@ -15,11 +15,12 @@ import com.phlox.simpleserver.utils.Utils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -71,6 +72,7 @@ public interface SHTTPSConfig {
     String KEY_CORS_RULES = "cors_rules";
     String KEY_DEFAULT_TEXT_CHARSET = "default_text_charset";
     String KEY_HEADERS_OVERRIDES = "headers_overrides";
+    String KEY_WEBDAV_SUPPORT = "webdav_support";
 
     default void runMigrations() {
         if (getConfigVersion() == CONFIG_VERSION) return;
@@ -122,94 +124,213 @@ public interface SHTTPSConfig {
 
     void setRootDir(String value);
 
-    boolean getRenderFolders();
+    default boolean getRenderFolders() {
+        return getBoolean(KEY_RENDER_FOLDERS, true);
+    }
 
-    void setRenderFolders(boolean value);
+    default void setRenderFolders(boolean value) {
+        setBoolean(KEY_RENDER_FOLDERS, value);
+    }
 
-    boolean getAllowEditing();
+    default boolean getAllowEditing() {
+        return getBoolean(KEY_ALLOW_EDITING, false);
+    }
 
-    void setAllowEditing(boolean value);
+    default void setAllowEditing(boolean value) {
+        setBoolean(KEY_ALLOW_EDITING, value);
+    }
 
-    int getPort();
+    default int getPort() {
+        return getInt(KEY_PORT, 8080);
+    }
 
-    void setPort(int value);
+    default void setPort(int value) {
+        setInt(KEY_PORT, value);
+    }
 
     @Deprecated
-    String getUsername();
+    default String getUsername() {
+        return getString(KEY_USERNAME, "");
+    }
 
     @Deprecated
-    String getPassword();
+    default String getPassword() {
+        return getSecretString(KEY_PASSWORD, "");
+    }
 
-    boolean getRedirectToIndex();
+    default boolean getRedirectToIndex() {
+        return getBoolean(KEY_REDIRECT_TO_INDEX, true);
+    }
 
-    void setRedirectToIndex(boolean value);
+    default void setRedirectToIndex(boolean value) {
+        setBoolean(KEY_REDIRECT_TO_INDEX, value);
+    }
 
-    boolean getUseTLS();
+    default boolean getUseTLS() {
+        return getBoolean(KEY_USE_TLS, false);
+    }
 
-    void setUseTLS(boolean value);
+    default void setUseTLS(boolean value) {
+        setBoolean(KEY_USE_TLS, value);
+    }
 
     KeyStore getTLSCert();
 
     void setTLSCert(byte [] value);
 
     default String getTLSKeystorePassword() {
-        return getString(KEY_TLS_CERT_KEYSTORE_PASS, null);
+        return getSecretString(KEY_TLS_CERT_KEYSTORE_PASS, null);
     }
 
     default void setTLSKeystorePassword(String value) {
-        setString(KEY_TLS_CERT_KEYSTORE_PASS, value);
+        setSecretString(KEY_TLS_CERT_KEYSTORE_PASS, value);
     }
 
     default String getTLSKeyPassword() {
-        return getString(KEY_TLS_CERT_KEY_PASS, null);
+        return getSecretString(KEY_TLS_CERT_KEY_PASS, null);
     }
 
     default void setTLSKeyPassword(String value) {
-        setString(KEY_TLS_CERT_KEY_PASS, value);
+        setSecretString(KEY_TLS_CERT_KEY_PASS, value);
     }
 
-    String[] getAllowedNetworkInterfaces();
+    default String[] getAllowedNetworkInterfaces() {
+        String value = getString(KEY_ALLOWED_NETWORK_INTERFACES, "");
+        if (value == null || value.isEmpty()) return null;
+        return value.split(",");
+    }
 
-    void setAllowedNetworkInterfaces(String[] value);
+    default void setAllowedNetworkInterfaces(String[] value) {
+        setString(KEY_ALLOWED_NETWORK_INTERFACES, value == null ? null : String.join(",", value));
+    }
 
-    Set<WhiteListMode> getWhiteListMode();
+    default Set<WhiteListMode> getWhiteListMode() {
+        return WhiteListMode.fromInt(getInt(KEY_WHITE_LIST_MODE, 0));
+    }
 
-    void setWhiteListMode(Set<WhiteListMode> value);
+    default void setWhiteListMode(Set<WhiteListMode> value) {
+        setInt(KEY_WHITE_LIST_MODE, value == null ? 0 : WhiteListMode.toInt(value));
+    }
 
-    HashSet<String> getWhiteList();
+    default HashSet<String> getWhiteList() {
+        HashSet<String> result = new HashSet<>();
+        String value = getString(KEY_WHITE_LIST_OF_IPS, "");
+        if (value == null || value.isEmpty()) return result;
+        Collections.addAll(result, value.split(","));
+        return result;
+    }
 
-    void setWhiteList(Set<String> value);
+    default void setWhiteList(Set<String> value) {
+        setString(KEY_WHITE_LIST_OF_IPS, value == null ? null : String.join(",", value));
+    }
 
-    void setCustomHeaders(String value);
+    default void setCustomHeaders(String value) {
+        setString(KEY_CUSTOM_HEADERS, value);
+    }
 
-    String getCustomHeaders();
+    default String getCustomHeaders() {
+        return getString(KEY_CUSTOM_HEADERS, "");
+    }
 
-    boolean isDatabaseEnabled();
+    default boolean isDatabaseEnabled() {
+        return getBoolean(KEY_DATABASE_ENABLED, false);
+    }
 
-    void setDatabaseEnabled(boolean value);
+    default void setDatabaseEnabled(boolean value) {
+        setBoolean(KEY_DATABASE_ENABLED, value);
+    }
 
-    String getDatabasePath();
+    default @Nullable String getDatabasePath() {
+        return getString(KEY_DATABASE_PATH, null);
+    }
 
-    void setDatabasePath(String value);
+    default void setDatabasePath(@Nullable String value) {
+        setString(KEY_DATABASE_PATH, value);
+    }
 
-    boolean isAllowDatabaseTableDataEditingApi();
+    default boolean isAllowDatabaseTableDataEditingApi() {
+        return getBoolean(KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API, false);
+    }
 
-    void setAllowDatabaseTableDataEditingApi(boolean value);
+    default void setAllowDatabaseTableDataEditingApi(boolean value) {
+        setBoolean(KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API, value);
+    }
 
-    boolean isAllowDatabaseCustomSqlRemoteApi();
+    default boolean isAllowDatabaseCustomSqlRemoteApi() {
+        return getBoolean(KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API, false);
+    }
 
-    void setAllowDatabaseCustomSqlRemoteApi(boolean value);
+    default void setAllowDatabaseCustomSqlRemoteApi(boolean value) {
+        setBoolean(KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API, value);
+    }
 
-    List<RedirectsMiddleware.RedirectRule> getRedirectRules();
+    /**
+     * Redirect rules are stored as a JSON-array string via the string primitives so that
+     * rule order is preserved on every platform ({@link #setJSONArray(String, JSONArray)}
+     * is set-backed on Android and would lose it). Legacy desktop configs stored the value
+     * as a nested JSON array; {@code getString} stringifies it, so both forms parse here.
+     */
+    default @Nullable List<RedirectsMiddleware.RedirectRule> getRedirectRules() {
+        String value = getString(KEY_REDIRECT_RULES, null);
+        if (value == null || value.isEmpty()) return null;
+        try {
+            JSONArray array = new JSONArray(value);
+            List<RedirectsMiddleware.RedirectRule> result = new ArrayList<>(array.length());
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject json = array.optJSONObject(i);
+                if (json != null) {
+                    result.add(HandlersUtils.ruleFromJson(json));
+                }
+            }
+            return result;
+        } catch (JSONException e) {
+            return null;
+        }
+    }
 
-    void setRedirectRules(List<RedirectsMiddleware.RedirectRule> value);
+    default void setRedirectRules(@Nullable List<RedirectsMiddleware.RedirectRule> value) {
+        if (value == null) {
+            setString(KEY_REDIRECT_RULES, null);
+            return;
+        }
+        JSONArray array = new JSONArray();
+        for (RedirectsMiddleware.RedirectRule rule : value) {
+            array.put(HandlersUtils.ruleToJson(rule));
+        }
+        setString(KEY_REDIRECT_RULES, array.toString());
+    }
 
-    List<User> getUsers();
+    default List<User> getUsers() {
+        JSONArray jsArr = getJsonArray(KEY_USERS, null);
+        List<User> users = new ArrayList<>();
+        if (jsArr == null) return users;
+        for (int i = 0; i < jsArr.length(); i++) {
+            JSONObject json = jsArr.optJSONObject(i);
+            if (json == null) continue;
+            try {
+                users.add(User.deserialize(json));
+            } catch (JSONException ignored) {
+                // skip malformed user
+            }
+        }
+        return users;
+    }
 
-    void setUsers(Collection<User> users);
+    default void setUsers(Collection<User> users) {
+        JSONArray jsArr = new JSONArray();
+        for (User user : users) {
+            jsArr.put(user.serialize());
+        }
+        setJSONArray(KEY_USERS, jsArr);
+    }
 
-    AuthMode getAuthMode();
-    void setAuthMode(AuthMode value);
+    default AuthMode getAuthMode() {
+        return AuthMode.valueOf(getString(KEY_AUTH_MODE, AuthMode.NONE.name()));
+    }
+
+    default void setAuthMode(AuthMode value) {
+        setString(KEY_AUTH_MODE, value.name());
+    }
 
     default boolean isStoreUsersInDatabase() {
         return getBoolean(KEY_STORE_USERS_IN_DATABASE, false);
@@ -471,12 +592,12 @@ public interface SHTTPSConfig {
                         for (int vi = 0; vi < jValues.length(); ++vi) {
                             Object v = jValues.opt(vi);
                             if (v != null) {
-                                headers.put(name, String.valueOf(v));
+                                headers.add(name, String.valueOf(v));
                             }
                         }
                     } else if (valuesObj != null) {
                         // Backward/forward compatibility: accept scalar as single value.
-                        headers.put(name, String.valueOf(valuesObj));
+                        headers.add(name, String.valueOf(valuesObj));
                     }
                 }
             }
@@ -547,6 +668,14 @@ public interface SHTTPSConfig {
         return rules;
     }
 
+    default boolean getWebDavSupport() {
+        return getBoolean(KEY_WEBDAV_SUPPORT, false);
+    }
+
+    default void setWebDavSupport(boolean value) {
+        setBoolean(KEY_WEBDAV_SUPPORT, value);
+    }
+
     int getInt(String key, int defaultValue);
 
     void setInt(String key, int value);
@@ -558,6 +687,21 @@ public interface SHTTPSConfig {
     String getString(String key, String defaultValue);
 
     void setString(String key, String value);
+
+    /**
+     * Reads a sensitive value (password, key passphrase, etc). Platforms that can
+     * protect secrets at rest (e.g. Android via KeyStore-backed encryption) override
+     * this pair; by default secrets are stored via the plain string primitives.
+     * Passing {@code null} to the setter removes the stored value.
+     */
+    default String getSecretString(String key, String defaultValue) {
+        return getString(key, defaultValue);
+    }
+
+    default void setSecretString(String key, String value) {
+        setString(key, value);
+    }
+
     JSONArray getJsonArray(String key, JSONArray defaultValue);
 
     /* Store array of JSONObject (other types currently not supported!) */

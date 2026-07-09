@@ -57,7 +57,7 @@ public class BasicAuthMiddleware implements Middleware {
         }
 
         Response response = new Response(401, UNAUTHORIZED);
-        response.headers.put(Response.HEADER_WWW_AUTHENTICATE, "Basic realm=\"" + realm + "\", charset=\"UTF-8\"");
+        response.headers.add(Response.HEADER_WWW_AUTHENTICATE, "Basic realm=\"" + realm + "\", charset=\"UTF-8\"");
         return response;
     }
 }

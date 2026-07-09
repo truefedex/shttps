@@ -7,7 +7,6 @@ import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.Utils;
 import com.phlox.server.utils.docfile.DocumentFile;
-
 import com.phlox.simpleserver.SHTTPSApp;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
@@ -16,6 +15,14 @@ import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.auth.web.WebAuthManager;
 import com.phlox.simpleserver.handlers.files.FileListRequestHandler;
 import com.phlox.simpleserver.handlers.files.StaticFileRequestHandler;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
+import com.phlox.simpleserver.handlers.files.webdav.WebDavCopyMoveHelper;
+import com.phlox.simpleserver.handlers.files.webdav.WebDavDeleteHelper;
+import com.phlox.simpleserver.handlers.files.webdav.WebDavLockHelper;
+import com.phlox.simpleserver.handlers.files.webdav.WebDavMkColHelper;
+import com.phlox.simpleserver.handlers.files.webdav.WebDavPropFindHelper;
+import com.phlox.simpleserver.handlers.files.webdav.WebDavPropPatchHelper;
+import com.phlox.simpleserver.handlers.files.webdav.WebDavPutHelper;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
@@ -28,18 +35,42 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 public class FilesRequestHandler extends StaticFileRequestHandler {
+    public static final String EDITING_NOT_ALLOWED = "Editing not allowed";
     final String template;
     public boolean renderFolders = false;
     public boolean allowEditing = false;
 
-    private SHTTPSPlatformUtils platformUtils = SHTTPSApp.getInstance().platformUtils;
+    private final SHTTPSPlatformUtils platformUtils = SHTTPSApp.getInstance().platformUtils;
+    private final List<String> allowedMethods =
+            List.of(Request.METHOD_GET, Request.METHOD_HEAD, Request.METHOD_OPTIONS);
+    private final List<String> allowedMethodsIfWebDav =
+            List.of(Request.METHOD_GET, Request.METHOD_HEAD, Request.METHOD_OPTIONS,
+                    Request.METHOD_PROP_FIND, Request.METHOD_MKCOL, Request.METHOD_DELETE,
+                    Request.METHOD_COPY, Request.METHOD_MOVE, Request.METHOD_PUT,
+                    Request.METHOD_PROP_PATCH, Request.METHOD_LOCK, Request.METHOD_UNLOCK);
 
-    public FilesRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
-        super(config, authManager, userStore);
+    private final WebDavPropFindHelper propFindHelper;
+    private final WebDavPropPatchHelper propPatchHelper;
+    private final WebDavMkColHelper mkColHelper;
+    private final WebDavDeleteHelper deleteHelper;
+    private final WebDavCopyMoveHelper copyMoveHelper;
+    private final WebDavPutHelper putHelper;
+    private final WebDavLockHelper lockHelper;
+
+    public FilesRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore, LockManager locks) {
+        super(config, authManager, userStore, locks);
+        propFindHelper = new WebDavPropFindHelper(platformUtils, userStore, locks);
+        propPatchHelper = new WebDavPropPatchHelper(platformUtils, userStore, locks);
+        mkColHelper = new WebDavMkColHelper(platformUtils, userStore, locks);
+        deleteHelper = new WebDavDeleteHelper(platformUtils, userStore, locks);
+        copyMoveHelper = new WebDavCopyMoveHelper(platformUtils, userStore, locks);
+        putHelper = new WebDavPutHelper(platformUtils, userStore, locks);
+        lockHelper = new WebDavLockHelper(platformUtils, userStore, locks);
 
         try (InputStream is = platformUtils.openAssetStream("file-browser.html")) {
             template = new String(Utils.readAllBytes(is), StandardCharsets.UTF_8);
@@ -50,20 +81,70 @@ public class FilesRequestHandler extends StaticFileRequestHandler {
 
     @Override
     public Response handleRequest(RequestContext context, Request request) throws Exception {
-        boolean isHead = request.method.equals(Request.METHOD_HEAD);
-        if (!request.method.equals(Request.METHOD_GET) && !isHead) {
-            return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_HEAD});
+        if (config.getWebDavSupport()) {
+            if (!allowedMethodsIfWebDav.contains(request.method)) {
+                return StandardResponses.METHOD_NOT_ALLOWED(allowedMethodsIfWebDav.toArray(new String[0]));
+            }
+        } else {
+            if (!allowedMethods.contains(request.method)) {
+                return StandardResponses.METHOD_NOT_ALLOWED(allowedMethods.toArray(new String[0]));
+            }
         }
 
         String destPath = request.path;
         DocumentFile root = config.getRootDir();
         User user = checkUser(context);
         DocumentFile file = DocumentFileUtils.findChildByPath(root, destPath, user);
+        DocumentFile userRoot = (user != null && user.rootDir != null) ?
+                DocumentFileUtils.checkOrCreateUserDir(root, user.rootDir) : root;
+        if (userRoot == null) throw new IllegalStateException("Can not locate user root dir");
+
+        switch (request.method) {
+            case Request.METHOD_OPTIONS:
+                return prepareOptionsResponse(file, config);
+            case Request.METHOD_PROP_FIND:
+                return propFindHelper.handlePropFind(this, context, request, userRoot, file,
+                        destPath, user);
+            case Request.METHOD_PROP_PATCH:
+                if (!config.getAllowEditing())
+                    return StandardResponses.FORBIDDEN(EDITING_NOT_ALLOWED);
+                return propPatchHelper.handlePropPatch(this, context, request, userRoot, file,
+                        destPath, user);
+            case Request.METHOD_MKCOL:
+                if (!config.getAllowEditing())
+                    return StandardResponses.FORBIDDEN(EDITING_NOT_ALLOWED);
+                return mkColHelper.handleMkcolRequest(this, request, userRoot, file, user);
+            case Request.METHOD_DELETE:
+                if (!config.getAllowEditing())
+                    return StandardResponses.FORBIDDEN(EDITING_NOT_ALLOWED);
+                return deleteHelper.handleDeleteRequest(this, request, userRoot, file, user);
+            case Request.METHOD_COPY:
+            case Request.METHOD_MOVE:
+                if (!config.getAllowEditing())
+                    return StandardResponses.FORBIDDEN(EDITING_NOT_ALLOWED);
+                return copyMoveHelper.handleCopyMoveRequest(this, request, userRoot, file, user);
+            case Request.METHOD_PUT:
+                if (!config.getAllowEditing())
+                    return StandardResponses.FORBIDDEN(EDITING_NOT_ALLOWED);
+                return putHelper.handlePutRequest(context, this, request, userRoot, file, user);
+            case Request.METHOD_LOCK:
+                if (!config.getAllowEditing())
+                    return StandardResponses.FORBIDDEN(EDITING_NOT_ALLOWED);
+                return lockHelper.handleLockRequest(context, this, request, userRoot, file, user);
+            case Request.METHOD_UNLOCK:
+                if (!config.getAllowEditing())
+                    return StandardResponses.FORBIDDEN(EDITING_NOT_ALLOWED);
+                return lockHelper.handleUnlockRequest(this, request, userRoot, file, user);
+        }
+
         if (file == null) {
             return StandardResponses.NOT_FOUND();
         }
         boolean forceShowContents = request.queryParams.containsKey("forceContents");
-        boolean canRedirectToIndex = !forceShowContents && config.getRedirectToIndex() && file.isDirectory() && file.findFile("index.html") != null;
+        boolean canRedirectToIndex = !forceShowContents &&
+                config.getRedirectToIndex() &&
+                file.isDirectory() &&
+                file.findFile("index.html") != null;
         if (file.isDirectory() && renderFolders && !canRedirectToIndex) {
             if (checkIsForbidden(user,
                     destPath, FileListRequestHandler.LIST_CONTENTS_OPERATION, Map.of(
@@ -93,7 +174,7 @@ public class FilesRequestHandler extends StaticFileRequestHandler {
                 put("dbConnected", config.isDatabaseEnabled());
             }});
 
-            if (isHead) {
+            if (request.method.equals(Request.METHOD_HEAD)) {
                 return new Response(response.getContentType(), response.getContentLength(), null);
             } else {
                 return response;
@@ -111,16 +192,35 @@ public class FilesRequestHandler extends StaticFileRequestHandler {
         return super.handleRequest(context, request);
     }
 
+    public static Response prepareOptionsResponse(DocumentFile fileOrDirectory, SHTTPSConfig config) {
+        Response response = new Response(200, StandardResponses.PHRASE_OK);
+        String allowedMethods = "OPTIONS";
+        if (config.getWebDavSupport()) {
+            if (fileOrDirectory == null) {
+                allowedMethods += ", MKCOL, PUT, LOCK, UNLOCK";
+            } else if (fileOrDirectory.isDirectory()) {
+                allowedMethods += ", GET, HEAD, PROPFIND, MKCOL, DELETE, COPY, MOVE, PROPPATCH, LOCK, UNLOCK";
+            } else {
+                allowedMethods += ", GET, HEAD, PROPFIND, DELETE, COPY, MOVE, PUT, PROPPATCH, LOCK, UNLOCK";
+            }
+        } else {
+            if (fileOrDirectory != null) {
+                allowedMethods += ", GET, HEAD";
+            }
+        }
+        response.headers.add("Allow", allowedMethods);
+
+        if (config.getWebDavSupport()) {
+            response.headers.add("DAV", "1, 2");
+            response.headers.add("MS-Author-Via", "DAV");
+        }
+        return response;
+    }
+
     private static class FileModel {
         public String path;
         public String name;
         public boolean isFolder;
-
-        public FileModel(String path, String name, boolean isFolder) {
-            this.path = path;
-            this.name = name;
-            this.isFolder = isFolder;
-        }
 
         public FileModel(JSONObject json, String parentPath) throws JSONException {
             name = json.getString("name");

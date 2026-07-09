@@ -40,7 +40,7 @@ public class CaptchaRequestHandler implements RequestHandler {
             // Set cookie to expire in 5 minutes (same as captcha session expiry)
             cookieOptions.put("Max-Age", "300");
             
-            response.headers.put("Set-Cookie",
+            response.headers.add("Set-Cookie",
                     HTTPUtils.buildSetCookieHeader(
                             "captcha_session_id", captchaResult.sessionId, cookieOptions
                     ));

@@ -22,6 +22,7 @@ dependencies {
     implementation project(path: ':server-lib')
     implementation project(path: ':shttps-common')
     implementation libs.json
+    implementation libs.kxml
     implementation libs.sqlite.jdbc
     implementation libs.slf4j.simple
 

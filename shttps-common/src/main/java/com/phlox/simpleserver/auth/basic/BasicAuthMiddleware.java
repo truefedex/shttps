@@ -22,7 +22,7 @@ public class BasicAuthMiddleware implements Middleware {
         User user = authManager.authenticate(context, request);
         if (user == null) {
             Response response = StandardResponses.UNAUTHORIZED();
-            response.headers.put(Response.HEADER_WWW_AUTHENTICATE, "Basic realm=\"Authentication required\", charset=\"UTF-8\"");
+            response.headers.add(Response.HEADER_WWW_AUTHENTICATE, "Basic realm=\"Authentication required\", charset=\"UTF-8\"");
             return response;
         }
         return chain.proceed(context, request);

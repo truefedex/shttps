@@ -114,8 +114,8 @@ public class RateLimitingMiddleware implements Middleware {
         Response response = chain.proceed(context, request);
         if (response == null) return null;
         // Add rate limit headers to response
-        response.headers.put("rate_limit_remaining", Integer.toString(maxRequests - currentCount));
-        response.headers.put("rate_limit_reset", Long.toString(entry.getWindowStart() + timeWindowMs));
+        response.headers.add("rate_limit_remaining", Integer.toString(maxRequests - currentCount));
+        response.headers.add("rate_limit_reset", Long.toString(entry.getWindowStart() + timeWindowMs));
         
         return response;
     }
@@ -240,10 +240,10 @@ public class RateLimitingMiddleware implements Middleware {
             "Please try again in " + retryAfter + " seconds.");
         
         // Add standard rate limit headers
-        response.headers.put("X-RateLimit-Limit", String.valueOf(maxRequests));
-        response.headers.put("X-RateLimit-Remaining", "0");
-        response.headers.put("X-RateLimit-Reset", String.valueOf(resetTime / 1000));
-        response.headers.put("Retry-After", String.valueOf(retryAfter));
+        response.headers.add("X-RateLimit-Limit", String.valueOf(maxRequests));
+        response.headers.add("X-RateLimit-Remaining", "0");
+        response.headers.add("X-RateLimit-Reset", String.valueOf(resetTime / 1000));
+        response.headers.add("Retry-After", String.valueOf(retryAfter));
         
         return response;
     }

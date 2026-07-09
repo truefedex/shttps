@@ -5,4 +5,8 @@ import java.io.InputStream;
 public interface RequestBody {
     InputStream open();
     byte[] asBytes();
+
+    default long size() {
+        return asBytes().length;
+    }
 }

@@ -12,6 +12,7 @@ import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
@@ -24,8 +25,8 @@ public class ThumbnailHandler extends BaseFileRequestHandler {
 
     private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
 
-    public ThumbnailHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
-        super(config, authManager, userStore);
+    public ThumbnailHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore, LockManager locks) {
+        super(config, authManager, userStore, locks);
     }
 
     @Override
@@ -61,7 +62,7 @@ public class ThumbnailHandler extends BaseFileRequestHandler {
 
             ByteArrayInputStream bais = new ByteArrayInputStream(thumbnail.data);
             Response response = new Response(thumbnail.mimeType, thumbnail.data.length, bais);
-            response.headers.put(Response.HEADER_LAST_MODIFIED, HTTPUtils.getHTTPDateFormat().format(new Date( destFile.lastModified() )));
+            response.headers.add(Response.HEADER_LAST_MODIFIED, HTTPUtils.getHTTPDateFormat().format(new Date( destFile.lastModified() )));
             return response;
         } catch (FileNotFoundException e) {
             return StandardResponses.NOT_FOUND();

@@ -7,9 +7,10 @@ import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -19,21 +20,23 @@ public abstract class BaseFileRequestHandler implements RequestHandler {
     protected final SHTTPSConfig config;
     protected final AuthManager authManager;
     protected final UserStore userStore;
+    protected final LockManager locks;
 
-    public BaseFileRequestHandler(@NonNull SHTTPSConfig config, @NonNull  AuthManager authManager,
-                                  @NonNull UserStore userStore) {
+    public BaseFileRequestHandler(@NotNull SHTTPSConfig config, @NotNull  AuthManager authManager,
+                                  @NotNull UserStore userStore, @NotNull LockManager locks) {
         this.config = config;
         this.authManager = authManager;
         this.userStore = userStore;
+        this.locks = locks;
     }
 
-    protected @Nullable User checkUser(@NonNull RequestContext context) {
+    protected @Nullable User checkUser(@NotNull RequestContext context) {
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.NONE)) return null;
         return authManager.getAuthenticatedUser(context);
     }
 
-    protected boolean checkIsForbidden(@Nullable User user, @NonNull String subject,
-                @NonNull String operation, @Nullable Map<String, Object> operationParams,
+    public boolean checkIsForbidden(@Nullable User user, @NotNull String subject,
+                @NotNull String operation, @Nullable Map<String, Object> operationParams,
                                        User.FileSystemRights... requestedRights) {
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.NONE)) return false;
         if (user == null) return true;

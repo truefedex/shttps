@@ -66,7 +66,7 @@ public class IntentSendersMiddleware implements Middleware {
                     }
                     Bundle extras = getResultExtras(true);
                     for (String key: extras.keySet()) {
-                        response.headers.put(key, Objects.requireNonNull(extras.get(key)).toString());
+                        response.headers.add(key, Objects.requireNonNull(extras.get(key)).toString());
                     }
                     future.complete(response);
                 }

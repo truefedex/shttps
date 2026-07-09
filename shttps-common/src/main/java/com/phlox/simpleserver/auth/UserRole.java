@@ -2,8 +2,8 @@ package com.phlox.simpleserver.auth;
 
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.Serializable;
 import java.util.EnumSet;
@@ -17,17 +17,17 @@ public class UserRole implements Serializable {
     public static final String FIELD_FILE_STORAGE_SIZE_LIMIT = "storage_limit";
     public static final String FIELD_SYSTEM_RIGHTS = "system_rights";
 
-    public @NonNull String name;
-    public @NonNull EnumSet<User.FileSystemRights> fsRights;
-    public @NonNull EnumSet<User.DBRights> dbRights;
+    public @NotNull String name;
+    public @NotNull EnumSet<User.FileSystemRights> fsRights;
+    public @NotNull EnumSet<User.DBRights> dbRights;
     public @Nullable Long storageLimit = null;
-    public @NonNull EnumSet<User.SystemRights> systemRights;
+    public @NotNull EnumSet<User.SystemRights> systemRights;
 
-    public UserRole(@NonNull String name,
-                    @NonNull EnumSet<User.FileSystemRights> fsRights,
-                    @NonNull EnumSet<User.DBRights> dbRights,
+    public UserRole(@NotNull String name,
+                    @NotNull EnumSet<User.FileSystemRights> fsRights,
+                    @NotNull EnumSet<User.DBRights> dbRights,
                     @Nullable Long storageLimit,
-                    @NonNull EnumSet<User.SystemRights> systemRights) {
+                    @NotNull EnumSet<User.SystemRights> systemRights) {
         this.name = name;
         this.fsRights = fsRights;
         this.dbRights = dbRights;
@@ -35,7 +35,7 @@ public class UserRole implements Serializable {
         this.systemRights = systemRights;
     }
 
-    public @NonNull JSONObject serialize() {
+    public @NotNull JSONObject serialize() {
         JSONObject object = new JSONObject();
         object.put(FIELD_NAME, name);
 
@@ -65,7 +65,7 @@ public class UserRole implements Serializable {
         return object;
     }
 
-    public static @NonNull UserRole deserialize(JSONObject object)  throws JSONException {
+    public static @NotNull UserRole deserialize(JSONObject object)  throws JSONException {
         String name = object.getString(FIELD_NAME);
 
         // Deserialize fsRights from bitmask

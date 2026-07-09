@@ -1,8 +1,8 @@
 package com.phlox.simpleserver.auth;
 
 import org.json.JSONObject;
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
 
@@ -14,15 +14,15 @@ public class FSAccessRule {
     public static final String FIELD_ALLOW = "allow";
     public static final String FIELD_EXPRESSION = "expression";
 
-    public final @NonNull String roleName;
-    public final @NonNull String subject;//file or directory path (wildcards supported)
-    public final @NonNull String operation; // READ, WRITE, DELETE, etc.
+    public final @NotNull String roleName;
+    public final @NotNull String subject;//file or directory path (wildcards supported)
+    public final @NotNull String operation; // READ, WRITE, DELETE, etc.
     public final boolean allow;// allow or deny operation
     public final @Nullable String expression;// optional expression for dynamic allow/deny calculation
 
-    public FSAccessRule(@NonNull String roleName,
-                        @NonNull String subject,
-                        @NonNull String operation,
+    public FSAccessRule(@NotNull String roleName,
+                        @NotNull String subject,
+                        @NotNull String operation,
                         boolean allow,
                         @Nullable String expression) {
         this.roleName = roleName;

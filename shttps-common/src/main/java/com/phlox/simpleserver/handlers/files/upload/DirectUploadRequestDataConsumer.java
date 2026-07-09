@@ -1,57 +1,68 @@
 package com.phlox.simpleserver.handlers.files.upload;
 
 import com.phlox.server.platform.MimeTypeMap;
-import com.phlox.server.request.DefaultBinaryDataConsumer;
+import com.phlox.server.request.DefaultRequestBodyConsumer;
 import com.phlox.server.request.Request;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.SHTTPSApp;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
-import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
-import com.phlox.simpleserver.utils.Holder;
 import com.phlox.simpleserver.utils.ProgressOutputStream;
+import com.phlox.simpleserver.utils.StorageQuota;
 import com.phlox.simpleserver.utils.Utils;
 
 import java.io.BufferedOutputStream;
-import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Map;
 
-public class DirectUploadRequestDataConsumer extends DefaultBinaryDataConsumer {
-    public static final String ERROR_MSG_NO_SPACE_LEFT = "No file space left";
+public class DirectUploadRequestDataConsumer extends DefaultRequestBodyConsumer {
+    public static final String ERROR_MSG_NO_SPACE_LEFT = StorageQuota.ERROR_MSG_NO_SPACE_LEFT;
 
     private final User user;
-    private final UserStore userStore;
     private final SHTTPSConfig config;
+    private final StorageQuota quota;
+    private final LockManager locks;
+    private final String lockToken;
 
-    public DirectUploadRequestDataConsumer(SHTTPSConfig config, User user, UserStore userStore) {
+    public DirectUploadRequestDataConsumer(SHTTPSConfig config, User user, StorageQuota quota, LockManager locks, String lockToken) {
         this.config = config;
         this.user = user;
-        this.userStore = userStore;
+        this.quota = quota;
+        this.locks = locks;
+        this.lockToken = lockToken;
     }
 
     @Override
-    public OutputStream prepareBinaryOutputForMultipartData(Request request, String contentType, String name, String fileName, Map<String, String> partHeaders) throws IOException {
+    public OutputStream prepareBinaryOutputForMultipartData(Request request, String contentType, String name, String fileName, Map<String, String> partHeaders) throws Exception {
         if (!config.getAllowEditing()) return null;
         DocumentFile root = config.getRootDir();
         String destPath = request.queryParams.get("path");
         if (name == null) return null;
         if (destPath == null) return null;
         if (name.equals("files[]")) {
-            if (fileName.contains("..")) throw new SecurityException("Invalid file name");
+            if (fileName.contains("..")) throw new UploadException(400, "Bad request");
             String fullDestPath = destPath;
+            String relativeDirs = null;
             int pathSepLastIndex = fileName.lastIndexOf('/');
             if (pathSepLastIndex != -1) {
-                fullDestPath = destPath + "/" + fileName.substring(0, pathSepLastIndex);
+                relativeDirs = fileName.substring(0, pathSepLastIndex);
+                fullDestPath = Utils.joinPaths(destPath, relativeDirs);
                 fileName = fileName.substring(pathSepLastIndex + 1);
             }
+
+            String filePath = Utils.joinPaths(fullDestPath, fileName);
+            if (!locks.mayWrite(filePath, lockToken)) {
+                throw new UploadException(423, "Locked");
+            }
+
             DocumentFile uploadDir = DocumentFileUtils.findChildByPath(root, fullDestPath, user);
             if (uploadDir == null) {
                 //try to find parent dir and create missing dirs
                 DocumentFile parent = DocumentFileUtils.findChildByPath(root, destPath, user);
-                if (parent == null) return null;
-                String[] parts = fullDestPath.substring(destPath.length() + 1).split("/");
+                if (parent == null || relativeDirs == null) return null;
+                String[] parts = relativeDirs.split("/");
                 for (String part : parts) {
                     DocumentFile child = parent.findFile(part);
                     if (child != null) {
@@ -75,89 +86,43 @@ public class DirectUploadRequestDataConsumer extends DefaultBinaryDataConsumer {
 
             String contentLengthHeader = partHeaders.get(Request.HEADER_CONTENT_LENGTH);
             long fileSize = contentLengthHeader != null ? Long.parseLong(contentLengthHeader) : 0L;
-            Long storageLimit = user != null ? userStore.provideUserRightsEvaluator().getStorageLimit(user) : null;
-            Long spaceUsed = user != null ? user.usedStorage : null;
-            long freeSpace;
-            if (storageLimit != null) {
-                freeSpace = storageLimit - spaceUsed;
-            } else {
-                freeSpace = uploadDir.getStorageFreeSpace();
-            }
-            if (freeSpace < fileSize) {
-                throw new IOException(ERROR_MSG_NO_SPACE_LEFT);
-            }
 
             DocumentFile file = uploadDir.findFile(fileName);
+            long previousSize = file != null ? file.length() : 0;
+            if (!quota.hasSpaceFor(uploadDir, fileSize, previousSize)) {
+                throw new UploadException(413, ERROR_MSG_NO_SPACE_LEFT);
+            }
             if (file == null) {
                 file = uploadDir.createFile(type, fileName);
                 if (file == null) {
-                    throw new IOException("Can not create file: " + fileName);
+                    throw new UploadException(400, "Can not create file: " + fileName);
                 }
             }
 
             OutputStream fileOutput = SHTTPSApp.getInstance().platformUtils.openOutputStream(file.getUri());
 
-            final DocumentFile finalUploadDir = uploadDir;
-            final DocumentFile finalFile = file;
-            final Holder<Boolean> interruptedByExceptionMark = new Holder<>(false);
-
-            ProgressOutputStream.WriteProgressListener writeProgressListener = new ProgressOutputStream.WriteProgressListener() {
-                @Override
-                public void onChunkWritten(long totalBytes, long chunkSize) throws Exception {
-                    long freeSpace;
-                    if (user != null) {
-                        userStore.updateUserAtomically(user.identity, u -> {
-                            u.usedStorage += chunkSize;
-                            user.usedStorage = u.usedStorage;
-                            return u;
-                        });
-                    }
-                    if (storageLimit != null) {
-                        freeSpace = storageLimit - user.usedStorage;
-                    } else {
-                        freeSpace = finalUploadDir.getStorageFreeSpace();
-                    }
-
-                    long leftToWrite = fileSize > 0 ? (fileSize - totalBytes) : 0;
-                    if (freeSpace < leftToWrite) {
-                        throw new IOException(ERROR_MSG_NO_SPACE_LEFT);
-                    }
-                }
-
-                @Override
-                public void onException(Exception e) {
-                    interruptedByExceptionMark.set(true);
-                }
-
-                @Override
-                public void onStreamClosed(long totalBytes) {
-                    if (interruptedByExceptionMark.get()) {
-                        if (finalFile.exists()) {
-                            finalFile.delete();
-                        }
-                        if (user != null) {
-                            try {
-                                userStore.updateUserAtomically(user.identity, u -> {
-                                    u.usedStorage -= totalBytes;
-                                    user.usedStorage = u.usedStorage;
-                                    return u;
-                                });
-                            } catch (Exception ignored) {}
-                        }
-                    }
-                }
-            };
-
             return new BufferedOutputStream(
                     new ProgressOutputStream(
                             fileOutput,
                             1024 * 1024,//trigger callback to check available storage each 1 Mb,
-                            writeProgressListener
+                            quota.newWriteListener(uploadDir, file, fileSize, previousSize,
+                                    msg -> new UploadException(413, msg))
                     )
             );
         } else if (name.equals("emptyDirs[]")) {
             return super.prepareBinaryOutputForMultipartData(request, contentType, name, fileName, partHeaders);
         }
         return null;
+    }
+
+    @Override
+    public OutputStream prepareBinaryOutputForRequestBodyData(Request request) throws Exception {
+        throw new UploadException(400, "Bad request");
+    }
+
+    public static class UploadException extends Exception {
+        final int code;
+        final String reason;
+        UploadException(int c, String r) { code = c; reason = r; }
     }
 }
