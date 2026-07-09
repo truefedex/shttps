@@ -30,7 +30,8 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
     private String type;
     private long length;
     private long lastModified;
-    private String relativePath;
+    private long created;
+    private final String relativePath;
 
     //temporary virtual directories for file upload
     //key is relative path, value is list of subdirectories
@@ -54,7 +55,7 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
     /**
      * Constructor for file
      */
-    public MediaStoreFileCollectionFile(Context context, DocumentFile parent, Uri uri, String name, String type, long length, long lastModified, String relativePath) {
+    public MediaStoreFileCollectionFile(Context context, DocumentFile parent, Uri uri, String name, String type, long length, long lastModified, long created, String relativePath) {
         super(parent);
         this.context = context;
         this.uri = uri;
@@ -62,6 +63,7 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
         this.type = type;
         this.length = length;
         this.lastModified = lastModified;
+        this.created = created;
         this.relativePath = relativePath;
     }
 
@@ -103,8 +105,9 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
                         String type = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE));
                         long length = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE));
                         long lastModified = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_MODIFIED));
+                        long created = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_ADDED));
                         String path = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.RELATIVE_PATH));
-                        return new MediaStoreFileCollectionFile(context, this, newUri, name, type, length, lastModified, path);
+                        return new MediaStoreFileCollectionFile(context, this, newUri, name, type, length, lastModified, created, path);
                     }
                 }
             }
@@ -187,6 +190,14 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
             return 0;
         }
         return lastModified;
+    }
+
+    @Override
+    public long created() {
+        if (isDirectory()) {
+            return 0;
+        }
+        return created;
     }
 
     @Override
@@ -379,6 +390,7 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
                     int typeColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE);
                     int lengthColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE);
                     int lastModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_MODIFIED);
+                    int createdColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_ADDED);
                     int relativePathColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.RELATIVE_PATH);
                     while (cursor.moveToNext()) {
                         long id = cursor.getLong(idColumn);
@@ -387,8 +399,9 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
                         String type = cursor.getString(typeColumn);
                         long length = cursor.getLong(lengthColumn);
                         long lastModified = cursor.getLong(lastModifiedColumn);
+                        long created = cursor.getLong(createdColumn);
                         String relativePath = cursor.getString(relativePathColumn);
-                        files.add(new MediaStoreFileCollectionFile(context, this, uri, name, type, length, lastModified, relativePath));
+                        files.add(new MediaStoreFileCollectionFile(context, this, uri, name, type, length, lastModified, created, relativePath));
                     }
                 }
             }
@@ -411,13 +424,23 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
 
     @Override
     public boolean copyTo(DocumentFile destDir) {
+        return copyTo(destDir, name);
+    }
+
+    @Override
+    public boolean moveTo(DocumentFile destDir) {
+        return moveTo(destDir, name);
+    }
+
+    @Override
+    public boolean copyTo(DocumentFile destDir, String destName) {
         if (isDirectory()) {
             return false;
         }
 
         ContentResolver contentResolver = context.getContentResolver();
         ContentValues values = new ContentValues();
-        values.put(MediaStore.Files.FileColumns.DISPLAY_NAME, name);
+        values.put(MediaStore.Files.FileColumns.DISPLAY_NAME, destName);
         values.put(MediaStore.Files.FileColumns.MIME_TYPE, type);
         values.put(MediaStore.Files.FileColumns.RELATIVE_PATH, ((MediaStoreFileCollectionFile) destDir).getRelativePath());
         Uri collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL);
@@ -442,7 +465,7 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
     }
 
     @Override
-    public boolean moveTo(DocumentFile destDir) {
+    public boolean moveTo(DocumentFile destDir, String destName) {
         if (isDirectory()) {
             return false;
         }
@@ -450,6 +473,7 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
         ContentResolver contentResolver = context.getContentResolver();
         ContentValues values = new ContentValues();
         values.put(MediaStore.Files.FileColumns.RELATIVE_PATH, ((MediaStoreFileCollectionFile) destDir).getRelativePath());
+        values.put(MediaStore.Files.FileColumns.DISPLAY_NAME, destName);
         return contentResolver.update(uri, values, null, null) > 0;
     }
 
@@ -470,12 +494,12 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
     }
 
     @Override
-    public String getRelativePath(DocumentFile file) {
-        if (!isDirectory() || !(file instanceof MediaStoreFileCollectionFile)) {
+    public String getRelativePath(DocumentFile directOrIndirectChild) {
+        if (!isDirectory() || !(directOrIndirectChild instanceof MediaStoreFileCollectionFile)) {
             return null;
         }
         String basePath = relativePath;
-        String filePath = ((MediaStoreFileCollectionFile) file).getRelativePath();
+        String filePath = ((MediaStoreFileCollectionFile) directOrIndirectChild).getRelativePath();
         if (!basePath.endsWith("/")) {
             basePath += "/";
         }

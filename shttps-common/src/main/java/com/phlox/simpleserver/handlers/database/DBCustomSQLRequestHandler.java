@@ -12,7 +12,7 @@ import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.utils.AbstractDataStreamer;
 import com.phlox.simpleserver.utils.Holder;
-import com.phlox.simpleserver.utils.Utils;
+import com.phlox.simpleserver.utils.SqlStatementSplitter;
 
 import org.json.JSONArray;
 
@@ -60,7 +60,10 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
                     CUSTOM_SQL_DATABASE_OPERATION, null,
                     User.DBRights.EXEC_SQL)) return StandardResponses.FORBIDDEN();
 
-            List<String> sqlStatements = Utils.splitSqlStatementsSQLite(sql);
+            List<String> sqlStatements = SqlStatementSplitter.split(sql);
+            if (sqlStatements.isEmpty()) {
+                return StandardResponses.BAD_REQUEST("SQL query is empty");
+            }
             try {
                 // Only the last statement can return data
                 // execute previous statements first

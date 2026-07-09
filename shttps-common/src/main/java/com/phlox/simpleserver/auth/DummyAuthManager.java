@@ -3,12 +3,12 @@ package com.phlox.simpleserver.auth;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class DummyAuthManager implements AuthManager {
     @Override
-    public @Nullable User getAuthenticatedUser(@NonNull RequestContext context) {
+    public @Nullable User getAuthenticatedUser(@NotNull RequestContext context) {
         return null;
     }
 
@@ -18,12 +18,12 @@ public class DummyAuthManager implements AuthManager {
     }
 
     @Override
-    public void logout(@NonNull RequestContext context, @NonNull Request request) {
+    public void logout(@NotNull RequestContext context, @NotNull Request request) {
 
     }
 
     @Override
-    public @NonNull UserRightsEvaluator getUserRightsEvaluator() {
+    public @NotNull UserRightsEvaluator getUserRightsEvaluator() {
         throw new IllegalStateException("Method getUserRightsEvaluator is undefined for DummyAuthManager");
     }
 }

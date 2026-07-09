@@ -6,8 +6,8 @@ import com.phlox.simpleserver.database.DatabaseOperations;
 import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.utils.Holder;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -27,10 +27,10 @@ public class UserRightsEvaluator {
             "shttps_db_access_rule",
             "shttps_fs_access_rule"
     );
-    private final @NonNull Holder<Database> dbHolder;
+    private final @NotNull Holder<Database> dbHolder;
     private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
 
-    public UserRightsEvaluator(@NonNull Holder<Database> dbHolder) {
+    public UserRightsEvaluator(@NotNull Holder<Database> dbHolder) {
         this.dbHolder = dbHolder;
     }
 
@@ -53,7 +53,7 @@ public class UserRightsEvaluator {
         }
     }
 
-    private @Nullable DBAccessRule findMatchingDBAccessRule(@NonNull DatabaseOperations db, @NonNull User user, String subject, String operation) {
+    private @Nullable DBAccessRule findMatchingDBAccessRule(@NotNull DatabaseOperations db, @NotNull User user, String subject, String operation) {
         //try to find specific rule for this user role and subject+operation
         //if not found for specific subject, try to find for wildcard subject '*'
         try (TableData data = db.query("SELECT * FROM " + DBAccessRule.DB_ACCESS_RULES_TABLE_NAME +
@@ -71,7 +71,7 @@ public class UserRightsEvaluator {
         }
     }
 
-    private @Nullable FSAccessRule findMatchingFSAccessRule(@NonNull DatabaseOperations db, @NonNull User user, String subject, String operation) {
+    private @Nullable FSAccessRule findMatchingFSAccessRule(@NotNull DatabaseOperations db, @NotNull User user, String subject, String operation) {
         //Try to find specific rule for this user role and subject+operation
         //As incoming subject is file or directory path and rule subject is always directory so we can use LIKE operator for matching
         //If found several matching rules, the most specific (longest) rule will be used
@@ -90,24 +90,24 @@ public class UserRightsEvaluator {
         }
     }
 
-    public boolean hasAnyFileEditingRights(@NonNull User user) {
+    public boolean hasAnyFileEditingRights(@NotNull User user) {
         EnumSet<User.FileSystemRights> fsRights = userFSRights(user);
         return fsRights.contains(User.FileSystemRights.CREATE) ||
                 fsRights.contains(User.FileSystemRights.UPDATE) ||
                 fsRights.contains(User.FileSystemRights.DELETE);
     }
 
-    public EnumSet<User.FileSystemRights> userFSRights(@NonNull User user) {
+    public EnumSet<User.FileSystemRights> userFSRights(@NotNull User user) {
         UserRole role = loadRole(user.role);
         return role != null ? role.fsRights : user.fsRights;
     }
 
-    public EnumSet<User.DBRights> userDBRights(@NonNull User user) {
+    public EnumSet<User.DBRights> userDBRights(@NotNull User user) {
         UserRole role = loadRole(user.role);
         return role != null ? role.dbRights : user.dbRights;
     }
 
-    public EnumSet<User.SystemRights> userSystemRights(@NonNull User user) {
+    public EnumSet<User.SystemRights> userSystemRights(@NotNull User user) {
         UserRole role = loadRole(user.role);
         return role != null ? role.systemRights : user.systemRights;
     }
@@ -117,8 +117,8 @@ public class UserRightsEvaluator {
         return role != null ? role.storageLimit : user.storageLimit;
     }
 
-    private static boolean evaluateRuleExpression(@NonNull String expression, @NonNull DatabaseOperations db, @NonNull User user, @NonNull String subject,
-                                                  @NonNull String operation, @Nullable Map<String, Object> operationParams) {
+    private static boolean evaluateRuleExpression(@NotNull String expression, @NotNull DatabaseOperations db, @NotNull User user, @NotNull String subject,
+                                                  @NotNull String operation, @Nullable Map<String, Object> operationParams) {
         Map<String, Object> availableVariables = new HashMap<>();
         availableVariables.put("user.id", user.identity);
         availableVariables.put("user.role", user.role);
@@ -154,8 +154,8 @@ public class UserRightsEvaluator {
         }
     }
 
-    public boolean checkIsDBOperationAllowed(@NonNull DatabaseOperations db, @NonNull User user, boolean checkRules, @NonNull String subject,
-                                             @NonNull String operation, @Nullable Map<String, Object> operationParams,
+    public boolean checkIsDBOperationAllowed(@NotNull DatabaseOperations db, @NotNull User user, boolean checkRules, @NotNull String subject,
+                                             @NotNull String operation, @Nullable Map<String, Object> operationParams,
                                              User.DBRights... requestedRights) {
         //first we trying to find specific rule for this user role because it has higher priority
         if (checkRules) {
@@ -182,8 +182,8 @@ public class UserRightsEvaluator {
         return dbRights.containsAll(List.of(requestedRights));
     }
 
-    public boolean checkIsFileOperationAllowed(@NonNull User user, boolean checkRules, @NonNull String subject,
-                         @NonNull String operation, @Nullable Map<String, Object> operationParams,
+    public boolean checkIsFileOperationAllowed(@NotNull User user, boolean checkRules, @NotNull String subject,
+                         @NotNull String operation, @Nullable Map<String, Object> operationParams,
                          User.FileSystemRights... requestedRights) throws Exception {
         //first we trying to find specific rule for this user role because it has higher priority
         Database db = dbHolder.get();

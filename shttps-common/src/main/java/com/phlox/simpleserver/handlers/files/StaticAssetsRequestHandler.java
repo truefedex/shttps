@@ -99,7 +99,7 @@ public class StaticAssetsRequestHandler implements RequestHandler {
             response = new Response(type, assetSize, new BufferedInputStream(platformUtils.openAssetStream(destPath)));
         }
 
-        response.headers.put(Response.HEADER_LAST_MODIFIED, HTTPUtils.getHTTPDateFormat().format(new Date( assetLastModified )));
+        response.headers.add(Response.HEADER_LAST_MODIFIED, HTTPUtils.getHTTPDateFormat().format(new Date( assetLastModified )));
 
         return response;
     }

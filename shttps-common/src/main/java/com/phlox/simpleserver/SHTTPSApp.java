@@ -1,6 +1,7 @@
 package com.phlox.simpleserver;
 
 import com.phlox.server.SimpleHttpServer;
+import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.handlers.router.middleware.Middleware;
 import com.phlox.server.handlers.router.middleware.impl.CORSMiddleware;
 import com.phlox.server.handlers.router.middleware.impl.CustomHeadersMiddleware;
@@ -51,6 +52,7 @@ import com.phlox.simpleserver.handlers.files.StaticFileRequestHandler;
 import com.phlox.simpleserver.handlers.files.ThumbnailHandler;
 import com.phlox.simpleserver.handlers.files.ZipDownloadRequestHandler;
 import com.phlox.simpleserver.handlers.files.upload.UploadFileRequestHandler;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.handlers.main.FilesRequestHandler;
 import com.phlox.simpleserver.handlers.system.StatusRequestHandler;
 import com.phlox.simpleserver.utils.Holder;
@@ -220,18 +222,20 @@ public class SHTTPSApp {
             globalMiddlewares.add(new CustomHeadersMiddleware(customHeadersRules));
         }
 
+        LockManager lockManager = new LockManager();
+
         //Setup routes
         Router router = new Router(logsCollector, globalMiddlewares);
         //file handlers
-        router.addRoute("/api/file/download", Set.of("GET"), new StaticFileRequestHandler(config, authManager, userStore), authMiddlewares);
-        router.addRoute("/api/file/new-folder", Set.of("POST"), new NewFolderRequestHandler(config, authManager, userStore), authMiddlewares);
-        router.addRoute("/api/file/rename", Set.of("POST"), new RenameFileRequestHandler(config, authManager, userStore), authMiddlewares);
-        router.addRoute("/api/file/upload", Set.of("PUT"), new UploadFileRequestHandler(config, authManager, userStore), authMiddlewares);
-        router.addRoute("/api/file/delete", Set.of("DELETE"), new DeleteFileRequestHandler(config, authManager, userStore), authMiddlewares);
-        router.addRoute("/api/file/move", Set.of("POST"), new MoveFileRequestHandler(config, authManager, userStore), authMiddlewares);
-        router.addRoute("/api/file/list", Set.of("GET"), new FileListRequestHandler(config, authManager, userStore), authMiddlewares);
-        router.addRoute("/api/file/thumbnail", Set.of("GET"), new ThumbnailHandler(config, authManager, userStore), authMiddlewares);
-        router.addRoute("/api/file/zip", Set.of("POST"), new ZipDownloadRequestHandler(config, authManager, userStore), authMiddlewares);
+        router.addRoute("/api/file/download", Set.of("GET", "HEAD"), new StaticFileRequestHandler(config, authManager, userStore, lockManager), authMiddlewares);
+        router.addRoute("/api/file/new-folder", Set.of("POST"), new NewFolderRequestHandler(config, authManager, userStore, lockManager), authMiddlewares);
+        router.addRoute("/api/file/rename", Set.of("POST"), new RenameFileRequestHandler(config, authManager, userStore, lockManager), authMiddlewares);
+        router.addRoute("/api/file/upload", Set.of("PUT"), new UploadFileRequestHandler(config, authManager, userStore, lockManager), authMiddlewares);
+        router.addRoute("/api/file/delete", Set.of("DELETE"), new DeleteFileRequestHandler(config, authManager, userStore, lockManager), authMiddlewares);
+        router.addRoute("/api/file/move", Set.of("POST"), new MoveFileRequestHandler(config, authManager, userStore, lockManager), authMiddlewares);
+        router.addRoute("/api/file/list", Set.of("GET"), new FileListRequestHandler(config, authManager, userStore, lockManager), authMiddlewares);
+        router.addRoute("/api/file/thumbnail", Set.of("GET"), new ThumbnailHandler(config, authManager, userStore, lockManager), authMiddlewares);
+        router.addRoute("/api/file/zip", Set.of("POST"), new ZipDownloadRequestHandler(config, authManager, userStore, lockManager), authMiddlewares);
 
         //database handlers
         router.addRoute("/api/db/schema", Set.of("GET"), new DBSchemaRequestHandler(database, config, authManager), authMiddlewares);
@@ -268,7 +272,6 @@ public class SHTTPSApp {
         }
 
 
-
         //build-in pages
         router.addRouteByPathPrefix("/shttps-static-public",
                 new StaticAssetsRequestHandler("shttps-static-public", "/shttps-static-public", config), authMiddlewares);
@@ -281,10 +284,16 @@ public class SHTTPSApp {
             //Is it ideal place? Time will show
             filesRequestHandlerMiddlewares.add(new CgiMiddleware(config, authManager));
         }
-        FilesRequestHandler filesRequestHandler = new FilesRequestHandler(config, authManager, userStore);
+
+        FilesRequestHandler filesRequestHandler = new FilesRequestHandler(config, authManager, userStore, lockManager);
         filesRequestHandler.renderFolders = config.getRenderFolders();
         filesRequestHandler.allowEditing = config.getAllowEditing();
         router.addRouteByPathPrefix("/", filesRequestHandler, filesRequestHandlerMiddlewares);
+
+        //handle OPTIONS * HTTP/1.1 request
+        RequestHandler optionsHandler = (context, request) ->
+                FilesRequestHandler.prepareOptionsResponse(null, config);
+        router.addRoute("*", Set.of("OPTIONS"), optionsHandler, authMiddlewares);
 
         Callback callback = SHTTPSApp.this.callback;
         if (callback != null) {

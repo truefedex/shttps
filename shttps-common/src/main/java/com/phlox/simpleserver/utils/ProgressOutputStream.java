@@ -97,10 +97,16 @@ public class ProgressOutputStream extends OutputStream {
         }
     }
 
-    public interface WriteProgressListener {
-        void onChunkWritten(long totalBytes, long chunkSize) throws Exception;
-        void onStreamClosed(long totalBytes);
-        void onException(Exception e);
+    public abstract static class WriteProgressListener {
+        private Exception interruptedByException;
+        public abstract void onChunkWritten(long totalBytes, long chunkSize) throws Exception;
+        void onStreamClosed(long totalBytes) {
+            onStreamClosed(totalBytes, interruptedByException);
+        }
+        public abstract void onStreamClosed(long totalBytes, Exception withException);
+        void onException(Exception e) {
+            interruptedByException = e;
+        }
     }
 }
 

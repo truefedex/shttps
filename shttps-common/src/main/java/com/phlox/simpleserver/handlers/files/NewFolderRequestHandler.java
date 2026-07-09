@@ -1,5 +1,7 @@
 package com.phlox.simpleserver.handlers.files;
 
+import static com.phlox.simpleserver.handlers.files.webdav.WebDavHelpersBase.extractLockTokenFromIf;
+
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
@@ -9,6 +11,7 @@ import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 
 import java.util.Map;
@@ -16,8 +19,8 @@ import java.util.Map;
 public class NewFolderRequestHandler extends BaseFileRequestHandler {
     public static final String NEW_FOLDER_OPERATION = "NEW_FOLDER";
 
-    public NewFolderRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
-        super(config, authManager, userStore);
+    public NewFolderRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore, LockManager locks) {
+        super(config, authManager, userStore, locks);
     }
 
     @Override
@@ -43,6 +46,13 @@ public class NewFolderRequestHandler extends BaseFileRequestHandler {
                 "name", newFolderName
         ), User.FileSystemRights.CREATE))
             return StandardResponses.FORBIDDEN();
+
+        String lockTokenProvided = extractLockTokenFromIf(request.headers.get("if"));
+        String newFolderPath = destPath + "/" + newFolderName;
+        if (!locks.mayWrite(newFolderPath, lockTokenProvided)) {
+            return new Response(423, "Locked");
+        }
+
         DocumentFile newDir = destFile.createDirectory(newFolderName);
         if (newDir != null) {
             return StandardResponses.NO_CONTENT();

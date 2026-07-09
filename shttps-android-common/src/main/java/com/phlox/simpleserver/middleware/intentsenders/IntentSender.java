@@ -9,8 +9,8 @@ import com.phlox.server.utils.MultiMap;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,25 +35,25 @@ public class IntentSender {
     public enum IntentExtraType { AUTO, STRING, BOOLEAN, INTEGER, LONG, FLOAT, DOUBLE, STRING_ARRAY }
 
     public static class IntentExtra {
-        public @NonNull String key;
-        public @NonNull String value;
-        public @NonNull IntentExtraType type;
+        public @NotNull String key;
+        public @NotNull String value;
+        public @NotNull IntentExtraType type;
 
-        public IntentExtra(@NonNull String key, @NonNull String value, @NonNull IntentExtraType type) {
+        public IntentExtra(@NotNull String key, @NotNull String value, @NotNull IntentExtraType type) {
             this.key = key;
             this.value = value;
             this.type = type;
         }
 
-        public IntentExtra(@NonNull String key, @NonNull String value) {
+        public IntentExtra(@NotNull String key, @NotNull String value) {
             this.key = key;
             this.value = value;
             this.type = IntentExtraType.AUTO;
         }
     }
 
-    public @NonNull String urlPath;
-    public @NonNull IntentTarget target = IntentTarget.BROADCAST;
+    public @NotNull String urlPath;
+    public @NotNull IntentTarget target = IntentTarget.BROADCAST;
     public @Nullable String category;
     public @Nullable String action;
     public @Nullable String packageName;
@@ -61,13 +61,13 @@ public class IntentSender {
     public @Nullable String data;
     public @Nullable String mimeType;
     public int flags = 0;
-    public @NonNull List<IntentExtra> extras = new ArrayList<>();
+    public @NotNull List<IntentExtra> extras = new ArrayList<>();
 
-    public IntentSender(@NonNull String urlPath) {
+    public IntentSender(@NotNull String urlPath) {
         this.urlPath = urlPath;
     }
 
-    public @NonNull JSONObject serialize() throws JSONException {
+    public @NotNull JSONObject serialize() throws JSONException {
         JSONObject json = new JSONObject()
                 .put(FIELD_URL_PATH, this.urlPath)
                 .put(FIELD_TARGET, this.target.name())
@@ -90,7 +90,7 @@ public class IntentSender {
         return json;
     }
 
-    public static @NonNull IntentSender deserialize(@NonNull JSONObject object) throws JSONException {
+    public static @NotNull IntentSender deserialize(@NotNull JSONObject object) throws JSONException {
         IntentSender intentSender = new IntentSender(object.getString(FIELD_URL_PATH));
         intentSender.target = IntentTarget.valueOf(object.getString(FIELD_TARGET));
         intentSender.category = object.optString(FIELD_CATEGORY);
@@ -219,7 +219,7 @@ public class IntentSender {
         }
     }
 
-    private static IntentExtraType detectExtraType(@NonNull String value) {
+    private static IntentExtraType detectExtraType(@NotNull String value) {
         if (value == null || value.isEmpty()) {
             return IntentExtraType.STRING;
         }

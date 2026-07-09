@@ -1,17 +1,13 @@
 package com.phlox.server.utils;
 
-import com.phlox.server.handlers.StaticFileRequestHandler;
-import com.phlox.server.utils.docfile.DocumentFile;
-
+import java.io.ByteArrayOutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -28,6 +24,36 @@ public final class HTTPUtils {
         return dateFormat;
     }
 
+    /**
+     * Decodes %XX percent-encoding, interpreting the decoded bytes as UTF-8.
+     * Unlike {@link URLDecoder}, '+' is left as-is (in a request path '+' is a literal
+     * character, not a space) and characters that are illegal per RFC 3986 but sent
+     * unencoded by real-world clients ('{', '[', '"', ...) are passed through.
+     */
+    public static String decodePercentEncoded(String s) {
+        if (s.indexOf('%') < 0) return s;
+        byte[] in = s.getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream out = new ByteArrayOutputStream(in.length);
+        for (int i = 0; i < in.length; i++) {
+            byte b = in[i];
+            if (b == '%') {
+                if (i + 2 >= in.length) {
+                    throw new IllegalArgumentException("Incomplete percent-encoding: " + s);
+                }
+                int hi = Character.digit(in[i + 1], 16);
+                int lo = Character.digit(in[i + 2], 16);
+                if (hi < 0 || lo < 0) {
+                    throw new IllegalArgumentException("Invalid percent-encoding: " + s);
+                }
+                out.write((hi << 4) | lo);
+                i += 2;
+            } else {
+                out.write(b);
+            }
+        }
+        return new String(out.toByteArray(), StandardCharsets.UTF_8);
+    }
+
     public static void decodeURLEncodedNameValuePairs(String string, MultiMap<String, String> out) {
         String enc = "UTF-8";
         String[] params = string.split("&");
@@ -35,7 +61,7 @@ public final class HTTPUtils {
             int eq = params[i].indexOf("=");
             if (eq != -1) {
                 try {
-                    out.put(URLDecoder.decode(params[i].substring(0, eq), enc), URLDecoder.decode(params[i].substring(eq + 1), enc));
+                    out.add(URLDecoder.decode(params[i].substring(0, eq), enc), URLDecoder.decode(params[i].substring(eq + 1), enc));
                 } catch (UnsupportedEncodingException e) {
                     e.printStackTrace();
                 }
@@ -151,7 +177,7 @@ public final class HTTPUtils {
                 String key = header[0].trim();
                 String value = header[1].trim();
                 if (!key.isEmpty() && !value.isEmpty()) {
-                    headers.put(key, value);
+                    headers.add(key, value);
                 }
             }
         }
@@ -197,5 +223,25 @@ public final class HTTPUtils {
             contentType.equals("application/xhtml+xml") ||
             contentType.equals("application/rss+xml") ||
             contentType.equals("application/atom+xml");
+    }
+
+    public static String normalizePath(String path) {
+        if (path == null) {
+            throw new IllegalArgumentException("Path cannot be null");
+        }
+
+        if (path.equals("..") || path.contains("/../") || path.startsWith("../") || path.endsWith("/..")) {
+            throw new SecurityException("Malicious path detected: path contains '..'");
+        }
+
+        if (path.contains("\0")) throw new SecurityException("Null byte detected");
+
+        if (path.contains("//")) throw new SecurityException("Double slash prohibited for path");
+
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+
+        return path;
     }
 }

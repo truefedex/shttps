@@ -10,6 +10,7 @@ import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.AbstractDataStreamer;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 
@@ -33,8 +34,8 @@ import java.util.zip.ZipOutputStream;
 public class ZipDownloadRequestHandler extends BaseFileRequestHandler {
     public static final String ZIP_DOWNLOAD_OPERATION = "ZIP_DOWNLOAD";
 
-    public ZipDownloadRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
-        super(config, authManager, userStore);
+    public ZipDownloadRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore, LockManager locks) {
+        super(config, authManager, userStore, locks);
     }
 
     @Override
@@ -87,7 +88,7 @@ public class ZipDownloadRequestHandler extends BaseFileRequestHandler {
         Response response = new Response(streamer.getInputStream());
         response.setContentType("application/zip");
         String zipFileName = request.urlEncodedPostParams.containsKey("outFileName") ? request.urlEncodedPostParams.get("outFileName") : getTimestampedFilename();
-        response.headers.put("Content-Disposition", "attachment; filename=\"" + zipFileName + "\"");
+        response.headers.add("Content-Disposition", "attachment; filename=\"" + zipFileName + "\"");
 
         return response;
     }

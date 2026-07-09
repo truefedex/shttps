@@ -1,7 +1,6 @@
 package com.phlox.server.handlers;
 
 import com.phlox.server.request.Request;
-import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
@@ -71,8 +70,8 @@ public class StaticFileRequestHandler implements RequestHandler {
             response = makeFileResponse(file, type, request);
         }
 
-        response.headers.put(Response.HEADER_ACCEPT_RANGES, "bytes");
-        response.headers.put(Response.HEADER_LAST_MODIFIED, HTTPUtils.getHTTPDateFormat().format(new Date( file.lastModified() )));
+        response.headers.add(Response.HEADER_ACCEPT_RANGES, "bytes");
+        response.headers.add(Response.HEADER_LAST_MODIFIED, HTTPUtils.getHTTPDateFormat().format(new Date( file.lastModified() )));
 
         return response;
     }
@@ -92,7 +91,7 @@ public class StaticFileRequestHandler implements RequestHandler {
             response = new RangedFileResponse(type, ranges.get(0).length, new FileInputStream(file));
             response.code = 206;
             response.phrase = "Partial Content";
-            response.headers.put(Response.HEADER_CONTENT_RANGE, "bytes " + ranges.get(0).start + "-" + ranges.get(0).end + "/" + file.length());
+            response.headers.add(Response.HEADER_CONTENT_RANGE, "bytes " + ranges.get(0).start + "-" + ranges.get(0).end + "/" + file.length());
             ((RangedFileResponse)response).file = file;
             ((RangedFileResponse)response).ranges = ranges;
         } else {

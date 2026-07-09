@@ -1,6 +1,7 @@
 package com.phlox.simpleserver.exec;
 
 import com.phlox.server.SimpleHttpServer;
+import com.phlox.server.request.BodyInputStream;
 import com.phlox.server.request.Request;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
@@ -12,7 +13,7 @@ import com.phlox.server.utils.docfile.RawDocumentFile;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
 
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.InputStream;
@@ -80,20 +81,16 @@ public class CgiProcessLauncher extends ExternalProcessLauncher {
         OutputStream processOutput = process.getOutputStream();
 
         // Write request body to process in background thread
-        if (request.shouldHaveABody() && request.contentLength != 0) {
+        final BodyInputStream requestBody = request.bodyStream;
+        if (requestBody != null && !requestBody.isFullyConsumed()) {
+            //the pump thread below may outlive request handling, so the server
+            //must not touch the body stream itself anymore
+            requestBody.markDetached();
             final OutputStream out = processOutput;
-            final InputStream requestBodyInput = request.input;
-            final long contentLength = request.contentLength;
 
             Thread bodyWriterThread = new Thread(() -> {
                 try {
-                    if (contentLength == -1) {
-                        // Undefined content length
-                        Utils.copyStream(requestBodyInput, out);
-                    } else if (contentLength > 0) {
-                        // Known content length
-                        Utils.copyStream(requestBodyInput, out, contentLength);
-                    }
+                    Utils.copyStream(requestBody, out);
                     out.flush();
                     out.close();
                 } catch (Exception e) {
@@ -171,7 +168,7 @@ public class CgiProcessLauncher extends ExternalProcessLauncher {
                     }
                 } else {
                     // Regular header
-                    responseHeaders.put(headerName, headerValue);
+                    responseHeaders.add(headerName, headerValue);
                 }
             }
         }

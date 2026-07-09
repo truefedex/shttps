@@ -9,8 +9,8 @@ import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.Holder;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.json.JSONObject;
 
 import java.util.EnumSet;
@@ -30,7 +30,7 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public @Nullable User authenticate(@NonNull String username, @NonNull String password) {
+    public @Nullable User authenticate(@NotNull String username, @NotNull String password) {
         Database db = database.get();
         if (db == null) return null;
         try (TableData data = db.getTableDataSecure(USERS_TABLE_NAME, null, null, null, 
@@ -46,7 +46,7 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public @Nullable User find(@NonNull String identity) {
+    public @Nullable User find(@NotNull String identity) {
         Database db = database.get();
         if (db == null) return null;
         try (TableData data = db.getTableDataSecure(USERS_TABLE_NAME, null, null, null, 
@@ -89,7 +89,7 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public boolean isIdentityUsed(@NonNull String identity) {
+    public boolean isIdentityUsed(@NotNull String identity) {
         Database db = database.get();
         if (db == null) return false;
         try (TableData data = db.getTableDataSecure(USERS_TABLE_NAME, new String[]{"identity"}, null, null, 
@@ -102,11 +102,11 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public void create(@NonNull User user) throws Exception {
+    public void create(@NotNull User user) throws Exception {
         create(user, false);
     }
 
-    private void create(@NonNull User user, boolean checkRootDirUniqueness) throws Exception {
+    private void create(@NotNull User user, boolean checkRootDirUniqueness) throws Exception {
         Database db = database.get();
         if (db == null) {
             throw new IllegalStateException("Database is not initialized");
@@ -173,7 +173,7 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public boolean update(@NonNull User user) {
+    public boolean update(@NotNull User user) {
         Database db = database.get();
         if (db == null) return false;
         try {
@@ -187,7 +187,7 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public boolean update(@NonNull String userIdentity, @NonNull String field, @Nullable Object value) {
+    public boolean update(@NotNull String userIdentity, @NotNull String field, @Nullable Object value) {
         Database db = database.get();
         if (db == null) return false;
         try {
@@ -203,7 +203,7 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public boolean delete(@NonNull String identity) {
+    public boolean delete(@NotNull String identity) {
         Database db = database.get();
         if (db == null) return false;
         try {
@@ -217,7 +217,7 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public boolean rename(@NonNull User user, @NonNull String newIdentity) {
+    public boolean rename(@NotNull User user, @NotNull String newIdentity) {
         if (isIdentityUsed(newIdentity)) return false;
         
         Database db = database.get();
@@ -258,7 +258,7 @@ public class DBBasedUserStore implements UserStore {
     }
 
     @Override
-    public @Nullable User registerNewUser(@NonNull String identity, @NonNull String password) throws Exception {
+    public @Nullable User registerNewUser(@NotNull String identity, @NotNull String password) throws Exception {
         if (isIdentityUsed(identity)) {
             return null;
         }

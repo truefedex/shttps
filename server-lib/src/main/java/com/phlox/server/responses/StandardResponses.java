@@ -18,6 +18,7 @@ public final class StandardResponses {
     public static final String PHRASE_UNAUTHORIZED = "Unauthorized";
     public static final String PHRASE_UNSUPPORTED_MEDIA_TYPE = "Unsupported Media Type";
     public static final String PHRASE_PAYLOAD_TOO_LARGE = "Payload Too Large";
+    public static final String PHRASE_CONFLICT = "Conflict";
 
     public StandardResponses() {
     }
@@ -35,10 +36,14 @@ public final class StandardResponses {
     public static Response FORBIDDEN() { return new TextResponse(HTTP_FORBIDDEN, PHRASE_FORBIDDEN, PHRASE_FORBIDDEN); }
     public static Response PAYLOAD_TOO_LARGE() {return new Response(HTTP_ENTITY_TOO_LARGE, PHRASE_PAYLOAD_TOO_LARGE); }
     public static Response UNAUTHORIZED() { return new Response(HTTP_UNAUTHORIZED, PHRASE_UNAUTHORIZED); }
+    public static Response UNAUTHORIZED(String msg) { return new TextResponse(HTTP_UNAUTHORIZED, PHRASE_UNAUTHORIZED, msg); }
+    public static Response CONFLICT() { return new Response(HTTP_CONFLICT, PHRASE_CONFLICT); }
+    public static Response CONFLICT(String msg) { return new TextResponse(HTTP_CONFLICT, PHRASE_CONFLICT, msg); }
+    public static Response METHOD_NOT_ALLOWED() { return new Response(HTTP_BAD_METHOD, PHRASE_METHOD_NOT_ALLOWED); }
 
     public static Response MOVED_PERMANENTLY(String newLocation) {
         Response response = new Response(HTTP_MOVED_PERM, PHRASE_MOVED_PERMANENTLY);
-        response.headers.put(Response.HEADER_LOCATION, newLocation);
+        response.headers.add(Response.HEADER_LOCATION, newLocation);
         return response;
     }
     public static Response REDIRECT(String newLocation, int code) {
@@ -47,13 +52,13 @@ public final class StandardResponses {
 
     public static Response REDIRECT(String newLocation, String phrase, int code) {
         Response response = new Response(code, phrase);
-        response.headers.put(Response.HEADER_LOCATION, newLocation);
+        response.headers.add(Response.HEADER_LOCATION, newLocation);
         return response;
     }
 
     public static Response METHOD_NOT_ALLOWED(String[] allowedMethods) {
         Response response = new Response(HTTP_BAD_METHOD, PHRASE_METHOD_NOT_ALLOWED);
-        response.headers.put(Response.HEADER_ALLOW, String.join(", ", allowedMethods));
+        response.headers.add(Response.HEADER_ALLOW, String.join(", ", allowedMethods));
         return response;
     }
 

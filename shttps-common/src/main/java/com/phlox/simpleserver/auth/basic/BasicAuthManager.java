@@ -9,8 +9,8 @@ import com.phlox.simpleserver.auth.UserRightsEvaluator;
 import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.utils.Utils;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicLong;
@@ -32,13 +32,13 @@ public class BasicAuthManager implements AuthManager {
     }
 
     @Override
-    public @Nullable User getAuthenticatedUser(@NonNull RequestContext context) {
+    public @Nullable User getAuthenticatedUser(@NotNull RequestContext context) {
         Object user = context.data.get(CONTEXT_KEY_BASIC_AUTH_USER);
         return user instanceof User ? (User) user : null;
     }
 
     @Override
-    public void logout(@NonNull RequestContext context, @NonNull Request request) {
+    public void logout(@NotNull RequestContext context, @NotNull Request request) {
         //Unimplementable for basic auth
     }
 
@@ -101,7 +101,7 @@ public class BasicAuthManager implements AuthManager {
     }
 
     @Override
-    public @NonNull UserRightsEvaluator getUserRightsEvaluator() {
+    public @NotNull UserRightsEvaluator getUserRightsEvaluator() {
         return userStore.provideUserRightsEvaluator();
     }
 }

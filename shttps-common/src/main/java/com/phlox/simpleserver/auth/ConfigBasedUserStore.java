@@ -7,8 +7,8 @@ import com.phlox.simpleserver.utils.Holder;
 import com.phlox.simpleserver.utils.Utils;
 
 import org.json.JSONObject;
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -29,14 +29,14 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public synchronized @Nullable User authenticate(@NonNull String username, @NonNull String password) {
+    public synchronized @Nullable User authenticate(@NotNull String username, @NotNull String password) {
         User user = users.get(username);
         if (user == null || !user.passwordHash.equals(password)) return null;
         return user;
     }
 
     @Override
-    public synchronized @Nullable User find(@NonNull String identity) {
+    public synchronized @Nullable User find(@NotNull String identity) {
         return users.get(identity);
     }
 
@@ -52,12 +52,12 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public synchronized boolean isIdentityUsed(@NonNull String identity) {
+    public synchronized boolean isIdentityUsed(@NotNull String identity) {
         return users.containsKey(identity);
     }
 
     @Override
-    public synchronized void create(@NonNull User user) {
+    public synchronized void create(@NotNull User user) {
         if (isIdentityUsed(user.identity)) {
             throw new IllegalStateException("Identity already used");
         }
@@ -110,7 +110,7 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public synchronized boolean update(@NonNull User user) {
+    public synchronized boolean update(@NotNull User user) {
         if (!users.containsKey(user.identity)) return false;
         users.put(user.identity, user);
         config.setUsers(users.values());
@@ -118,7 +118,7 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public synchronized boolean update(@NonNull String userIdentity, @NonNull String field, @Nullable Object value) {
+    public synchronized boolean update(@NotNull String userIdentity, @NotNull String field, @Nullable Object value) {
         User user = users.get(userIdentity);
         if (user == null) return false;
         JSONObject json = user.serialize();
@@ -130,7 +130,7 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public synchronized boolean delete(@NonNull String identity) {
+    public synchronized boolean delete(@NotNull String identity) {
         User removed = users.remove(identity);
         if (removed == null) return false;
         config.setUsers(users.values());
@@ -138,7 +138,7 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public synchronized boolean rename(@NonNull User user, @NonNull String newIdentity) {
+    public synchronized boolean rename(@NotNull User user, @NotNull String newIdentity) {
         if (isIdentityUsed(newIdentity)) return false;
         users.remove(user.identity);
         user.identity = newIdentity;
@@ -168,7 +168,7 @@ public class ConfigBasedUserStore implements UserStore {
     }
 
     @Override
-    public synchronized @Nullable User registerNewUser(@NonNull String identity, @NonNull String password) {
+    public synchronized @Nullable User registerNewUser(@NotNull String identity, @NotNull String password) {
         if (isIdentityUsed(identity)) {
             return null;
         }

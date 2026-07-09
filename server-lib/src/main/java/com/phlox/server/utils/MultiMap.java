@@ -12,26 +12,35 @@ public class MultiMap<K, V> {
         size = 0;
     }
 
+    public void add(K key, V value) {
+        List<V> list = treeMap.computeIfAbsent(key, k -> new ArrayList<>());
+        list.add(value);
+        ++size;
+    }
+
+    /**
+     * The same as add but replacing all values for that key
+     */
     public void put(K key, V value) {
-        //treeMap.computeIfAbsent(key, k -> new ArrayList<>()).add(value);
-        List<V> list = treeMap.get(key);
-        if (list == null) {
-            list = new ArrayList<>();
-            treeMap.put(key, list);
+        List<V> list = treeMap.computeIfAbsent(key, k -> new ArrayList<>());
+        int lSize = list.size();
+        if (lSize != 0) {
+            list.clear();
+            size -= lSize;
         }
         list.add(value);
         ++size;
     }
 
-    public void putAll(K key, List<V> values) {
+    public void addAll(K key, List<V> values) {
         for (V value : values) {
-            put(key, value);
+            add(key, value);
         }
     }
 
-    public void putAll(MultiMap<K, V> multiMap) {
+    public void addAll(MultiMap<K, V> multiMap) {
         for (K key : multiMap.keys()) {
-            putAll(key, multiMap.getAll(key));
+            addAll(key, multiMap.getAll(key));
         }
     }
 

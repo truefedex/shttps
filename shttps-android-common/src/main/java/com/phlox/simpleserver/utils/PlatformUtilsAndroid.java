@@ -17,6 +17,10 @@ import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.server.platform.MimeTypeMap;
 
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
+import org.xmlpull.v1.XmlSerializer;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -210,5 +214,15 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
     @Override
     public ImageData generateCaptchaImage(String code, int width, int height) {
         return CaptchaImageGenerator.generateCaptchaImage(code, width, height);
+    }
+
+    @Override
+    public XmlSerializer newXMLSerializer() {
+        return android.util.Xml.newSerializer();
+    }
+
+    @Override
+    public XmlPullParser newXMLPullParser() throws XmlPullParserException {
+        return android.util.Xml.newPullParser();
     }
 }

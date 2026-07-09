@@ -900,10 +900,17 @@ async function processDroppedDataTransferItems(items) {
 
 async function readDirectoryFilesRecursively(directory, files, relativePaths, emptyDirs, currentRelativePath = "") {
   const relativePath = currentRelativePath + "/" + directory.name;
-  const entries = await new Promise((resolve, reject) => {
-    const reader = directory.createReader();
-    reader.readEntries(resolve, reject);
-  });
+  // readEntries() returns at most 100 entries per call; keep calling on the
+  // same reader until it returns an empty batch to get the full listing
+  const reader = directory.createReader();
+  const entries = [];
+  while (true) {
+    const batch = await new Promise((resolve, reject) => {
+      reader.readEntries(resolve, reject);
+    });
+    if (batch.length == 0) break;
+    entries.push(...batch);
+  }
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     if (entry.isDirectory) {
@@ -912,7 +919,6 @@ async function readDirectoryFilesRecursively(directory, files, relativePaths, em
       const file = await new Promise((resolve, reject) => {
         entry.file(resolve, reject);
       });
-      console.log(`… file[${i}].name = ${file.name}`);
       files.push(file);
       relativePaths.push(relativePath + "/" + file.name);
     }

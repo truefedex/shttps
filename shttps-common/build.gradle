@@ -9,7 +9,8 @@ java {
 
 dependencies {
     implementation project(path: ':server-lib')
-    implementation libs.json
+    compileOnly libs.json
+    compileOnly libs.kxml
 
     testImplementation libs.junit5.jupiter.api
     testRuntimeOnly libs.junit5.jupiter.engine

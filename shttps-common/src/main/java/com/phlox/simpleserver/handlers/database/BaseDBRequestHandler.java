@@ -12,8 +12,8 @@ import com.phlox.simpleserver.utils.Holder;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -24,19 +24,19 @@ public abstract class BaseDBRequestHandler implements RequestHandler {
     protected final SHTTPSConfig config;
     protected final AuthManager authManager;
 
-    public BaseDBRequestHandler(Holder<Database> database, SHTTPSConfig config, @NonNull AuthManager authManager) {
+    public BaseDBRequestHandler(Holder<Database> database, SHTTPSConfig config, @NotNull AuthManager authManager) {
         this.database = database;
         this.config = config;
         this.authManager = authManager;
     }
 
-    protected @Nullable User checkUser(@NonNull RequestContext context) {
+    protected @Nullable User checkUser(@NotNull RequestContext context) {
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.NONE)) return null;
         return authManager.getAuthenticatedUser(context);
     }
 
-    protected boolean checkIsForbidden(@NonNull DatabaseOperations db, @Nullable User user, @NonNull String subject,
-                                       @NonNull String operation, @Nullable Map<String, Object> operationParams,
+    protected boolean checkIsForbidden(@NotNull DatabaseOperations db, @Nullable User user, @NotNull String subject,
+                                       @NotNull String operation, @Nullable Map<String, Object> operationParams,
                                        User.DBRights... requestedRights) {
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.NONE)) return false;
         if (user == null) return true;

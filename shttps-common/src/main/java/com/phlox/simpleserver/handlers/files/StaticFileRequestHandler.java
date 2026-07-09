@@ -13,6 +13,7 @@ import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
@@ -29,15 +30,17 @@ public class StaticFileRequestHandler extends BaseFileRequestHandler {
 
     private static final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(StaticFileRequestHandler.class);
 
-    public StaticFileRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
-        super(config, authManager, userStore);
+    protected final List<String> allowedMethods =
+            List.of(Request.METHOD_GET, Request.METHOD_HEAD);
+
+    public StaticFileRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore, LockManager locks) {
+        super(config, authManager, userStore, locks);
     }
 
     @Override
     public Response handleRequest(RequestContext context, Request request) throws Exception {
-        boolean isHead = request.method.equals(Request.METHOD_HEAD);
-        if (!request.method.equals(Request.METHOD_GET) && !isHead) {
-            return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_HEAD});
+        if (!allowedMethods.contains(request.method)) {
+            return StandardResponses.METHOD_NOT_ALLOWED(allowedMethods.toArray(new String[0]));
         }
 
         String queryPath = request.queryParams.get("path");
@@ -86,14 +89,14 @@ public class StaticFileRequestHandler extends BaseFileRequestHandler {
             type += "; charset=" + charset;
         }
         Response response;
-        if (isHead) {
+        if (request.method.equals(Request.METHOD_HEAD)) {
             response = new Response(type, file.length(), null);
         } else {
             response = makeFileResponse(file, type, request);
         }
 
-        response.headers.put(Response.HEADER_ACCEPT_RANGES, "bytes");
-        response.headers.put(Response.HEADER_LAST_MODIFIED, HTTPUtils.getHTTPDateFormat().format(new Date( file.lastModified() )));
+        response.headers.add(Response.HEADER_ACCEPT_RANGES, "bytes");
+        response.headers.add(Response.HEADER_LAST_MODIFIED, HTTPUtils.getHTTPDateFormat().format(new Date( file.lastModified() )));
 
         return response;
     }
@@ -114,14 +117,14 @@ public class StaticFileRequestHandler extends BaseFileRequestHandler {
             response = new RangedFileResponse(type, ranges.get(0).length, platformUtils.openInputStream(file.getUri()));
             response.code = 206;
             response.phrase = "Partial Content";
-            response.headers.put(Response.HEADER_CONTENT_RANGE, "bytes " + ranges.get(0).start + "-" + ranges.get(0).end + "/" + file.length());
+            response.headers.add(Response.HEADER_CONTENT_RANGE, "bytes " + ranges.get(0).start + "-" + ranges.get(0).end + "/" + file.length());
             ((RangedFileResponse)response).ranges = ranges;
         } else {
             response = new Response(type, file.length(), new BufferedInputStream(platformUtils.openInputStream(file.getUri())));
         }
 
         if (request.queryParams.containsKey("download")) {
-            response.headers.put(Response.HEADER_CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"");
+            response.headers.add(Response.HEADER_CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"");
         }
         return response;
     }

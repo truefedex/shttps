@@ -52,7 +52,7 @@ public class WebAuthMiddleware implements Middleware {
                 "SameSite", "Lax",
                 "Max-Age", 60
         );
-        response.headers.put("Set-Cookie",
+        response.headers.add("Set-Cookie",
                 HTTPUtils.buildSetCookieHeader("registration_allowed",
                         registrationAllowed ? "1" : "0", options));
         return response;

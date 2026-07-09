@@ -2,30 +2,30 @@ package com.phlox.simpleserver.auth;
 
 import com.phlox.simpleserver.utils.Utils;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public interface UserStore {
     @Nullable
-    User authenticate(@NonNull String username, @NonNull String password);
-    @Nullable User find(@NonNull String identity);
+    User authenticate(@NotNull String username, @NotNull String password);
+    @Nullable User find(@NotNull String identity);
     @Nullable User get(long i);
     long count();
-    boolean isIdentityUsed(@NonNull String identity);
-    void create(@NonNull User user) throws Exception;
+    boolean isIdentityUsed(@NotNull String identity);
+    void create(@NotNull User user) throws Exception;
     @Nullable User createEmptyUserWithAvailableIdentity() throws Exception;
 
     boolean isUserDirUsed(String userDir);
 
-    boolean update(@NonNull User user);
-    boolean update(@NonNull String userIdentity, @NonNull String field, @Nullable Object value);
-    boolean delete(@NonNull String identity);
-    boolean rename(@NonNull User user, @NonNull String newIdentity);
+    boolean update(@NotNull User user);
+    boolean update(@NotNull String userIdentity, @NotNull String field, @Nullable Object value);
+    boolean delete(@NotNull String identity);
+    boolean rename(@NotNull User user, @NotNull String newIdentity);
 
     void deleteAll();
 
     UserRightsEvaluator provideUserRightsEvaluator();
-    User registerNewUser(@NonNull String identity, @NonNull String password) throws Exception;
+    User registerNewUser(@NotNull String identity, @NotNull String password) throws Exception;
 
     void updateUserAtomically(String identity, Updater<User> predicate) throws Exception;
 

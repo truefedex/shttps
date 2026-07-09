@@ -11,6 +11,7 @@ import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.Utils;
 
@@ -26,8 +27,8 @@ import java.util.Map;
 public class FileListRequestHandler extends BaseFileRequestHandler {
     public static final String LIST_CONTENTS_OPERATION = "LIST_CONTENTS";
 
-    public FileListRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
-        super(config, authManager, userStore);
+    public FileListRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore, LockManager locks) {
+        super(config, authManager, userStore, locks);
     }
 
     public static JSONArray prepareFileListJson(String path, String sort, String sortReversedParam,

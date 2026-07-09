@@ -2,8 +2,10 @@ package com.phlox.server.utils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
@@ -59,8 +61,114 @@ public class RadixTree<T> {
         current.value = value;
     }
 
+    /**
+     * Looks up the value stored under exactly {@code key} — not the longest
+     * matching prefix of it, and not keys that merely start with it. Returns
+     * {@code null} if {@code key} was never {@link #put}, or was put with a
+     * {@code null} value.
+     */
+    public T get(String key) {
+        RadixNode<T> current = root;
+        int i = 0;
+        while (i < key.length()) {
+            char c = key.charAt(i);
+            RadixNode<T> child = current.children.get(c);
+            if (child == null) return null;
+            String childPrefix = child.prefix;
+            int j = 0;
+            while (j < childPrefix.length() && i < key.length() && key.charAt(i) == childPrefix.charAt(j)) {
+                i++;
+                j++;
+            }
+            if (j < childPrefix.length()) return null; // key ends mid-node, or mismatch
+            current = child;
+        }
+        return current.value;
+    }
+
     public void clear() {
         root = new RadixNode<T>("");
+    }
+
+    /**
+     * Removes the value stored under exactly {@code key}, compacting the
+     * tree the same way {@link #removeIf} does. Returns the previously
+     * stored value, or {@code null} if {@code key} wasn't present.
+     */
+    public T remove(String key) {
+        AtomicReference<T> removed = new AtomicReference<>();
+        remove(root, key, 0, removed);
+        return removed.get();
+    }
+
+    /**
+     * @return true if {@code node} is now empty (no value, no children) and
+     *         should be pruned from its parent's children map
+     */
+    private boolean remove(RadixNode<T> node, String key, int i, AtomicReference<T> removed) {
+        if (i == key.length()) {
+            removed.set(node.value);
+            node.value = null;
+        } else {
+            char c = key.charAt(i);
+            RadixNode<T> child = node.children.get(c);
+            if (child != null) {
+                String childPrefix = child.prefix;
+                int j = 0, ci = i;
+                while (j < childPrefix.length() && ci < key.length() && key.charAt(ci) == childPrefix.charAt(j)) {
+                    ci++;
+                    j++;
+                }
+                if (j == childPrefix.length()) {
+                    if (remove(child, key, ci, removed)) {
+                        node.children.remove(c);
+                    } else if (child.value == null && child.children.size() == 1) {
+                        RadixNode<T> grandchild = child.children.values().iterator().next();
+                        grandchild.prefix = child.prefix + grandchild.prefix;
+                        node.children.put(c, grandchild);
+                    }
+                } // else: key diverges from the tree here, nothing to remove
+            }
+        }
+        return node != root && node.value == null && node.children.isEmpty();
+    }
+
+    /**
+     * Removes every stored key/value pair for which {@code predicate} returns
+     * {@code true} (analogous to {@link java.util.Map#values()}'s
+     * {@code removeIf}, but keyed by the full reconstructed key). The tree is
+     * compacted as it goes, so a branch node left with no value and a single
+     * remaining child is merged back into that child, same as if the
+     * intermediate key had never been inserted.
+     *
+     * @param predicate (key, value) -> true to remove this entry
+     */
+    public void removeIf(BiPredicate<String, T> predicate) {
+        removeIf(root, "", predicate);
+    }
+
+    /**
+     * @return true if {@code node} is now empty (no value, no children) and
+     *         should be pruned from its parent's children map
+     */
+    private boolean removeIf(RadixNode<T> node, String path, BiPredicate<String, T> predicate) {
+        Iterator<Map.Entry<Character, RadixNode<T>>> it = node.children.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Character, RadixNode<T>> entry = it.next();
+            RadixNode<T> child = entry.getValue();
+            String childPath = path + child.prefix;
+            if (removeIf(child, childPath, predicate)) {
+                it.remove();
+            } else if (child.value == null && child.children.size() == 1) {
+                RadixNode<T> grandchild = child.children.values().iterator().next();
+                grandchild.prefix = child.prefix + grandchild.prefix;
+                entry.setValue(grandchild);
+            }
+        }
+        if (node.value != null && predicate.test(path, node.value)) {
+            node.value = null;
+        }
+        return node != root && node.value == null && node.children.isEmpty();
     }
 
     public T findLongestPrefix(String key) {
@@ -170,6 +278,53 @@ public class RadixTree<T> {
     }
 
     /**
+     * Visits every stored key that is equal to or longer than {@code prefix}
+     * and begins with it — i.e. the reverse direction of {@link #visitPrefixes}.
+     * Where {@code visitPrefixes} finds stored keys that are prefixes of the
+     * input, this finds stored keys for which the input is itself a prefix.
+     *
+     * Visitation order is unspecified beyond: the node exactly matching
+     * {@code prefix} (if any) is visited before its descendants, and a node
+     * is always visited before its own children.
+     *
+     * @param prefix  the prefix that matched keys must start with
+     * @param visitor (matchedKey, value) -> continueWalking; return false to stop early
+     */
+    public void visitPrefixesEqualOrLongerThan(String prefix, BiPredicate<String, T> visitor) {
+        RadixNode<T> current = root;
+        int i = 0;
+        while (i < prefix.length()) {
+            char c = prefix.charAt(i);
+            RadixNode<T> child = current.children.get(c);
+            if (child == null) return;
+            String childPrefix = child.prefix;
+            int j = 0;
+            while (j < childPrefix.length() && i < prefix.length() && prefix.charAt(i) == childPrefix.charAt(j)) {
+                i++;
+                j++;
+            }
+            if (i == prefix.length()) {
+                String nodePath = prefix.substring(0, i - j) + childPrefix;
+                visitSubtree(child, nodePath, visitor);
+                return;
+            } else if (j == childPrefix.length()) {
+                current = child;
+            } else {
+                return; // mismatch: no stored key starts with prefix
+            }
+        }
+        visitSubtree(current, prefix, visitor);
+    }
+
+    private boolean visitSubtree(RadixNode<T> node, String path, BiPredicate<String, T> visitor) {
+        if (node.value != null && !visitor.test(path, node.value)) return false;
+        for (RadixNode<T> child : node.children.values()) {
+            if (!visitSubtree(child, path + child.prefix, visitor)) return false;
+        }
+        return true;
+    }
+
+    /**
      * Fully zero-allocation variant. Instead of a String, exposes the matched
      * prefix as an end-index into the original {@code key}: the matched prefix
      * is always {@code key.substring(0, prefixEndIndex)}, but no substring is
@@ -253,5 +408,27 @@ public class RadixTree<T> {
             System.out.println("  prefix='" + key.substring(0, end) + "' value=" + value);
             return true;
         });
+
+        System.out.println("--- visitPrefixesEqualOrLongerThan ---");
+        tree.visitPrefixesEqualOrLongerThan("te", (key, value) -> {
+            System.out.println("  key='" + key + "' value=" + value);
+            return true;
+        });
+        // key='te'     value=2
+        // key='test'   value=1
+        // key='tester' value=3
+
+        System.out.println("--- removeIf ---");
+        tree.removeIf((key, value) -> value == 2); // removes "te"
+        System.out.println(tree.findLongestPrefix("te"));      // null
+        System.out.println(tree.findLongestPrefix("test"));    // 1
+        System.out.println(tree.findLongestPrefix("tester"));  // 3
+
+        System.out.println("--- get / remove (exact) ---");
+        System.out.println(tree.get("test"));    // 1
+        System.out.println(tree.get("tes"));     // null (not a stored key)
+        System.out.println(tree.remove("test")); // 1
+        System.out.println(tree.get("test"));    // null
+        System.out.println(tree.get("tester"));  // 3 (unaffected)
     }
 }

@@ -4,6 +4,7 @@ import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
+import com.phlox.server.responses.StandardResponses;
 
 public final class DefaultHandlerExecutionChain implements HandlerExecutionChain {
 
@@ -24,6 +25,6 @@ public final class DefaultHandlerExecutionChain implements HandlerExecutionChain
             return middlewares[index].handle(ctx, req, this);
         }
 
-        return handler.handleRequest(ctx, req);
+        return handler != null ? handler.handleRequest(ctx, req) : StandardResponses.NOT_FOUND();
     }
 }

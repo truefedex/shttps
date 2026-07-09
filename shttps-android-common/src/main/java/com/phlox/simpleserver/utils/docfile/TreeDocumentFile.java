@@ -4,10 +4,8 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.Build;
 import android.provider.DocumentsContract;
 import android.text.TextUtils;
-import android.util.Log;
 
 import com.phlox.server.utils.docfile.DocumentFile;
 
@@ -63,9 +61,6 @@ public class TreeDocumentFile extends DocumentFile {
 
     private static Uri createFile(Context context, Uri self, String mimeType,
                                   String displayName) {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.LOLLIPOP) {
-            throw new IllegalStateException("TreeDocumentFile is not supported on API < 21");
-        }
         int pos = displayName.lastIndexOf(".");
         if (pos > 0 && pos < (displayName.length() - 1)) { // If '.' is not the first or last character.
             displayName = displayName.substring(0, pos);
@@ -144,6 +139,11 @@ public class TreeDocumentFile extends DocumentFile {
     }
 
     @Override
+    public long created() {
+        return lastModified();
+    }
+
+    @Override
     public long length() {
         if (mLength == null) {
             mLength = DocumentsContractApi19.length(mContext, mUri);
@@ -163,9 +163,6 @@ public class TreeDocumentFile extends DocumentFile {
 
     @Override
     public boolean delete() {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.KITKAT) {
-            throw new IllegalStateException("TreeDocumentFile is not supported on API < 19");
-        }
         try {
             return DocumentsContract.deleteDocument(mContext.getContentResolver(), mUri);
         } catch (Exception e) {
@@ -180,9 +177,6 @@ public class TreeDocumentFile extends DocumentFile {
 
     @Override
     public DocumentFile[] listFiles() {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.LOLLIPOP) {
-            throw new IllegalStateException("TreeDocumentFile is not supported on API < 21");
-        }
         final ContentResolver resolver = mContext.getContentResolver();
         final Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(mUri,
                 DocumentsContract.getDocumentId(mUri));
@@ -217,9 +211,6 @@ public class TreeDocumentFile extends DocumentFile {
     }
 
     private static void closeQuietly(AutoCloseable closeable) {
-        if (android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
-            throw new IllegalStateException("TreeDocumentFile is not supported on API < 19");
-        }
         if (closeable != null) {
             try {
                 closeable.close();
@@ -232,9 +223,6 @@ public class TreeDocumentFile extends DocumentFile {
 
     @Override
     public boolean renameTo(String displayName) {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.LOLLIPOP) {
-            throw new IllegalStateException("TreeDocumentFile is not supported on API < 21");
-        }
         try {
             final Uri result = DocumentsContract.renameDocument(
                     mContext.getContentResolver(), mUri, displayName);
@@ -251,10 +239,38 @@ public class TreeDocumentFile extends DocumentFile {
 
     @Override
     public boolean copyTo(DocumentFile destDir) {
+        return copyTo(destDir, getName());
+    }
+
+    @Override
+    public boolean moveTo(DocumentFile destDir) {
+        ContentResolver contentResolver = mContext.getContentResolver();
         DocumentFile dst = destDir.findFile(getName());
+        if (dst != null &&
+                (dst.isDirectory() || (isFile() && !dst.delete()))) {
+            return false;
+        }
+        try {
+            Uri movedDocUri = DocumentsContract.moveDocument(contentResolver, mUri, Uri.parse(getParentFile().getUri()), Uri.parse(destDir.getUri()));
+            return movedDocUri != null;
+        } catch (FileNotFoundException e) {
+            return false;
+        }
+    }
+
+    @Override
+    public boolean moveTo(DocumentFile destDir, String destName) {
+        boolean moveResult = moveTo(destDir);
+        if (!moveResult) return false;
+        return renameTo(destName);
+    }
+
+    @Override
+    public boolean copyTo(DocumentFile destDir, String destName) {
+        DocumentFile dst = destDir.findFile(destName);
         if (isDirectory()) {
             if (dst == null) {
-                dst = destDir.createDirectory(getName());
+                dst = destDir.createDirectory(destName);
             }
             if (dst == null || !dst.isDirectory()) {
                 return false;
@@ -268,7 +284,7 @@ public class TreeDocumentFile extends DocumentFile {
         } else {
             ContentResolver contentResolver = mContext.getContentResolver();
             if (dst == null) {
-                dst = destDir.createFile(getType(), getName());
+                dst = destDir.createFile(getType(), destName);
             }
             if (dst == null || dst.isDirectory()) {
                 return false;
@@ -284,29 +300,12 @@ public class TreeDocumentFile extends DocumentFile {
         }
     }
 
-    @Override
-    public boolean moveTo(DocumentFile destDir) {
-        ContentResolver contentResolver = mContext.getContentResolver();
-        DocumentFile dst = destDir.findFile(getName());
-        if (dst != null &&
-                (dst.isDirectory() || (isFile() && !dst.delete()))) {
-            return false;
-        }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            try {
-                Uri movedDocUri = DocumentsContract.moveDocument(contentResolver, mUri, Uri.parse(getParentFile().getUri()), Uri.parse(destDir.getUri()));
-                return movedDocUri != null;
-            } catch (FileNotFoundException e) {}
-        }
-        return false;
-    }
-
     //ALARM: please don't try to override this method
     //I tried and found that API has many bugs and it is not possible to implement it correctly and efficiently
     //https://stackoverflow.com/questions/56263620/contentresolver-query-on-documentcontract-lists-all-files-disregarding-selection
     /*@Nullable
     @Override
-    public DocumentFile findFile(@NonNull String displayName) {
+    public DocumentFile findFile(@NotNull String displayName) {
         return super.findFile(displayName);
     }*/
 
@@ -321,12 +320,12 @@ public class TreeDocumentFile extends DocumentFile {
     }
 
     @Override
-    public String getRelativePath(DocumentFile file) {
-        if (!isDirectory() || file == null) {
+    public String getRelativePath(DocumentFile directOrIndirectChild) {
+        if (!isDirectory() || directOrIndirectChild == null) {
             return null;
         }
         String baseUri = getUri();
-        String fileUri = file.getUri();
+        String fileUri = directOrIndirectChild.getUri();
         if (fileUri.startsWith(baseUri)) {
             String relativeUriPart = fileUri.substring(baseUri.length());
             //uri is url encoded, need to decode

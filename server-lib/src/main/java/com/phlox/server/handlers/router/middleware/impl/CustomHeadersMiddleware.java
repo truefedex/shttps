@@ -43,7 +43,7 @@ public class CustomHeadersMiddleware implements Middleware {
     public CustomHeadersMiddleware(List<Rule> rules) {
         MultiMap<String, Rule> groupedRules = new MultiMap<>();
         for (Rule rule : rules) {
-            groupedRules.put(rule.path, rule);
+            groupedRules.add(rule.path, rule);
         }
         groupedRules.forEach((key, ruleSet) ->
                 this.rules.put(key, ruleSet.toArray(new Rule[0])));
@@ -69,13 +69,13 @@ public class CustomHeadersMiddleware implements Middleware {
                         if (rule.ifHeadersExist == IfHeadersExist.IGNORE) {
                             return;
                         } else if (rule.ifHeadersExist == IfHeadersExist.APPEND) {
-                            values.forEach(value -> response.headers.put(name, value));
+                            values.forEach(value -> response.headers.add(name, value));
                             return;
                         } else if (rule.ifHeadersExist == IfHeadersExist.OVERRIDE) {
                             response.headers.removeAll(name);
                         }
                     }
-                    response.headers.put(name, String.join(", ", values));
+                    response.headers.add(name, String.join(", ", values));
                 });
             }
             return true;

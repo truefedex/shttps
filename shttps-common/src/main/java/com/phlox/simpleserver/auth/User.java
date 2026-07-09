@@ -2,8 +2,8 @@ package com.phlox.simpleserver.auth;
 
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.Serializable;
 import java.util.EnumSet;
@@ -44,24 +44,24 @@ public class User implements Serializable, Cloneable {
         READ_STATUS, EXECUTE_HANDLER
     }
 
-    public @NonNull String identity;
-    public @NonNull String passwordHash;
+    public @NotNull String identity;
+    public @NotNull String passwordHash;
     public @Nullable String rootDir;
-    public @NonNull EnumSet<FileSystemRights> fsRights;
-    public @NonNull EnumSet<DBRights> dbRights;
+    public @NotNull EnumSet<FileSystemRights> fsRights;
+    public @NotNull EnumSet<DBRights> dbRights;
     public @Nullable String role;
     public long registeredAt;
     public @Nullable Long lastLogin = null; // can be null if user never logged in
 
     // file storage size limit
     public @Nullable Long storageLimit;
-    public @NonNull EnumSet<SystemRights> systemRights;
+    public @NotNull EnumSet<SystemRights> systemRights;
     public long usedStorage;
 
-    public User(@NonNull String identity, @NonNull String passwordHash, @Nullable String rootDir,
+    public User(@NotNull String identity, @NotNull String passwordHash, @Nullable String rootDir,
                 EnumSet<FileSystemRights> fsRights, EnumSet<DBRights> dbRights, @Nullable String role,
                 long registeredAt, @Nullable Long lastLogin, @Nullable Long storageLimit,
-                @NonNull EnumSet<SystemRights> systemRights, long usedStorage) {
+                @NotNull EnumSet<SystemRights> systemRights, long usedStorage) {
         this.identity = identity;
         this.passwordHash = passwordHash;
         this.rootDir = rootDir;
@@ -75,7 +75,7 @@ public class User implements Serializable, Cloneable {
         this.usedStorage = usedStorage;
     }
 
-    public User(@NonNull String identity, @NonNull String passwordHash) {
+    public User(@NotNull String identity, @NotNull String passwordHash) {
         this(identity, passwordHash, null,
                 EnumSet.of(FileSystemRights.READ, FileSystemRights.LIST_CONTENTS),
                 EnumSet.of(DBRights.READ), null,
@@ -87,7 +87,7 @@ public class User implements Serializable, Cloneable {
         return GUEST_IDENTITY.equals(identity);
     }
 
-    public @NonNull JSONObject serialize() {
+    public @NotNull JSONObject serialize() {
         JSONObject object = new JSONObject();
         object.put(FIELD_IDENTITY, identity);
         object.put(FIELD_PASSWORD, passwordHash);
@@ -130,7 +130,7 @@ public class User implements Serializable, Cloneable {
         return object;
     }
 
-    public static @NonNull User deserialize(@NonNull JSONObject object) throws JSONException {
+    public static @NotNull User deserialize(@NotNull JSONObject object) throws JSONException {
         String identity = object.getString(FIELD_IDENTITY);
         String password = object.getString(FIELD_PASSWORD);
         String rootDir = object.isNull(FIELD_ROOT_DIR) ? null : object.getString(FIELD_ROOT_DIR);

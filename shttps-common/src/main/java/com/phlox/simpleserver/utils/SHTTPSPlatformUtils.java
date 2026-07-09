@@ -2,6 +2,10 @@ package com.phlox.simpleserver.utils;
 
 import com.phlox.server.utils.docfile.DocumentFile;
 
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
+import org.xmlpull.v1.XmlSerializer;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -28,6 +32,9 @@ public interface SHTTPSPlatformUtils {
     DocumentFile getDefaultRootDir();
 
     ImageData generateCaptchaImage(String code, int width, int height);
+
+    XmlSerializer newXMLSerializer();
+    XmlPullParser newXMLPullParser() throws XmlPullParserException;
 
     class ImageData {
         public int width;

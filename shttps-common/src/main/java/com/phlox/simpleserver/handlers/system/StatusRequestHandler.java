@@ -14,8 +14,8 @@ import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.database.Database;
 
 import org.json.JSONObject;
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -95,7 +95,7 @@ public class StatusRequestHandler implements RequestHandler {
         return new TextResponse(200, "Ok", answer.toString(), "application/json");
     }
 
-    protected @Nullable User checkUser(@NonNull RequestContext context) {
+    protected @Nullable User checkUser(@NotNull RequestContext context) {
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.NONE)) return null;
         return authManager.getAuthenticatedUser(context);
     }

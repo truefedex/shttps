@@ -1,5 +1,7 @@
 package com.phlox.simpleserver.handlers.files;
 
+import static com.phlox.simpleserver.handlers.files.webdav.WebDavHelpersBase.extractLockTokenFromIf;
+
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
@@ -9,21 +11,22 @@ import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
+import com.phlox.simpleserver.utils.StorageQuota;
+import com.phlox.simpleserver.utils.Utils;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
 public class MoveFileRequestHandler extends BaseFileRequestHandler {
-    private static final String ERROR_MSG_NO_SPACE_LEFT = "No file space left";
     public static final String COPY_MOVE_OPERATION = "COPY_MOVE";
 
-    public MoveFileRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore) {
-        super(config, authManager, userStore);
+    public MoveFileRequestHandler(SHTTPSConfig config, AuthManager authManager, UserStore userStore, LockManager locks) {
+        super(config, authManager, userStore, locks);
     }
 
     @Override
@@ -56,6 +59,9 @@ public class MoveFileRequestHandler extends BaseFileRequestHandler {
                     User.FileSystemRights.UPDATE))
                 return StandardResponses.FORBIDDEN();
 
+            String lockTokenProvided = extractLockTokenFromIf(request.headers.get("if"));
+            StorageQuota quota = new StorageQuota(user, userStore);
+
             for (int i = 0; i < jArr.length(); i++) {
                 String path = jArr.getString(i);
                 if (!path.startsWith("/")) {
@@ -65,24 +71,24 @@ public class MoveFileRequestHandler extends BaseFileRequestHandler {
                 if (file == null) {
                     return StandardResponses.NOT_FOUND();
                 }
-                if ("copy".equals(action)) {
-                    if (destFile.getStorageFreeSpace() < file.length()) {
-                        throw new IOException(ERROR_MSG_NO_SPACE_LEFT);
-                    }
 
-                    if (user != null) {
-                        Long storageLimit = userStore.provideUserRightsEvaluator().getStorageLimit(user);
-                        userStore.updateUserAtomically(user.identity, u -> {
-                            u.usedStorage += file.length();
-                            if (storageLimit != null && ((storageLimit - u.usedStorage) < 0)) {
-                                throw new IOException(ERROR_MSG_NO_SPACE_LEFT);
-                            }
-                            return u;
-                        });
+                String destFilePath = Utils.joinPaths(destPath, file.getName());
+                if ("move".equals(action) && !locks.mayWrite(path, lockTokenProvided)) {
+                    return new Response(423, "Locked");
+                }
+                if (!locks.mayWrite(destFilePath, lockTokenProvided)) {
+                    return new Response(423, "Locked");
+                }
+
+                if ("copy".equals(action)) {
+                    long size = StorageQuota.sizeOf(file);
+                    if (!quota.hasSpaceFor(destFile, size, 0)) {
+                        return new Response(413, StorageQuota.ERROR_MSG_NO_SPACE_LEFT);
                     }
                     if (!file.copyTo(destFile)) {
                         return StandardResponses.INTERNAL_SERVER_ERROR("Cannot copy file: " + file.getName());
                     }
+                    quota.addUsed(size);
                 } else {
                     if (!file.moveTo(destFile)) {
                         return StandardResponses.INTERNAL_SERVER_ERROR("Cannot move file: " + file.getName());

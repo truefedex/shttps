@@ -3,14 +3,10 @@ package com.phlox.simpleserver;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
-import android.text.TextUtils;
 
-import com.phlox.server.handlers.router.middleware.impl.RedirectsMiddleware;
 import com.phlox.server.platform.Base64;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
-import com.phlox.simpleserver.handlers.HandlersUtils;
-import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.middleware.intentsenders.IntentSender;
 import com.phlox.simpleserver.utils.KeyStoreCrypt;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
@@ -25,11 +21,8 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.security.KeyStore;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 public class SHTTPSConfigAndroid implements SHTTPSConfig {
     private final Context context;
@@ -49,11 +42,6 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
         this.context = context;
         this.keyStoreCrypt = new KeyStoreCrypt(context);
         prefs = context.getSharedPreferences(prefName, Context.MODE_PRIVATE);
-    }
-
-    @Override
-    public void runMigrations() {
-        SHTTPSConfig.super.runMigrations();
     }
 
     @Override
@@ -77,77 +65,6 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     @Override
     public void setRootDir(String value) {
         prefs.edit().putString(KEY_ROOT_DIR, value).apply();
-    }
-
-    @Override
-    public boolean getRenderFolders() {
-        return prefs.getBoolean(KEY_RENDER_FOLDERS, true);
-    }
-
-    @Override
-    public void setRenderFolders(boolean value) {
-        prefs.edit().putBoolean(KEY_RENDER_FOLDERS, value).apply();
-    }
-
-    @Override
-    public boolean getAllowEditing() {
-        return prefs.getBoolean(KEY_ALLOW_EDITING, false);
-    }
-
-    @Override
-    public void setAllowEditing(boolean value) {
-        prefs.edit().putBoolean(KEY_ALLOW_EDITING, value).apply();
-    }
-
-    @Override
-    public int getPort() {
-        return prefs.getInt(KEY_PORT, 8080);
-    }
-
-    @Override
-    public void setPort(int value) {
-        prefs.edit().putInt(KEY_PORT, value).apply();
-    }
-
-    @Override
-    public String getUsername() {
-        return prefs.getString(KEY_USERNAME, "");
-    }
-
-    @Override
-    public String getPassword() {
-        try {
-            String encrypted = prefs.getString(KEY_PASSWORD, null);
-            if (encrypted == null) return "";
-            if (keyStoreCrypt.getKeyStore().containsAlias(ALIAS_CONFIG_PREFIX + KEY_PASSWORD)) {
-                return keyStoreCrypt.decrypt(encrypted, ALIAS_CONFIG_PREFIX + KEY_PASSWORD);
-            } else {
-                throw new Exception("Key alias not found");
-            }
-        } catch (Exception e) {
-            logger.e("Failed to get password", e);
-            return "";
-        }
-    }
-
-    @Override
-    public boolean getRedirectToIndex() {
-        return prefs.getBoolean(KEY_REDIRECT_TO_INDEX, true);
-    }
-
-    @Override
-    public void setRedirectToIndex(boolean value) {
-        prefs.edit().putBoolean(KEY_REDIRECT_TO_INDEX, value).apply();
-    }
-
-    @Override
-    public boolean getUseTLS() {
-        return prefs.getBoolean(KEY_USE_TLS, false);
-    }
-
-    @Override
-    public void setUseTLS(boolean value) {
-        prefs.edit().putBoolean(KEY_USE_TLS, value).apply();
     }
 
     @Override
@@ -198,241 +115,8 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
         setTLSCert(bytes);
     }
 
-    @Override
-    public String getTLSKeystorePassword() {
-        String encrypted = prefs.getString(KEY_TLS_CERT_KEYSTORE_PASS, null);
-        if (encrypted == null) return null;
-        try {
-            if (keyStoreCrypt.getKeyStore().containsAlias(ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEYSTORE_PASS)) {
-                return keyStoreCrypt.decrypt(encrypted, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEYSTORE_PASS);
-            } else {
-                throw new Exception("Key alias not found");
-            }
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    @Override
-    public void setTLSKeystorePassword(String value) {
-        if (value == null) {
-            prefs.edit().remove(KEY_TLS_CERT_KEYSTORE_PASS).apply();
-            return;
-        }
-        try {
-            String encrypted = keyStoreCrypt.encrypt(value, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEYSTORE_PASS);
-            prefs.edit().putString(KEY_TLS_CERT_KEYSTORE_PASS, encrypted).apply();
-        } catch (Exception e) {
-            logger.e("Failed to set TLS cert password", e);
-        }
-    }
-
-    @Override
-    public String getTLSKeyPassword() {
-        String encrypted = prefs.getString(KEY_TLS_CERT_KEY_PASS, null);
-        if (encrypted == null) return null;
-        try {
-            if (keyStoreCrypt.getKeyStore().containsAlias(ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEY_PASS)) {
-                return keyStoreCrypt.decrypt(encrypted, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEY_PASS);
-            } else {
-                throw new Exception("Key alias not found");
-            }
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    @Override
-    public void setTLSKeyPassword(String value) {
-        if (value == null) {
-            prefs.edit().remove(KEY_TLS_CERT_KEY_PASS).apply();
-            return;
-        }
-        try {
-            String encrypted = keyStoreCrypt.encrypt(value, ALIAS_CONFIG_PREFIX + KEY_TLS_CERT_KEY_PASS);
-            prefs.edit().putString(KEY_TLS_CERT_KEY_PASS, encrypted).apply();
-        } catch (Exception e) {
-            logger.e("Failed to set TLS cert key password", e);
-        }
-    }
-
-    @Override
-    public String[] getAllowedNetworkInterfaces() {
-        String value = prefs.getString(KEY_ALLOWED_NETWORK_INTERFACES, "");
-        if (value.isEmpty()) return null;
-        return value.split(",");
-    }
-
-    @Override
-    public void setAllowedNetworkInterfaces(String[] value) {
-        if (value == null) {
-            prefs.edit().remove(KEY_ALLOWED_NETWORK_INTERFACES).apply();
-            return;
-        }
-        prefs.edit().putString(KEY_ALLOWED_NETWORK_INTERFACES, TextUtils.join(",", value)).apply();
-    }
-
-    @Override
-    public Set<WhiteListMode> getWhiteListMode() {
-        int value = prefs.getInt(KEY_WHITE_LIST_MODE, 0);
-        return WhiteListMode.fromInt(value);
-    }
-
-    @Override
-    public void setWhiteListMode(Set<WhiteListMode> value) {
-        if (value == null) {
-            prefs.edit().remove(KEY_WHITE_LIST_MODE).apply();
-            return;
-        }
-        int intValue = WhiteListMode.toInt(value);
-        prefs.edit().putInt(KEY_WHITE_LIST_MODE, intValue).apply();
-    }
-
-    @Override
-    public HashSet<String> getWhiteList() {
-        HashSet<String> result = new HashSet<>();
-        String value = prefs.getString(KEY_WHITE_LIST_OF_IPS, "");
-        if (value.isEmpty()) return result;
-        String[] ips = value.split(",");
-        Collections.addAll(result, ips);
-        return result;
-    }
-
-    @Override
-    public void setWhiteList(Set<String> value) {
-        if (value == null) {
-            prefs.edit().remove(KEY_WHITE_LIST_OF_IPS).apply();
-            return;
-        }
-        prefs.edit().putString(KEY_WHITE_LIST_OF_IPS, TextUtils.join(",", value)).apply();
-    }
-
-    @Override
-    public void setCustomHeaders(String value) {
-        if (value == null) {
-            prefs.edit().remove(KEY_CUSTOM_HEADERS).apply();
-            return;
-        }
-        prefs.edit().putString(KEY_CUSTOM_HEADERS, value).apply();
-    }
-
-    @Override
-    public String getCustomHeaders() {
-        return prefs.getString(KEY_CUSTOM_HEADERS, "");
-    }
-
-    @Override
-    public boolean isDatabaseEnabled() {
-        return prefs.getBoolean(KEY_DATABASE_ENABLED, false);
-    }
-
-    @Override
-    public void setDatabaseEnabled(boolean value) {
-        prefs.edit().putBoolean(KEY_DATABASE_ENABLED, value).apply();
-    }
-
-    @Override
-    public String getDatabasePath() {
-        return prefs.getString(KEY_DATABASE_PATH, null);
-    }
-
-    @Override
-    public void setDatabasePath(String value) {
-        if (value == null) {
-            prefs.edit().remove(KEY_DATABASE_PATH).apply();
-            return;
-        }
-        prefs.edit().putString(KEY_DATABASE_PATH, value).apply();
-    }
-
-    @Override
-    public boolean isAllowDatabaseCustomSqlRemoteApi() {
-        return prefs.getBoolean(KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API, false);
-    }
-
-    @Override
-    public boolean isAllowDatabaseTableDataEditingApi() {
-        return prefs.getBoolean(KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API, false);
-    }
-
-    @Override
-    public void setAllowDatabaseTableDataEditingApi(boolean value) {
-        prefs.edit().putBoolean(KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API, value).apply();
-    }
-
-    @Override
-    public void setAllowDatabaseCustomSqlRemoteApi(boolean value) {
-        prefs.edit().putBoolean(KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API, value).apply();
-    }
-
-    @Override
-    public List<RedirectsMiddleware.RedirectRule> getRedirectRules() {
-        //they stored as array of strings where each string is a serialized to JSON RedirectRule
-        String jsArray = prefs.getString(KEY_REDIRECT_RULES, null);
-        if (jsArray == null) return null;
-        List<RedirectsMiddleware.RedirectRule> result = new ArrayList<>();
-        try {
-            JSONArray array = new JSONArray(jsArray);
-            for (int i = 0; i < array.length(); i++) {
-                JSONObject json = array.getJSONObject(i);
-                RedirectsMiddleware.RedirectRule rule = HandlersUtils.ruleFromJson(json);
-                result.add(rule);
-            }
-            return result;
-        } catch (JSONException e) {
-            return null;
-        }
-    }
-
-    @Override
-    public void setRedirectRules(List<RedirectsMiddleware.RedirectRule> value) {
-        if (value == null) {
-            prefs.edit().remove(KEY_REDIRECT_RULES).apply();
-            return;
-        }
-        JSONArray array = new JSONArray();
-        for (RedirectsMiddleware.RedirectRule rule : value) {
-            JSONObject json = HandlersUtils.ruleToJson(rule);
-            array.put(json);
-        }
-        prefs.edit().putString(KEY_REDIRECT_RULES, array.toString()).apply();
-    }
-
-    @Override
-    public List<User> getUsers() {
-        Set<String> usersStrSet = prefs.getStringSet(KEY_USERS, new HashSet<>());
-        List<User> users = new ArrayList<>();
-        for (String userStr : usersStrSet) {
-            try {
-                users.add(User.deserialize(new JSONObject(userStr)));
-            } catch (JSONException e) {
-                logger.e("Unable to parse User from JSON", e);
-            }
-        }
-        return users;
-    }
-
-    @Override
-    public void setUsers(Collection<User> users) {
-        Set<String> usersStrSet = new HashSet<>();
-        for (User user : users) {
-            usersStrSet.add(user.serialize().toString());
-        }
-        prefs.edit().putStringSet(KEY_USERS, usersStrSet).apply();
-    }
-
-    @Override
-    public AuthMode getAuthMode() {
-        return AuthMode.valueOf(prefs.getString(KEY_AUTH_MODE, AuthMode.NONE.name()));
-    }
-
-    @Override
-    public void setAuthMode(AuthMode value) {
-        prefs.edit().putString(KEY_AUTH_MODE, value.name()).apply();
-    }
-
     // Android-specific settings. Not handled automatically by SHTTPSApp
-    
+
     public boolean isEnableIntentSendingHandlers() {
         return prefs.getBoolean(KEY_ENABLE_INTENT_SENDING_HANDLERS, false);
     }
@@ -510,6 +194,36 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     @Override
     public void setString(String key, String value) {
         prefs.edit().putString(key, value).apply();
+    }
+
+    @Override
+    public String getSecretString(String key, String defaultValue) {
+        String encrypted = prefs.getString(key, null);
+        if (encrypted == null) return defaultValue;
+        try {
+            if (keyStoreCrypt.getKeyStore().containsAlias(ALIAS_CONFIG_PREFIX + key)) {
+                return keyStoreCrypt.decrypt(encrypted, ALIAS_CONFIG_PREFIX + key);
+            } else {
+                throw new Exception("Key alias not found");
+            }
+        } catch (Exception e) {
+            logger.e("Failed to decrypt secret config value: " + key, e);
+            return defaultValue;
+        }
+    }
+
+    @Override
+    public void setSecretString(String key, String value) {
+        if (value == null) {
+            prefs.edit().remove(key).apply();
+            return;
+        }
+        try {
+            String encrypted = keyStoreCrypt.encrypt(value, ALIAS_CONFIG_PREFIX + key);
+            prefs.edit().putString(key, encrypted).apply();
+        } catch (Exception e) {
+            logger.e("Failed to encrypt secret config value: " + key, e);
+        }
     }
 
     @Override
