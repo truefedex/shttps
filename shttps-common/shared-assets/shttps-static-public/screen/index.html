@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <title>Remote screen</title>
+  <link rel="stylesheet" href="/shttps-static-public/common.css">
+  <link rel="stylesheet" href="/shttps-static-public/screen/screen.css">
+  <link rel="icon" type="image/png" href="/shttps-static-public/icon.png">
+  <script src="/shttps-static-public/common.js"></script>
+  <script src="/shttps-static-public/screen/screen.js"></script>
+</head>
+<body id="root" onload="onPageLoad();">
+  <div class="header">
+    <button id="menu-button" class="menu-button" onclick="onMenuClick(event);">☰</button>
+    <div id="path">Remote screen</div>
+    <div id="connection-state" class="connection-state">Connecting…</div>
+  </div>
+
+  <div id="screen-container">
+    <video id="screen-video" muted playsinline autoplay disablepictureinpicture></video>
+    <!-- catches pointer events while control is on: over the video, but under the message box -->
+    <div id="screen-input" class="screen-input hidden"></div>
+    <div id="screen-message" class="screen-message">
+      <div id="screen-message-title" class="screen-message-title">Connecting…</div>
+      <div id="screen-message-text" class="screen-message-text"></div>
+      <button id="screen-retry" class="screen-button" style="display: none;" onclick="onRetryClick();">RETRY</button>
+    </div>
+  </div>
+
+  <div id="screen-toolbar" class="screen-toolbar">
+    <div id="control-buttons" class="control-buttons hidden">
+      <button class="screen-button" onclick="onGlobalActionClick('back');"
+              title="Back — Esc or Ctrl+Backspace">BACK</button>
+      <button class="screen-button" onclick="onGlobalActionClick('home');"
+              title="Home — Ctrl+Alt+H">HOME</button>
+      <button class="screen-button" onclick="onGlobalActionClick('recents');"
+              title="Recent apps — Ctrl+Alt+R">RECENTS</button>
+      <!-- shown only where there is no physical keyboard; elsewhere keys are read directly -->
+      <input id="control-text" class="control-text hidden" type="text" autocomplete="off"
+             autocapitalize="off" autocorrect="off" spellcheck="false"
+             placeholder="Type into the focused field…">
+    </div>
+    <button class="screen-button" onclick="onFullscreenClick();">
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M120-120v-200h80v120h120v80H120Zm520 0v-80h120v-120h80v200H640ZM120-640v-200h200v80H200v120h-80Zm640 0v-120H640v-80h200v200h-80Z"/>
+      </svg>
+      FULLSCREEN
+    </button>
+    <div id="control-hint" class="control-hint"></div>
+    <div id="screen-stats" class="screen-stats"></div>
+  </div>
+
+  <div class="context-menu" id="main-menu">
+    <div class="menu-close-btn" onclick="hideContextMenu()">&times;</div>
+    <ul class="menu-options">
+      <li class="menu-option" id="mm-back-to-files">Back to files</li>
+      <li class="menu-option" id="mm-status">Status</li>
+    </ul>
+  </div>
+</body>
+</html>

@@ -1,6 +1,6 @@
 [versions]
-agp = "9.2.1"
-shadow = "9.4.1"
+agp = "9.3.1"
+shadow = "9.6.1"
 
 proguard-annotations = "7.9.1"
 jetbrains-annotations = "26.1.0"
@@ -9,11 +9,11 @@ junit5 = "5.9.2"
 junit-platform5 = "1.9.2"
 junit-bom = "6.0.1"
 
-org-json = "20251224"
+org-json = "20260719"
 kxml = "2.3.0"
 
-sqlite = "3.53.0.0"
-slf4j = "2.0.17"
+sqlite = "3.53.2.1"
+slf4j = "2.0.18"
 picocli = "4.7.7"
 
 compile-sdk = "37"

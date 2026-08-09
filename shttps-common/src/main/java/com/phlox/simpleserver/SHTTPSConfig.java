@@ -73,6 +73,7 @@ public interface SHTTPSConfig {
     String KEY_DEFAULT_TEXT_CHARSET = "default_text_charset";
     String KEY_HEADERS_OVERRIDES = "headers_overrides";
     String KEY_WEBDAV_SUPPORT = "webdav_support";
+    String KEY_SCREEN_SHARE = "screen_share";
 
     default void runMigrations() {
         if (getConfigVersion() == CONFIG_VERSION) return;
@@ -194,10 +195,21 @@ public interface SHTTPSConfig {
         setSecretString(KEY_TLS_CERT_KEY_PASS, value);
     }
 
+    /**
+     * Interfaces the server is allowed to accept connections on, or null for no restriction.
+     * Every entry is either a numeric interface index or an interface name; platform
+     * implementations of SHTTPSPlatformUtils.findInterfaces() accept both forms. Entries are
+     * trimmed and blanks dropped so that a hand-edited "3, eth0" works as written.
+     */
     default String[] getAllowedNetworkInterfaces() {
         String value = getString(KEY_ALLOWED_NETWORK_INTERFACES, "");
         if (value == null || value.isEmpty()) return null;
-        return value.split(",");
+        ArrayList<String> result = new ArrayList<>();
+        for (String entry : value.split(",")) {
+            entry = entry.trim();
+            if (!entry.isEmpty()) result.add(entry);
+        }
+        return result.isEmpty() ? null : result.toArray(new String[0]);
     }
 
     default void setAllowedNetworkInterfaces(String[] value) {
@@ -674,6 +686,18 @@ public interface SHTTPSConfig {
 
     default void setWebDavSupport(boolean value) {
         setBoolean(KEY_WEBDAV_SUPPORT, value);
+    }
+
+    /**
+     * Whether the device screen may be watched through the web interface. Only platforms that
+     * implement screen capture act on it; the rest simply never turn it on.
+     */
+    default boolean isScreenShareEnabled() {
+        return getBoolean(KEY_SCREEN_SHARE, false);
+    }
+
+    default void setScreenShareEnabled(boolean value) {
+        setBoolean(KEY_SCREEN_SHARE, value);
     }
 
     int getInt(String key, int defaultValue);

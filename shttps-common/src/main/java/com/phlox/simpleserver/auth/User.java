@@ -40,8 +40,16 @@ public class User implements Serializable, Cloneable {
         EXEC_SQL
     }
 
+    /**
+     * Serialized as a bitmask of ordinals, so new rights may only be appended - inserting one in
+     * the middle silently re-maps the rights of every stored user and role.
+     */
     public enum SystemRights {
-        READ_STATUS, EXECUTE_HANDLER
+        READ_STATUS, EXECUTE_HANDLER,
+        /** Watch the device screen. Only platforms that implement screen capture act on it. */
+        VIEW_SCREEN,
+        /** Send touches, keys and text to the device. Useless without {@link #VIEW_SCREEN}. */
+        CONTROL_SCREEN
     }
 
     public @NotNull String identity;

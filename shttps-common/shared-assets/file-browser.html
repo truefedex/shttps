@@ -124,6 +124,7 @@
     <div class="menu-close-btn" onclick="hideContextMenu()">&times;</div>
     <ul class="menu-options">
       <li class="menu-option" id="mm-status">Status</li>
+      {{#screenShare}}<li class="menu-option" id="mm-screen">Remote screen</li>{{/screenShare}}
       {{#dbConnected}}<li class="menu-option" id="mm-database">Database</li>{{/dbConnected}}
       {{#needAuthBlock}}
       {{^hasUser}}<li class="menu-option" id="mm-login">Login</li>{{/hasUser}}

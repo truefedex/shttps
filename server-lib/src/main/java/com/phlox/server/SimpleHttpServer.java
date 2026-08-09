@@ -9,9 +9,11 @@ import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestBodyReader;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.request.RequestHeadersParser;
+import com.phlox.server.responses.ConnectionTakeoverHandler;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.responses.TextResponse;
+import com.phlox.server.responses.UpgradeResponse;
 import com.phlox.server.utils.MultiMap;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.SHTTPSLoggerProxy.Logger;
@@ -362,6 +364,15 @@ public class SimpleHttpServer {
                     errDuringHandle = e;
                 }
 
+                if (errDuringHandle == null && response instanceof UpgradeResponse) {
+                    //the handler switches this connection to another protocol: HTTP framing
+                    //ends with these headers and the connection never comes back to this loop
+                    handleConnectionUpgrade((UpgradeResponse) response, requestContext, request,
+                            socket, output);
+                    connectionCloseReason = "upgraded connection finished";
+                    return;
+                }
+
                 if (errDuringHandle != null || response == null ||
                         connectionKeepAliveTimeoutSeconds <= 0 ||
                         Request.CONNECTION_CLOSE.equalsIgnoreCase(request.headers.get(Request.HEADER_CONNECTION))
@@ -431,15 +442,7 @@ public class SimpleHttpServer {
                     }
                 }
 
-                MultiMap<String, String> additionalResponseHeaders = this.additionalResponseHeaders;
-                if (additionalResponseHeaders != null) {
-                    for (String key: additionalResponseHeaders.keys()) {
-                        List<String> values = additionalResponseHeaders.getAll(key);
-                        for (int i = 0; i < values.size(); i++) {
-                            response.headers.add(key, values.get(i));
-                        }
-                    }
-                }
+                applyAdditionalResponseHeaders(response);
 
                 if (callback != null) {
                     callback.onConnectionResponse(requestContext, request, response);
@@ -499,6 +502,41 @@ public class SimpleHttpServer {
                 callback.onConnectionClosed(socket, connectionCloseReason, connectionNumber);
             }
         }
+    }
+
+    private void applyAdditionalResponseHeaders(Response response) {
+        MultiMap<String, String> additionalResponseHeaders = this.additionalResponseHeaders;
+        if (additionalResponseHeaders == null) {
+            return;
+        }
+        for (String key: additionalResponseHeaders.keys()) {
+            List<String> values = additionalResponseHeaders.getAll(key);
+            for (int i = 0; i < values.size(); i++) {
+                response.headers.add(key, values.get(i));
+            }
+        }
+    }
+
+    /**
+     * Writes out the headers of a protocol upgrade response and hands the connection over to
+     * the response's {@link ConnectionTakeoverHandler}. Returns when the takeover handler is
+     * done with the connection, after which the caller closes the socket as usual.
+     */
+    private void handleConnectionUpgrade(UpgradeResponse response, RequestContext context,
+                                         Request request, Socket socket, OutputStream output) throws Exception {
+        //no Content-Length and no Connection/Keep-Alive headers here: the response is only
+        //the handshake, everything after it is framed by the protocol we switch to
+        response.headers.add(Response.HEADER_SERVER, SERVER_NAME);
+        applyAdditionalResponseHeaders(response);
+
+        if (callback != null) {
+            callback.onConnectionResponse(context, request, response);
+        }
+
+        response.writeOut(output);
+        output.flush();
+
+        response.getTakeoverHandler().onConnectionTakenOver(socket, request.input, output);
     }
 
     private boolean checkRequestHostEquals(String hostName, String requestHostHeader) {

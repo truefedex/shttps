@@ -37,6 +37,8 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     private static final String KEY_ENABLE_INTENT_SENDING_HANDLERS = "enable_intent_sending_handlers";
     private static final String KEY_INTENT_SENDING_HANDLERS_URL_PATH_PREFIX = "intent_sending_handlers_url_path_prefix";
     private static final String KEY_INTENT_SENDERS = "intent_senders";
+    private static final String KEY_KEEP_SCREEN_ON_WHILE_SHARING = "keep_screen_on_while_sharing";
+    private static final String KEY_ALLOW_REMOTE_CONTROL = "allow_remote_control";
 
     public SHTTPSConfigAndroid(Context context, String prefName, SHTTPSPlatformUtils platformUtils) {
         this.context = context;
@@ -118,19 +120,19 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     // Android-specific settings. Not handled automatically by SHTTPSApp
 
     public boolean isEnableIntentSendingHandlers() {
-        return prefs.getBoolean(KEY_ENABLE_INTENT_SENDING_HANDLERS, false);
+        return getBoolean(KEY_ENABLE_INTENT_SENDING_HANDLERS, false);
     }
 
     public void setEnableIntentSendingHandlers(boolean value) {
-        prefs.edit().putBoolean(KEY_ENABLE_INTENT_SENDING_HANDLERS, value).apply();
+        setBoolean(KEY_ENABLE_INTENT_SENDING_HANDLERS, value);
     }
 
     public String getIntentSendingHandlersUrlPathPrefix() {
-        return prefs.getString(KEY_INTENT_SENDING_HANDLERS_URL_PATH_PREFIX, "/intent");
+        return getString(KEY_INTENT_SENDING_HANDLERS_URL_PATH_PREFIX, "/intent");
     }
 
     public void setIntentSendingHandlersUrlPathPrefix(String value) {
-        prefs.edit().putString(KEY_INTENT_SENDING_HANDLERS_URL_PATH_PREFIX, value).apply();
+        setString(KEY_INTENT_SENDING_HANDLERS_URL_PATH_PREFIX, value);
     }
 
     public List<IntentSender> getIntentSenders() {
@@ -162,6 +164,32 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
             }
         }
         prefs.edit().putString(KEY_INTENT_SENDERS, array.toString()).apply();
+    }
+
+    /**
+     * Whether the device should be kept awake while a screen capture session exists. Android ends
+     * screen capture as soon as the keyguard appears, so without this a shared screen only lasts
+     * until the display times out. Off by default - it keeps the display powered.
+     */
+    public boolean isKeepScreenOnWhileSharing() {
+        return getBoolean(KEY_KEEP_SCREEN_ON_WHILE_SHARING, false);
+    }
+
+    public void setKeepScreenOnWhileSharing(boolean value) {
+        setBoolean(KEY_KEEP_SCREEN_ON_WHILE_SHARING, value);
+    }
+
+    /**
+     * Whether remote clients watching the shared screen may also control the device (inject touch
+     * and key events). Only meaningful together with screen sharing. Off by default - it hands full
+     * control of the device to anyone who can reach the shared screen.
+     */
+    public boolean isRemoteControlEnabled() {
+        return getBoolean(KEY_ALLOW_REMOTE_CONTROL, false);
+    }
+
+    public void setRemoteControlEnabled(boolean value) {
+        setBoolean(KEY_ALLOW_REMOTE_CONTROL, value);
     }
 
     // General utility methods
