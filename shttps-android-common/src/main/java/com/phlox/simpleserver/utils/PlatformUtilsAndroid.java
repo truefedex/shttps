@@ -36,7 +36,7 @@ import java.util.Set;
 public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
     private final Context ctx;
     private KeyStore keyStore;
-    private SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
+    private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
 
     public PlatformUtilsAndroid(Context ctx) {
         this.ctx = ctx;
@@ -154,7 +154,7 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
             is.close();
             return size;
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.e("Failed to get asset size for " + fileName + ": " + e.getMessage());
             return -1;
         }
     }
@@ -175,7 +175,11 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
     }
 
     /**
-     * Maps array of interface names (or after KITKAT interface indexes) to NetworkInterface objects
+     * Maps array of interface indexes (written by this app since KITKAT) or interface names
+     * (written by older versions, by the desktop/command-line builds and by hand-edited configs)
+     * to NetworkInterface objects. Both forms are accepted so that an allow-list stays meaningful
+     * when a config is carried over between versions or platforms; resolving nothing here would
+     * leave the server up but refusing every connection.
      */
     @Override
     public Set<NetworkInterface> findInterfaces(String [] names) {
@@ -184,14 +188,14 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
             for (String name : names) {
                 try {
                     NetworkInterface ni;
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                    try {
                         ni = NetworkInterface.getByIndex(Integer.parseInt(name));
-                    } else {
+                    } catch (NumberFormatException e) {
                         ni = NetworkInterface.getByName(name);
                     }
                     if (ni != null) interfaces.add(ni);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    logger.e("Failed to find network interface " + name + ": " + e.getMessage());
                 }
             }
             return interfaces;

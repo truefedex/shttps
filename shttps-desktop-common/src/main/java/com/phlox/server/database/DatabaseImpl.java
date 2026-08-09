@@ -228,11 +228,9 @@ public class DatabaseImpl implements Database {
     }
 
     private Connection provideConnection() throws SQLException {
-        Connection connection = dataSource.getConnection();
-        try (PreparedStatement statement = connection.prepareStatement("PRAGMA journal_mode=wal")) {
-            statement.execute();
-        }
-        return connection;
+        //journal_mode / foreign_keys are applied by the driver at connection-open time,
+        //see DatabaseFabricImpl
+        return dataSource.getConnection();
     }
 
     public static class ManagedConnection implements AutoCloseable {

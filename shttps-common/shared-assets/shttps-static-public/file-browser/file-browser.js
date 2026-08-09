@@ -1030,6 +1030,12 @@ function onMenuClick(e) {
       window.location.href = "/shttps-static-public/db-browser/index.html";
     }
   }
+  let mmScreen = document.getElementById("mm-screen");
+  if (mmScreen) {
+    mmScreen.onclick = function () {
+      window.location.href = "/shttps-static-public/screen/index.html";
+    }
+  }
   if (mmLogin) {
     mmLogin.onclick = function () {
       window.location.href = "/shttps-pages/login/";

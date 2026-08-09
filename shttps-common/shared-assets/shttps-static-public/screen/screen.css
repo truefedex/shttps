@@ -1,0 +1,220 @@
+.header {
+    display: flex;
+    align-items: center;
+    padding: 15px 15px 0 15px;
+}
+
+.header #path {
+    flex: 1;
+    font-size: 1.5em;
+    font-weight: 600;
+    color: #e0e0e0;
+    margin-left: 10px;
+}
+
+.menu-button {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.5em;
+    padding: 5px 10px;
+    cursor: pointer;
+    margin-right: 5px;
+    user-select: none;
+}
+
+.menu-button:hover {
+    color: #306477;
+}
+
+.connection-state {
+    font-size: 0.9em;
+    color: #b0b0b0;
+    white-space: nowrap;
+    padding-left: 10px;
+}
+
+.connection-state::before {
+    content: "\25CF";
+    color: #b0b0b0;
+    margin-right: 6px;
+}
+
+.connection-state.state-live::before {
+    color: #6fbf73;
+}
+
+.connection-state.state-error::before {
+    color: #d47474;
+}
+
+#screen-container {
+    position: relative;
+    margin: 15px;
+    background: #000000;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    overflow: hidden;
+    /* leave room for the header and the toolbar so the picture never pushes them off screen */
+    height: calc(100vh - 180px);
+    min-height: 200px;
+}
+
+#screen-container:fullscreen {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+}
+
+#screen-video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* the device screen keeps its aspect ratio inside whatever shape the browser window has */
+    object-fit: contain;
+    background: #000000;
+}
+
+.screen-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* the browser must not scroll, zoom or select while a finger is driving the device */
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: crosshair;
+}
+
+.screen-input.hidden {
+    display: none;
+}
+
+.control-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.control-buttons.hidden {
+    display: none;
+}
+
+.control-text {
+    background: #2d2d2d;
+    color: #e0e0e0;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.9em;
+    min-width: 180px;
+}
+
+.control-text:focus {
+    outline: none;
+    border-color: #3a6b7f;
+}
+
+.control-text.hidden {
+    display: none;
+}
+
+.screen-message {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    gap: 10px;
+    background: rgba(26, 26, 26, 0.92);
+}
+
+.screen-message.hidden {
+    display: none;
+}
+
+.screen-message-title {
+    font-size: 1.2em;
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.screen-message-text {
+    font-size: 0.95em;
+    color: #b0b0b0;
+    max-width: 420px;
+}
+
+.screen-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 0 15px 15px 15px;
+}
+
+.screen-button {
+    background: #2d2d2d;
+    color: #e0e0e0;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 0.9em;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+}
+
+.screen-button:hover {
+    background: #306477;
+    border-color: #3a6b7f;
+}
+
+.screen-button:active {
+    background: #264f5e;
+}
+
+.control-hint {
+    font-size: 0.85em;
+    color: #d0a24c;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.screen-stats {
+    flex: 1;
+    text-align: right;
+    font-size: 0.85em;
+    color: #808080;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (max-width: 768px) {
+    #screen-container {
+        margin: 10px;
+        height: calc(100vh - 200px);
+    }
+
+    .screen-toolbar {
+        margin: 0 10px 10px 10px;
+    }
+
+    .screen-stats {
+        flex: 1 0 100%;
+        text-align: left;
+    }
+}

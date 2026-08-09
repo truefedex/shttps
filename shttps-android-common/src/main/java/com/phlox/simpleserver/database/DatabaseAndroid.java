@@ -39,6 +39,7 @@ public class DatabaseAndroid implements Database {
                 SQLiteDatabase.CREATE_IF_NECESSARY |
                         SQLiteDatabase.OPEN_READWRITE |
                         SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING);
+        this.database.setForeignKeyConstraintsEnabled(true);
         this.writeExecutor = Executors.newSingleThreadExecutor();
         this.simpleDBOperations = new SimpleDatabaseOperations();
     }

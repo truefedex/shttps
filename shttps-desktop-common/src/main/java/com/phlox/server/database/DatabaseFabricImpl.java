@@ -22,6 +22,12 @@ public class DatabaseFabricImpl implements SHTTPSDatabaseFabric {
     @Override
     public Database openDatabase(String path) throws Exception {
         SQLiteConfig config = new SQLiteConfig();
+        //both must be set here, on the config, so that the driver applies them while opening
+        //every connection. foreign_keys is a per-connection setting (unlike journal_mode, which
+        //is persisted in the db file) and is a no-op inside a transaction, so setting it after
+        //the connection is handed out is unreliable.
+        config.enforceForeignKeys(true);
+        config.setJournalMode(SQLiteConfig.JournalMode.WAL);
         SQLiteDataSource dataSource = new SQLiteDataSource(config);
         dataSource.setUrl("jdbc:sqlite:" + path);
         dataSource.setBusyTimeout(50000);

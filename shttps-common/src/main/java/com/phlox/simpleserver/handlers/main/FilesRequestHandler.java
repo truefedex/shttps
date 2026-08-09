@@ -172,6 +172,7 @@ public class FilesRequestHandler extends StaticFileRequestHandler {
                 put("needAuthBlock", needAuthBlock);
                 put("hasUser", user != null && !user.isGuest());
                 put("dbConnected", config.isDatabaseEnabled());
+                put("screenShare", config.isScreenShareEnabled());
             }});
 
             if (request.method.equals(Request.METHOD_HEAD)) {

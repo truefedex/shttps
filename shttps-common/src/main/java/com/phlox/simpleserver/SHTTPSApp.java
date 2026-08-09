@@ -59,6 +59,8 @@ import com.phlox.simpleserver.utils.Holder;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 import com.phlox.simpleserver.utils.ServerLogsCollector;
 
+import org.jetbrains.annotations.Nullable;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -94,6 +96,9 @@ public class SHTTPSApp {
     public RateLimitingMiddleware rateLimitingMiddleware;
     private UserStore userStore;
     private SessionManager sessionManager;
+    //built for the configured auth mode when the server starts; handlers registered from outside
+    //(see Callback.onRouterPrepared) need it to evaluate user rights
+    private volatile AuthManager authManager;
     public Callback callback;
     private volatile SimpleHttpServer server = null;
     private volatile int shutdownTimeout = 0;
@@ -189,6 +194,7 @@ public class SHTTPSApp {
                 authManager = new DummyAuthManager();
                 break;
         }
+        this.authManager = authManager;
 
         rateLimitingMiddleware = new RateLimitingMiddleware(
                 config.getGlobalRateLimit(),
@@ -450,6 +456,10 @@ public class SHTTPSApp {
             future.cancel(false);
             this.shutdownFuture = null;
         }
+
+        //belongs to the server that just stopped: the next start builds one for whatever auth mode
+        //is configured then
+        this.authManager = null;
     }
 
     public UserStore provideUserStore() {
@@ -514,6 +524,14 @@ public class SHTTPSApp {
 
     public Database getDatabase() {
         return database.get();
+    }
+
+    /**
+     * @return the auth manager of the running server, or null while it is not running. It is
+     * replaced on every start, so it must not be held on to across a restart.
+     */
+    public @Nullable AuthManager getAuthManager() {
+        return authManager;
     }
 
     public SimpleHttpServer getServer() {

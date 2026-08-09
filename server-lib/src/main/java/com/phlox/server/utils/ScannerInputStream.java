@@ -23,7 +23,38 @@ public class ScannerInputStream extends InputStream {
         }
     }
 
-    private void writeBack(byte[] buf, int offset, int len) {
+    /**
+     * Bulk read. Without this override java.io.InputStream falls back to a per-byte
+     * loop, which makes every raw request body (PUT, WebDAV PUT, non-form POST) cost
+     * one call per byte instead of one per buffer. Note that pushed-back bytes are
+     * served first and are never mixed with fresh data from the base stream, so this
+     * may return a short read - which is legal and expected by callers.
+     */
+    @Override
+    public int read(byte[] b, int off, int len) throws IOException {
+        if (len == 0) {
+            return 0;
+        }
+        if (backBuffPosition == -1) {
+            return base.read(b, off, len);
+        }
+        //back buffer holds bytes in reverse order, top of the "stack" comes out first
+        int count = Math.min(len, backBuffPosition + 1);
+        for (int i = 0; i < count; i++) {
+            b[off + i] = backBuff[backBuffPosition--];
+        }
+        return count;
+    }
+
+    @Override
+    public int available() throws IOException {
+        return (backBuffPosition + 1) + base.available();
+    }
+
+    //package-private instead of private so that tests can push bytes back directly:
+    //the parsing loops below always drain the back buffer before they return, so there
+    //is no public API that leaves it non-empty
+    void writeBack(byte[] buf, int offset, int len) {
         int backBuffDataSize = backBuffPosition + 1;
         if (backBuff.length < (len + backBuffDataSize)) {
             byte[] newArray = new byte[len + backBuffDataSize];
