@@ -22,6 +22,7 @@ public class User implements Serializable, Cloneable {
     public static final String FIELD_FILE_STORAGE_SIZE_LIMIT = "storage_limit";
     public static final String FIELD_SYSTEM_RIGHTS = "system_rights";
     public static final String FIELD_USED_STORAGE = "used_storage";
+    public static final String FIELD_CHANNEL_RIGHTS = "channel_rights";
 
     public enum FileSystemRights {
         CREATE,
@@ -31,13 +32,24 @@ public class User implements Serializable, Cloneable {
         LIST_CONTENTS
     }
 
+    /**
+     * Serialized as a bitmask of ordinals, so new rights may only be appended - inserting one in
+     * the middle silently re-maps the rights of every stored user and role.
+     */
     public enum DBRights {
         CREATE,
         READ,
         UPDATE,
         DELETE,
         READ_SCHEMA,
-        EXEC_SQL
+        EXEC_SQL,
+        /**
+         * Open a transaction over {@code /api/db/transaction}. Separate from the rights above
+         * because such a session holds the database's single write thread for as long as it lives,
+         * so everything else waits behind it - it is worth granting deliberately rather than as a
+         * side effect of being able to read or write.
+         */
+        USE_TRANSACTION
     }
 
     /**
@@ -50,6 +62,41 @@ public class User implements Serializable, Cloneable {
         VIEW_SCREEN,
         /** Send touches, keys and text to the device. Useless without {@link #VIEW_SCREEN}. */
         CONTROL_SCREEN
+    }
+
+    /**
+     * Rights over WebSocket channels ({@code /api/channels/**}).
+     * <p>
+     * Serialized as a bitmask of ordinals, so new rights may only be appended - inserting one in
+     * the middle silently re-maps the rights of every stored user and role.
+     */
+    public enum ChannelRights {
+        /** Join an existing channel. On its own this is listen-only in every channel mode. */
+        CONNECT,
+        /** Send into a channel: ECHO messages, and later STATE mutations. */
+        POST,
+        /** Create a channel over {@code POST /api/channels}. */
+        CREATE,
+        /** Delete a deletable channel over {@code DELETE /api/channels/{id}}. */
+        DELETE,
+        /** See the whole channel list over {@code GET /api/channels}. */
+        LIST_CHANNELS,
+        /** See who is connected to a channel. */
+        LIST_PARTICIPANTS
+    }
+
+    /**
+     * What a freshly created principal starts with - <b>not</b> a fallback for stored state.
+     * A user read back from configuration or the database carries exactly the rights that were
+     * stored for it (an absent/zero mask means no channel rights at all), the same way
+     * {@code system_rights} behaves.
+     */
+    public static @NotNull EnumSet<ChannelRights> defaultChannelRights(@NotNull String identity) {
+        //a guest may listen, but not speak: anonymous visitors are the one group that can not be
+        //held responsible for what they post
+        return GUEST_IDENTITY.equals(identity) ?
+                EnumSet.of(ChannelRights.CONNECT) :
+                EnumSet.of(ChannelRights.CONNECT, ChannelRights.POST);
     }
 
     public @NotNull String identity;
@@ -65,11 +112,25 @@ public class User implements Serializable, Cloneable {
     public @Nullable Long storageLimit;
     public @NotNull EnumSet<SystemRights> systemRights;
     public long usedStorage;
+    public @NotNull EnumSet<ChannelRights> channelRights;
 
+    /**
+     * The channel-less constructor, kept so callers that predate channels keep compiling; the new
+     * user gets {@link #defaultChannelRights(String)}.
+     */
     public User(@NotNull String identity, @NotNull String passwordHash, @Nullable String rootDir,
                 EnumSet<FileSystemRights> fsRights, EnumSet<DBRights> dbRights, @Nullable String role,
                 long registeredAt, @Nullable Long lastLogin, @Nullable Long storageLimit,
                 @NotNull EnumSet<SystemRights> systemRights, long usedStorage) {
+        this(identity, passwordHash, rootDir, fsRights, dbRights, role, registeredAt, lastLogin,
+                storageLimit, systemRights, usedStorage, defaultChannelRights(identity));
+    }
+
+    public User(@NotNull String identity, @NotNull String passwordHash, @Nullable String rootDir,
+                EnumSet<FileSystemRights> fsRights, EnumSet<DBRights> dbRights, @Nullable String role,
+                long registeredAt, @Nullable Long lastLogin, @Nullable Long storageLimit,
+                @NotNull EnumSet<SystemRights> systemRights, long usedStorage,
+                @NotNull EnumSet<ChannelRights> channelRights) {
         this.identity = identity;
         this.passwordHash = passwordHash;
         this.rootDir = rootDir;
@@ -81,6 +142,7 @@ public class User implements Serializable, Cloneable {
         this.storageLimit = storageLimit;
         this.systemRights = EnumSet.copyOf(systemRights);
         this.usedStorage = usedStorage;
+        this.channelRights = EnumSet.copyOf(channelRights);
     }
 
     public User(@NotNull String identity, @NotNull String passwordHash) {
@@ -88,7 +150,8 @@ public class User implements Serializable, Cloneable {
                 EnumSet.of(FileSystemRights.READ, FileSystemRights.LIST_CONTENTS),
                 EnumSet.of(DBRights.READ), null,
                 System.currentTimeMillis(), null, null,
-                EnumSet.of(SystemRights.READ_STATUS), 0L);
+                EnumSet.of(SystemRights.READ_STATUS), 0L,
+                defaultChannelRights(identity));
     }
 
     public boolean isGuest() {
@@ -134,7 +197,13 @@ public class User implements Serializable, Cloneable {
         object.put(FIELD_SYSTEM_RIGHTS, rightsMask);
 
         object.put(FIELD_USED_STORAGE, usedStorage);
-        
+
+        rightsMask = 0;
+        for (ChannelRights right : channelRights) {
+            rightsMask |= (1 << right.ordinal());
+        }
+        object.put(FIELD_CHANNEL_RIGHTS, rightsMask);
+
         return object;
     }
 
@@ -178,9 +247,19 @@ public class User implements Serializable, Cloneable {
         }
 
         long usedStorage = object.optLong(FIELD_USED_STORAGE, 0L);
-        
+
+        //no default here on purpose: a stored user holds exactly the channel rights it was stored
+        //with, and everything written before channels existed holds none
+        EnumSet<ChannelRights> channelRights = EnumSet.noneOf(ChannelRights.class);
+        rightsMask = object.optInt(FIELD_CHANNEL_RIGHTS, 0);
+        for (ChannelRights right : ChannelRights.values()) {
+            if ((rightsMask & (1 << right.ordinal())) != 0) {
+                channelRights.add(right);
+            }
+        }
+
         return new User(identity, password, rootDir, fsRights, dbRights, role, registeredAt,
-                lastLogin, storageLimit, systemRights, usedStorage);
+                lastLogin, storageLimit, systemRights, usedStorage, channelRights);
     }
 
     @Override
@@ -190,6 +269,7 @@ public class User implements Serializable, Cloneable {
             clone.fsRights = fsRights.clone();
             clone.dbRights = dbRights.clone();
             clone.systemRights = systemRights.clone();
+            clone.channelRights = channelRights.clone();
             return clone;
         } catch (CloneNotSupportedException e) {
             throw new AssertionError();

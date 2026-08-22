@@ -8,8 +8,10 @@ android {
 
     defaultConfig {
         minSdk Integer.parseInt(libs.versions.min.sdk.get())
-        
+
         consumerProguardFiles "consumer-rules.pro"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -27,4 +29,10 @@ android {
 dependencies {
     implementation project(path: ':server-lib')
     implementation project(path: ':shttps-common')
+
+    //DatabaseAndroid wraps the platform's own SQLiteDatabase - its transactions, its connection
+    //pool and its cursors - so its tests have to run on a device rather than against a stub
+    androidTestImplementation libs.junit4
+    androidTestImplementation libs.androidx.test.junit
+    androidTestImplementation libs.androidx.test.runner
 }

@@ -1,7 +1,5 @@
 package com.phlox.server;
 
-import static com.phlox.server.utils.docfile.RawDocumentFile.fileUriToFilePath;
-
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.server.utils.docfile.RawDocumentFile;
@@ -51,13 +49,14 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
     @Override
     public DocumentFile getRootDir() {
         String rootDirStr = json.optString(KEY_ROOT_DIR, null);
-        return rootDirStr == null || rootDirStr.isEmpty() ? null : RawDocumentFile.fromFile(Paths.get(rootDirStr).toFile());
+        if (rootDirStr == null || rootDirStr.isEmpty()) return null;
+        return RawDocumentFile.fromFile(Paths.get(RawDocumentFile.toFilePath(rootDirStr)).toFile());
     }
 
     @Override
     public void setRootDir(String value) {
-        if (value != null && value.startsWith(RawDocumentFile.FILE_URI_PREFIX)) {
-            value = fileUriToFilePath(value);
+        if (value != null) {
+            value = RawDocumentFile.toFilePath(value);
         }
         json.put(KEY_ROOT_DIR, value);
         save();

@@ -95,7 +95,8 @@ public class ConfigBasedUserStore implements UserStore {
         User user = new User(identity, "", rootDir,
                 EnumSet.of(User.FileSystemRights.READ, User.FileSystemRights.LIST_CONTENTS),
                 EnumSet.of(User.DBRights.READ), null, System.currentTimeMillis(), null, null,
-                EnumSet.of(User.SystemRights.READ_STATUS), 0);
+                EnumSet.of(User.SystemRights.READ_STATUS), 0,
+                User.defaultChannelRights(identity));
         create(user);
         return user;
     }

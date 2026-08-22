@@ -6,12 +6,26 @@ pluginManagement {
     }
 }
 
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
     }
+}
+
+//The application version, from the single file that defines it. Exposed as project properties so
+//that build scripts can go on reading app.version.name / app.version.code exactly as they did when
+//these lived in gradle.properties. beforeProject rather than afterward, because the module build
+//scripts read them while being evaluated.
+def versionProperties = new Properties()
+file('version.properties').withInputStream { versionProperties.load(it) }
+gradle.beforeProject { project ->
+    versionProperties.each { name, value -> project.ext.set(name.toString(), value) }
 }
 
 rootProject.name = "shttps-oss"
@@ -21,3 +35,4 @@ include ':shttps-desktop-common'
 include ':shttps-commandline'
 include ':shttps-android-common'
 include ':shttps-android-exemplum'
+include ':shttps-desktop'

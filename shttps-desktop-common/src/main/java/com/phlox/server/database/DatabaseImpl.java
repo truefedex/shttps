@@ -3,9 +3,13 @@ package com.phlox.server.database;
 import com.phlox.server.database.model.TableDataImpl;
 import com.phlox.server.utils.InputStreamWithDependency;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
+import com.phlox.simpleserver.database.AbortableDatabaseOperations;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.DatabaseExecutorSupport;
 import com.phlox.simpleserver.database.DatabaseOperations;
 import com.phlox.simpleserver.database.DatabaseTransactionScope;
+import com.phlox.simpleserver.database.TransactionAbortHandle;
+import com.phlox.simpleserver.database.TransactionAbortedException;
 import com.phlox.simpleserver.database.model.Column;
 import com.phlox.simpleserver.database.model.Table;
 import com.phlox.simpleserver.database.model.TableData;
@@ -38,6 +42,12 @@ public class DatabaseImpl implements Database {
     private final String path;
     private final ExecutorService writeExecutor;
     private final SimpleDatabaseOperations simpleDBOperations;
+    /**
+     * True on the write executor's thread. Writes are serialized through a single thread, so a
+     * write submitted from that thread would wait for a queue that only it can drain - see
+     * {@link #checkNotOnWriteThread()}.
+     */
+    private final ThreadLocal<Boolean> onWriteThread = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     static final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(DatabaseImpl.class);
 
@@ -46,6 +56,34 @@ public class DatabaseImpl implements Database {
         this.path = path;
         this.writeExecutor = Executors.newSingleThreadExecutor();
         this.simpleDBOperations = new SimpleDatabaseOperations(null);
+    }
+
+    /**
+     * Runs a write on the single write thread and waits for it, rethrowing what it threw unwrapped.
+     */
+    private <T> T submitWrite(Callable<T> task) throws Exception {
+        checkNotOnWriteThread();
+        return DatabaseExecutorSupport.await(writeExecutor.submit(() -> {
+            onWriteThread.set(Boolean.TRUE);
+            try {
+                return task.call();
+            } finally {
+                onWriteThread.set(Boolean.FALSE);
+            }
+        }));
+    }
+
+    /**
+     * A transaction scope runs on the write thread; calling back into this Database from there
+     * would enqueue work behind the very task that is waiting for it. Fail loudly instead of
+     * hanging - the scope is given its own {@link DatabaseOperations} and is meant to use that.
+     */
+    private void checkNotOnWriteThread() {
+        if (onWriteThread.get()) {
+            throw new IllegalStateException("This Database method was called from inside a " +
+                    "transaction scope, which would deadlock the write thread. Use the " +
+                    "DatabaseOperations passed to the scope instead.");
+        }
     }
 
     @Override
@@ -72,10 +110,31 @@ public class DatabaseImpl implements Database {
 
     @Override
     public Table[] getTables() throws Exception {
+        return simpleDBOperations.getTables();
+    }
+
+    @Override
+    public TableData query(String query, Object[] args, boolean possiblyWriteOperation) throws Exception {
+        if (possiblyWriteOperation) {
+            return submitWrite(() -> simpleDBOperations.query(query));
+        }
+        return simpleDBOperations.query(query);
+    }
+
+    @Override
+    public void execute(String query) throws Exception {
+        submitWrite(() -> {
+            simpleDBOperations.execute(query);
+            return 0;
+        });
+    }
+
+    private Table[] readTables(Connection connection) throws Exception {
         ArrayList<Table> tables = new ArrayList<>();
 
-        try (Connection connection = provideConnection()) {
-            Statement statement = connection.createStatement();
+        //inside a transaction the connection outlives this call, so the statement is closed here
+        //rather than left to the connection
+        try (Statement statement = connection.createStatement()) {
             //get indexes and foreign keys
             ResultSet rsIndexes = statement.executeQuery("SELECT name, tbl_name, sql FROM sqlite_master WHERE type='index'");
             Map<String, String> indexes = new HashMap<>();
@@ -156,22 +215,6 @@ public class DatabaseImpl implements Database {
     }
 
     @Override
-    public TableData query(String query, Object[] args, boolean possiblyWriteOperation) throws Exception {
-        if (possiblyWriteOperation) {
-            return writeExecutor.submit(() -> simpleDBOperations.query(query)).get();
-        }
-        return simpleDBOperations.query(query);
-    }
-
-    @Override
-    public void execute(String query) throws Exception {
-        writeExecutor.submit(() -> {
-            simpleDBOperations.execute(query);
-            return 0;
-        }).get();
-    }
-
-    @Override
     public TableData getTableDataSecure(String tableName, String[] columns, Long offset, Long limit,
                                         String[] whereFilters, Object[] whereArgs, String orderBy,
                                         boolean desc, boolean includeRowId, Holder<Long> outCount) throws Exception {
@@ -185,46 +228,78 @@ public class DatabaseImpl implements Database {
 
     @Override
     public long insert(String tableName, JSONObject values) throws Exception {
-        return writeExecutor.submit(() ->
-                simpleDBOperations.insert(tableName, values)
-        ).get();
+        return submitWrite(() -> simpleDBOperations.insert(tableName, values));
     }
 
     @Override
     public int update(String tableName, JSONObject values, String[] whereFilters, Object[] whereArgs) throws Exception {
-        return writeExecutor.submit(() ->
-                simpleDBOperations.update(tableName, values, whereFilters, whereArgs)
-        ).get();
+        return submitWrite(() -> simpleDBOperations.update(tableName, values, whereFilters, whereArgs));
     }
 
     @Override
     public int delete(String tableName, String[] whereFilters, Object[] whereArgs) throws Exception {
-        return writeExecutor.submit(() ->
-                simpleDBOperations.delete(tableName, whereFilters, whereArgs)
-        ).get();
+        return submitWrite(() -> simpleDBOperations.delete(tableName, whereFilters, whereArgs));
     }
 
     @Override
     public void close() throws Exception {
-        //do nothing
+        //the write thread belongs to this instance; without this every database swap leaks one
+        writeExecutor.shutdownNow();
     }
 
     @Override
     public <T> T runTransaction(DatabaseTransactionScope<T> tx) throws Exception {
+        return runTransaction(tx, new TransactionAbortHandle());
+    }
+
+    @Override
+    public <T> T runTransaction(DatabaseTransactionScope<T> tx, TransactionAbortHandle abortHandle) throws Exception {
         Callable<T> task = () -> {
-            try (Connection connection = provideConnection()){
+            //the handle interrupts this thread to wake a scope that is waiting rather than working
+            abortHandle.attachWorker(Thread.currentThread());
+            try {
+                TransactionConnection transaction = new TransactionConnection(provideConnection());
                 try {
-                    connection.setAutoCommit(false);
-                    T result = tx.execute(new SimpleDatabaseOperations(connection));
-                    connection.commit();
-                    return result;
-                } catch (Exception e) {
-                    connection.rollback();
-                    throw e;
+                    Connection connection = transaction.connection;
+                    try {
+                        connection.setAutoCommit(false);
+                        T result;
+                        try {
+                            //a per-scope wrapper, never shared: the handle belongs to this
+                            //transaction
+                            result = tx.execute(new AbortableDatabaseOperations(
+                                    new SimpleDatabaseOperations(transaction), abortHandle));
+                            //an abort that landed after the last operation must not be committed
+                            abortHandle.checkNotAborted();
+                        } finally {
+                            //the scope is over, so stop taking interrupts and clear any that
+                            //arrived: the commit or rollback below must not be interrupted itself
+                            abortHandle.detachWorker();
+                        }
+                        connection.commit();
+                        return result;
+                    } catch (Exception e) {
+                        connection.rollback();
+                        throw e;
+                    }
+                } finally {
+                    transaction.release();
                 }
+            } catch (Exception e) {
+                //whatever ended the scope, an aborted transaction is reported as such: a scope
+                //parked on a queue comes back with InterruptedException, one between statements
+                //with TransactionAbortedException
+                if (abortHandle.isAborted()) {
+                    throw new TransactionAbortedException(abortHandle.getReason(), e);
+                }
+                throw e;
+            } finally {
+                //no-op when the scope already detached; here for the paths that never reached it,
+                //and to make sure no interrupt is left set for the next task in the queue
+                abortHandle.detachWorker();
             }
         };
-        return writeExecutor.submit(task).get();
+        return submitWrite(task);
     }
 
     private Connection provideConnection() throws SQLException {
@@ -233,13 +308,52 @@ public class DatabaseImpl implements Database {
         return dataSource.getConnection();
     }
 
+    /**
+     * Reference-counted owner of a transaction connection.
+     * <p>
+     * Results produced inside a transaction may outlive it: streamed responses (see
+     * DBCustomSQLRequestHandler and DBSingleCellDataRequestHandler) are generated on a separate
+     * thread, after runTransaction() has already returned. A ResultSet can not be read once its
+     * connection is closed (sqlite throws "stmt pointer is closed"), so the connection is closed
+     * by whoever finishes last: the transaction itself or the last result still being read.
+     * Committing the transaction does not invalidate those results, only closing does.
+     */
+    private static class TransactionConnection {
+        private final Connection connection;
+        private int users = 1;//the transaction itself
+
+        TransactionConnection(Connection connection) {
+            this.connection = connection;
+        }
+
+        synchronized Connection acquire() {
+            if (users == 0) {
+                throw new IllegalStateException("Transaction connection is already closed");
+            }
+            users++;
+            return connection;
+        }
+
+        synchronized void release() throws SQLException {
+            if (--users == 0) {
+                connection.close();
+            }
+        }
+    }
+
     public static class ManagedConnection implements AutoCloseable {
         private final Connection delegate;
-        private final boolean transactional;
+        private final TransactionConnection transaction;//null if not a part of a transaction
+        private boolean closed = false;
 
-        ManagedConnection(Connection delegate, boolean transactional) {
+        ManagedConnection(Connection delegate) {
             this.delegate = delegate;
-            this.transactional = transactional;
+            this.transaction = null;
+        }
+
+        ManagedConnection(TransactionConnection transaction) {
+            this.delegate = transaction.acquire();
+            this.transaction = transaction;
         }
 
         public Connection unwrap() {
@@ -248,23 +362,36 @@ public class DatabaseImpl implements Database {
 
         @Override
         public void close() throws SQLException {
-            if (!transactional) {
+            //close() is called more than once on some paths (e.g. execute() closes it explicitly
+            //and then again by try-with-resources), so it must stay idempotent to keep the
+            //transaction connection reference count correct
+            if (closed) return;
+            closed = true;
+            if (transaction != null) {
+                transaction.release();
+            } else {
                 delegate.close();
             }
-            // if transactional - do nothing
         }
     }
 
     public class SimpleDatabaseOperations implements DatabaseOperations {
-        private final Connection connection;
+        private final TransactionConnection transaction;
 
-        private SimpleDatabaseOperations(Connection connection) {
-            this.connection = connection;
+        private SimpleDatabaseOperations(TransactionConnection transaction) {
+            this.transaction = transaction;
         }
 
         private ManagedConnection provideConnection() throws SQLException {
-            Connection conn = this.connection != null ? this.connection : DatabaseImpl.this.provideConnection();
-            return new ManagedConnection(conn, this.connection != null);
+            return this.transaction != null ? new ManagedConnection(this.transaction) :
+                    new ManagedConnection(DatabaseImpl.this.provideConnection());
+        }
+
+        @Override
+        public Table[] getTables() throws Exception {
+            try (ManagedConnection connection = provideConnection()) {
+                return readTables(connection.unwrap());
+            }
         }
 
         @Override
@@ -455,6 +582,10 @@ public class DatabaseImpl implements Database {
                 String where = DBUtils.buildSimpleWhereStatement(whereFilters);
                 sql.append(" WHERE ").append(where);
             }
+            //the total is the count of everything matching, so it is taken before the ordering and
+            //the page window are appended: count(*) returns a single row, which any OFFSET would
+            //skip - leaving the caller with a total of zero on every page but the first
+            String countSql = sql.toString();
             if (orderBy != null) {
                 if (!DBUtils.isValidColumnName(orderBy)) {
                     throw new SecurityException("Invalid column name: " + orderBy);
@@ -482,7 +613,7 @@ public class DatabaseImpl implements Database {
             ManagedConnection connection = provideConnection();
 
             if (outCount != null) {
-                String sqlString = String.format(sql.toString(), "count(*)");
+                String sqlString = String.format(countSql, "count(*)");
                 PreparedStatement statement = connection.unwrap().prepareStatement(sqlString);
                 if (whereArgs != null) {
                     for (int i = 0; i < whereArgs.length; i++) {
@@ -535,9 +666,13 @@ public class DatabaseImpl implements Database {
                 throw new SecurityException("Invalid column name: " + column);
             }
 
+            //length(CAST(x AS BLOB)) rather than length(x): the value is answered as bytes, and
+            //length() counts characters for a text value - so anything outside ASCII would be
+            //announced shorter than it is and the client would stop reading too early. On a blob
+            //the cast changes nothing.
             StringBuilder sql = new StringBuilder("SELECT typeof(")
-                    .append("\"").append(column).append("\"").append("), length(")
-                    .append(column).append("), ")
+                    .append("\"").append(column).append("\"").append("), length(CAST(")
+                    .append("\"").append(column).append("\"").append(" AS BLOB)), ")
                     .append("\"").append(column).append("\"").append(" FROM ").append(table);
             if (filters != null && !filters.isEmpty()) {
                 String where = DBUtils.buildSimpleWhereStatement(filters.toArray(new String[0]));

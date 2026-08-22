@@ -21,6 +21,11 @@
     <video id="screen-video" muted playsinline autoplay disablepictureinpicture></video>
     <!-- catches pointer events while control is on: over the video, but under the message box -->
     <div id="screen-input" class="screen-input hidden"></div>
+    <!-- while the keyboard is captured this page swallows Ctrl+W and F5, so the way out has to
+         stay on screen the whole time rather than be something to remember -->
+    <div id="capture-banner" class="capture-banner hidden">
+      Keyboard captured &mdash; press Ctrl+Alt+Shift+Esc or click RELEASE KEYBOARD to get it back
+    </div>
     <div id="screen-message" class="screen-message">
       <div id="screen-message-title" class="screen-message-title">Connecting…</div>
       <div id="screen-message-text" class="screen-message-text"></div>
@@ -41,11 +46,45 @@
              autocapitalize="off" autocorrect="off" spellcheck="false"
              placeholder="Type into the focused field…">
     </div>
+    <!-- shown instead of the buttons above when the far end is a desktop rather than a phone -->
+    <div id="desktop-controls" class="desktop-controls hidden">
+      <button id="keyboard-capture" class="screen-button"
+              onclick="onKeyboardCaptureClick();"
+              title="Send this keyboard&#39;s keys to the remote computer, shortcuts included">CAPTURE KEYBOARD</button>
+    </div>
     <button class="screen-button" onclick="onFullscreenClick();">
       <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
         <path d="M120-120v-200h80v120h120v80H120Zm520 0v-80h120v-120h80v200H640ZM120-640v-200h200v80H200v120h-80Zm640 0v-120H640v-80h200v200h-80Z"/>
       </svg>
       FULLSCREEN
+    </button>
+    <button id="record-button" class="screen-button record-control" onclick="onRecordClick();"
+            title="Record what is shown into an MP4 file">
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="#e05c5c" style="vertical-align: middle; margin-right: 6px;">
+        <circle cx="480" cy="-480" r="220"/>
+      </svg>
+      RECORD
+    </button>
+    <button id="record-stop-button" class="screen-button record-control hidden" onclick="onRecordStopClick();"
+            title="Stop recording">
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M320-320h320v-320H320v320Z"/>
+      </svg>
+      STOP
+    </button>
+    <div id="record-time" class="record-time hidden">0:00</div>
+    <button id="record-download-button" class="screen-button record-control hidden" onclick="onRecordDownloadClick();"
+            title="Save the recording">
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
+        <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/>
+      </svg>
+      DOWNLOAD
+    </button>
+    <button id="record-discard-button" class="screen-button record-control record-discard hidden"
+            onclick="onRecordDiscardClick();" title="Discard the recording">
+      <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle;">
+        <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360Z"/>
+      </svg>
     </button>
     <div id="control-hint" class="control-hint"></div>
     <div id="screen-stats" class="screen-stats"></div>

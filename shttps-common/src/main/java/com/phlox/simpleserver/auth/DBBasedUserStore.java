@@ -167,7 +167,8 @@ public class DBBasedUserStore implements UserStore {
                 EnumSet.of(User.FileSystemRights.READ, User.FileSystemRights.LIST_CONTENTS),
                 EnumSet.of(User.DBRights.READ), config.getDefaultRoleForNewUser(),
                 System.currentTimeMillis(), null, null,
-                EnumSet.of(User.SystemRights.READ_STATUS), 0);
+                EnumSet.of(User.SystemRights.READ_STATUS), 0,
+                User.defaultChannelRights(identity));
         create(user, needToCheckForUserRootDirUniqueness);
         return user;
     }
@@ -272,12 +273,14 @@ public class DBBasedUserStore implements UserStore {
             throw new IllegalStateException("Default role for new user is not found: " + defaultRole);
         }
         
+        //every right comes from the role on this path, channel rights included
         User newUser = new User(identity, password, null,
                 EnumSet.noneOf(User.FileSystemRights.class),
                 EnumSet.noneOf(User.DBRights.class),
                 defaultRole,
                 System.currentTimeMillis(), null, null,
-                EnumSet.noneOf(User.SystemRights.class), 0);
+                EnumSet.noneOf(User.SystemRights.class), 0,
+                EnumSet.noneOf(User.ChannelRights.class));
         String rootDirPattern = config.getNewUserDirPattern();
         newUser.rootDir = formatNewUserDir(rootDirPattern, identity);
         boolean needToCheckForUserRootDirUniqueness = rootDirPattern != null &&

@@ -8,15 +8,15 @@ import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.MultiMap;
 
+import org.jetbrains.annotations.Nullable;
+
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class CORSMiddleware implements Middleware {
-    private final Map<String, CORSRule> corsRules = new HashMap<>();
+    private final List<CORSRule> corsRules = new ArrayList<>();
     public static class CORSRule implements Serializable {
         public String origin;
         public String[] allowMethods;
@@ -27,9 +27,7 @@ public class CORSMiddleware implements Middleware {
     }
 
     public CORSMiddleware(List<CORSRule> corsRules) {
-        for (CORSRule corsRule : corsRules) {
-            this.corsRules.put(corsRule.origin, corsRule);
-        }
+        this.corsRules.addAll(corsRules);
     }
 
     @Override
@@ -116,10 +114,32 @@ public class CORSMiddleware implements Middleware {
     }
 
     private CORSRule corsRuleForOrigin(String origin) {
-        CORSRule corsRule = corsRules.get(origin);
-        if (corsRule == null) {
-            corsRule = corsRules.get("*");//default rule
+        return findRuleForOrigin(corsRules, origin);
+    }
+
+    /**
+     * The rule governing an origin: the one naming it exactly, or else the catch-all {@code "*"}
+     * rule, or null when the configuration has neither.
+     * <p>
+     * Public because WebSocket endpoints have to answer this question for themselves. A browser
+     * applies none of CORS to a WebSocket handshake - there is no preflight and no
+     * {@code Access-Control-Allow-Origin} check - so an endpoint that wants the configured origins
+     * respected has to consult this list at the handshake and refuse the connection itself.
+     */
+    public static @Nullable CORSRule findRuleForOrigin(@Nullable List<CORSRule> rules, @Nullable String origin) {
+        if (rules == null || origin == null) {
+            return null;
         }
-        return corsRule;
+        CORSRule wildcard = null;
+        for (CORSRule rule : rules) {
+            if (rule.origin == null) continue;
+            if (rule.origin.equals(origin)) {
+                return rule;
+            }
+            if (wildcard == null && "*".equals(rule.origin)) {
+                wildcard = rule;
+            }
+        }
+        return wildcard;
     }
 }

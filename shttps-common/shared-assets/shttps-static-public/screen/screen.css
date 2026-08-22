@@ -94,6 +94,13 @@
     display: none;
 }
 
+/* gdigrab draws the remote cursor into the picture itself, so a local one on top of it gives two
+   pointers chasing each other across the screen. A touch screen has no cursor of its own to draw,
+   which is why the crosshair above stays for that case. */
+.screen-input.mouse-mode {
+    cursor: none;
+}
+
 .control-buttons {
     display: flex;
     flex-wrap: wrap;
@@ -102,6 +109,42 @@
 }
 
 .control-buttons.hidden {
+    display: none;
+}
+
+.desktop-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.desktop-controls.hidden {
+    display: none;
+}
+
+/* unmistakable, because while it is on this page stops responding to its own shortcuts */
+#keyboard-capture.active {
+    background: #b34a4a;
+    border-color: #b34a4a;
+    color: #ffffff;
+}
+
+.capture-banner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 6px 10px;
+    background: rgba(179, 74, 74, 0.85);
+    color: #ffffff;
+    font-size: 13px;
+    text-align: center;
+    /* over the picture but never in the way of it: every click belongs to the machine below */
+    pointer-events: none;
+}
+
+.capture-banner.hidden {
     display: none;
 }
 
@@ -185,9 +228,61 @@
     background: #264f5e;
 }
 
+.screen-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.screen-button:disabled:hover {
+    background: #2d2d2d;
+    border-color: #3a3a3a;
+}
+
+/* the recorder shows two of its four controls at most, so the toolbar keeps its height */
+.record-control.hidden {
+    display: none;
+}
+
+/* an icon on its own needs no room for a label next to it */
+.record-discard {
+    padding: 8px 10px;
+    line-height: 0;
+}
+
+.record-discard:hover {
+    background: #7a3a3a;
+    border-color: #8f4545;
+}
+
+.record-time {
+    font-size: 0.9em;
+    font-variant-numeric: tabular-nums;
+    color: #e0e0e0;
+    white-space: nowrap;
+}
+
+.record-time.hidden {
+    display: none;
+}
+
+.record-time::before {
+    content: "\25CF";
+    color: #e05c5c;
+    margin-right: 6px;
+    animation: record-blink 1.6s step-end infinite;
+}
+
+@keyframes record-blink {
+    50% {
+        opacity: 0.15;
+    }
+}
+
 .control-hint {
     font-size: 0.85em;
     color: #d0a24c;
+    /* let a long hint be cut short rather than wrap the toolbar and push the video off screen */
+    min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

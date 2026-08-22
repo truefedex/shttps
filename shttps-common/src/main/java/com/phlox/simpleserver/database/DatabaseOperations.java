@@ -1,5 +1,6 @@
 package com.phlox.simpleserver.database;
 
+import com.phlox.simpleserver.database.model.Table;
 import com.phlox.simpleserver.database.model.TableData;
 import com.phlox.simpleserver.utils.Holder;
 
@@ -8,6 +9,16 @@ import org.json.JSONObject;
 import java.util.List;
 
 public interface DatabaseOperations {
+    /**
+     * The tables of this database with their columns, indexes and row counts.
+     * <p>
+     * Declared here rather than on {@link Database} so that it can be read from inside a
+     * transaction, together with whatever else that transaction looks at. Reading the schema
+     * through the outer {@link Database} while a permission check ran in a transaction would answer
+     * from two different points in time.
+     */
+    Table[] getTables() throws Exception;
+
     default TableData query(String query) throws Exception {
         return query(query, null, true);
     }

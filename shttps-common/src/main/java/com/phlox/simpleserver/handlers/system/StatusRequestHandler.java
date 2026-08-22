@@ -11,6 +11,7 @@ import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
+import com.phlox.simpleserver.channels.ChannelManager;
 import com.phlox.simpleserver.database.Database;
 
 import org.json.JSONObject;
@@ -53,6 +54,7 @@ public class StatusRequestHandler implements RequestHandler {
             userInfo.put("system_rights", authManager.getUserRightsEvaluator().userSystemRights(user).toString());
             userInfo.put("db_rights", authManager.getUserRightsEvaluator().userDBRights(user).toString());
             userInfo.put("fs_rights", authManager.getUserRightsEvaluator().userFSRights(user).toString());
+            userInfo.put("channel_rights", authManager.getUserRightsEvaluator().userChannelRights(user).toString());
             userInfo.put("storage_limit_bytes", authManager.getUserRightsEvaluator().getStorageLimit(user));
             userInfo.put("storage_used_bytes", user.usedStorage);
             userInfo.put("registered_at", user.registeredAt);
@@ -74,6 +76,15 @@ public class StatusRequestHandler implements RequestHandler {
                     dbInfo.put(entry.getKey(), entry.getValue());
                 }
                 answer.put("database", dbInfo);
+            }
+            if (scopes.isEmpty() || scopes.contains("channels")) {
+                ChannelManager channelManager = app.getChannelManager();
+                JSONObject channelsInfo = new JSONObject();
+                channelsInfo.put("enabled", config.isChannelsEnabled());
+                channelsInfo.put("predefined", channelManager.countPredefined());
+                channelsInfo.put("dynamic", channelManager.countDynamic());
+                channelsInfo.put("totalParticipants", channelManager.totalParticipants());
+                answer.put("channels", channelsInfo);
             }
             if (scopes.isEmpty() || scopes.contains("system")) {
                 JSONObject systemInfo = new JSONObject();

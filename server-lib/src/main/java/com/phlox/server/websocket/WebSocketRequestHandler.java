@@ -197,6 +197,28 @@ public abstract class WebSocketRequestHandler implements RequestHandler, WebSock
     }
 
     /**
+     * The usual answer for {@link #isOriginAllowed} on an endpoint that authenticates with cookies:
+     * accept only a page served from this very host, and accept a client that sends no Origin at all
+     * (nothing but a browser does).
+     *
+     * @param origin value of the Origin header, or null if the client did not send one
+     */
+    protected static boolean isSameOriginAsHost(@NotNull Request request, @Nullable String origin) {
+        if (origin == null || origin.isEmpty()) {
+            return true;
+        }
+        String host = request.headers.get(Request.HEADER_HOST);
+        if (host == null) {
+            return false;
+        }
+        int schemeEnd = origin.indexOf("://");
+        if (schemeEnd < 0) {
+            return false;
+        }
+        return origin.substring(schemeEnd + 3).equalsIgnoreCase(host.trim());
+    }
+
+    /**
      * Picks one of the sub-protocols the client offers, or returns null to negotiate none
      * (the default). Returning a value that was not offered is a protocol violation, the
      * client is expected to drop such a connection.
@@ -221,6 +243,27 @@ public abstract class WebSocketRequestHandler implements RequestHandler, WebSock
                 session.sendText(message);
             } catch (IOException e) {
                 logger.d("Broadcast to " + session.getRemoteAddress() + " failed: " + e.getMessage());
+                session.close(WebSocketCloseCodes.ABNORMAL_CLOSURE, "");
+            }
+        }
+    }
+
+    /**
+     * The same for a binary message: one blob relayed to a group of sessions, dropping the ones
+     * that turn out to be dead.
+     * <p>
+     * The array is not copied per recipient - it is written out and never kept - so a caller must
+     * not change it while this runs.
+     */
+    public static void broadcastBinary(Iterable<WebSocketSession> sessions, byte[] message) {
+        for (WebSocketSession session : sessions) {
+            if (!session.isOpen()) {
+                continue;
+            }
+            try {
+                session.sendBinary(message);
+            } catch (IOException e) {
+                logger.d("Binary broadcast to " + session.getRemoteAddress() + " failed: " + e.getMessage());
                 session.close(WebSocketCloseCodes.ABNORMAL_CLOSURE, "");
             }
         }

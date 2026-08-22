@@ -15,6 +15,7 @@ import com.phlox.server.utils.HTTPUtils;
 import com.phlox.server.utils.MultiMap;
 import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.docfile.DocumentFile;
+import com.phlox.server.websocket.WebSocketCloseCodes;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.ConfigBasedUserStore;
 import com.phlox.simpleserver.auth.DBBasedUserStore;
@@ -31,16 +32,21 @@ import com.phlox.simpleserver.auth.web.SessionManager;
 import com.phlox.simpleserver.auth.web.UserRegistrationRequestHandler;
 import com.phlox.simpleserver.auth.web.WebAuthManager;
 import com.phlox.simpleserver.auth.web.WebAuthMiddleware;
+import com.phlox.simpleserver.channels.ChannelManager;
 import com.phlox.simpleserver.database.Database;
 import com.phlox.simpleserver.database.DatabaseMigrator;
 import com.phlox.simpleserver.database.SHTTPSDatabaseFabric;
 import com.phlox.simpleserver.exec.CgiMiddleware;
+import com.phlox.simpleserver.handlers.channels.ChannelWebSocketHandler;
+import com.phlox.simpleserver.handlers.channels.ChannelsCollectionRequestHandler;
+import com.phlox.simpleserver.handlers.channels.ChannelsPathRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBCustomSQLRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBDeleteRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBInsertRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBSchemaRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBSingleCellDataRequestHandler;
 import com.phlox.simpleserver.handlers.database.DBTableDataRequestHandler;
+import com.phlox.simpleserver.handlers.database.DBTransactionWebSocketHandler;
 import com.phlox.simpleserver.handlers.database.DBUpdateRequestHandler;
 import com.phlox.simpleserver.handlers.files.DeleteFileRequestHandler;
 import com.phlox.simpleserver.handlers.files.FileListRequestHandler;
@@ -92,8 +98,22 @@ public class SHTTPSApp {
     private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
 
     private final Holder<Database> database = new Holder<>(null);
+    /** Every live WebSocket channel; handed to the channel handlers when the routes are built. */
+    private final ChannelManager channelManager = new ChannelManager();
     public final ServerLogsCollector logsCollector = new ServerLogsCollector(1000);
     public RateLimitingMiddleware rateLimitingMiddleware;
+    /**
+     * Limits how often one client may open a database transaction session. Separate from the global
+     * limiter because it applies to that one route whether or not the global limit is switched on -
+     * a transaction holds the database's single writer, so a reconnect loop is a denial of service
+     * on every other database request.
+     */
+    public RateLimitingMiddleware dbTransactionRateLimitingMiddleware;
+    /**
+     * In the same spirit as the login route's ten per minute: generous for a client that opens a
+     * session per batch of work, tight enough to stop one that reconnects in a loop.
+     */
+    public static final int DB_TRANSACTION_HANDSHAKES_PER_MINUTE = 10;
     private UserStore userStore;
     private SessionManager sessionManager;
     //built for the configured auth mode when the server starts; handlers registered from outside
@@ -104,6 +124,8 @@ public class SHTTPSApp {
     private volatile int shutdownTimeout = 0;
     private final ScheduledExecutorService scheduledThreadPool = Executors.newScheduledThreadPool(1);
     private volatile ScheduledFuture<?> shutdownFuture = null;
+    /** The repeating sweep that collects dynamic channels nobody has used for a while. */
+    private volatile ScheduledFuture<?> channelIdleSweepFuture = null;
     public ServerVersionInfo serverVersionInfo = new ServerVersionInfo("SHTTPS", "unknown");
     public long serverStartTimeMillis;
 
@@ -251,6 +273,31 @@ public class SHTTPSApp {
         router.addRoute("/api/db/delete", Set.of("DELETE"), new DBDeleteRequestHandler(database, config, authManager), authMiddlewares);
         router.addRoute("/api/db/query", Set.of("POST"), new DBCustomSQLRequestHandler(database, config, authManager), authMiddlewares);
         router.addRoute("/api/db/cell-data", Set.of("GET", "POST"), new DBSingleCellDataRequestHandler(database, config, authManager), authMiddlewares);
+        //a WebSocket handshake is an ordinary GET, so it goes through the same middlewares as the
+        //rest - plus one of its own: an open transaction holds the single database writer, so the
+        //rate at which sessions may be started is limited whether or not the global limit is on
+        dbTransactionRateLimitingMiddleware = new RateLimitingMiddleware(
+                DB_TRANSACTION_HANDSHAKES_PER_MINUTE,
+                1000 * 60,//minute
+                config.getRateLimiterTrustToIPHeaders()
+        );
+        List<Middleware> dbTransactionMiddlewares = new ArrayList<>(authMiddlewares);
+        dbTransactionMiddlewares.add(dbTransactionRateLimitingMiddleware);
+        router.addRoute(DBTransactionWebSocketHandler.PATH, Set.of("GET"), new DBTransactionWebSocketHandler(database, config, authManager), dbTransactionMiddlewares);
+
+        //channel handlers
+        //the predefined channels are rebuilt here rather than kept across restarts: they are a
+        //configuration setting, and this is the moment the configuration is read
+        channelManager.applyPredefinedChannels(config);
+        startChannelIdleSweep();
+        ChannelWebSocketHandler channelWebSocketHandler =
+                new ChannelWebSocketHandler(channelManager, config, authManager);
+        router.addRoute(ChannelsCollectionRequestHandler.PATH, Set.of("GET", "POST"),
+                new ChannelsCollectionRequestHandler(channelManager, config, authManager), authMiddlewares);
+        //{id} and its sub-paths are parsed by the handler itself - the router has no path parameters
+        router.addRouteByPathPrefix(ChannelsPathRequestHandler.PATH_PREFIX,
+                new ChannelsPathRequestHandler(channelManager, config, authManager, channelWebSocketHandler),
+                authMiddlewares);
 
         //system handlers
         router.addRoute("/api/system/status", Set.of("GET"), new StatusRequestHandler(this, authManager), authMiddlewares);
@@ -438,6 +485,33 @@ public class SHTTPSApp {
         setupShutdownTimeout();
     }
 
+    /**
+     * Starts the repeating collection of dynamic channels that have been empty for longer than
+     * {@code getChannelIdleTimeoutMillis()}. Runs on the app's scheduler, like the shutdown timer;
+     * {@link #stopServer()} cancels it, so a restart replaces it rather than adding a second one.
+     */
+    private void startChannelIdleSweep() {
+        ScheduledFuture<?> previous = this.channelIdleSweepFuture;
+        if (previous != null) {
+            previous.cancel(false);
+            this.channelIdleSweepFuture = null;
+        }
+        if (!config.isChannelsEnabled()) return;
+        int timeout = config.getChannelIdleTimeoutMillis();
+        if (timeout <= 0) return;//the sweep is switched off
+        //often enough that a collected channel is gone soon after it has earned it, rarely enough
+        //that a ten minute timeout does not mean a wake-up every second
+        long period = Math.max(1000, Math.min(timeout / 2, 60000));
+        this.channelIdleSweepFuture = scheduledThreadPool.scheduleWithFixedDelay(() -> {
+            try {
+                channelManager.collectIdleChannels(config);
+            } catch (Throwable t) {
+                //anything escaping here would cancel the repeating task for the rest of the run
+                logger.e("Channel idle sweep failed", t);
+            }
+        }, period, period, TimeUnit.MILLISECONDS);
+    }
+
     public synchronized void stopServer() {
         SimpleHttpServer srv = this.server;
         if (srv != null && srv.isListenThreadRunning()) {
@@ -449,6 +523,23 @@ public class SHTTPSApp {
         if (rateLimitingMiddleware != null) {
             rateLimitingMiddleware.shutdown();
             this.rateLimitingMiddleware = null;
+        }
+
+        RateLimitingMiddleware dbTransactionRateLimiter = this.dbTransactionRateLimitingMiddleware;
+        if (dbTransactionRateLimiter != null) {
+            //it owns a cleanup executor of its own, like the global one
+            dbTransactionRateLimiter.shutdown();
+            this.dbTransactionRateLimitingMiddleware = null;
+        }
+
+        //the sockets are already going away with the server; this tells the participants why, and
+        //leaves no channel behind holding a closed session
+        channelManager.closeAll(WebSocketCloseCodes.GOING_AWAY, "Server stopped");
+
+        ScheduledFuture<?> sweep = this.channelIdleSweepFuture;
+        if (sweep != null) {
+            sweep.cancel(false);
+            this.channelIdleSweepFuture = null;
         }
 
         ScheduledFuture<?> future = this.shutdownFuture;
@@ -524,6 +615,10 @@ public class SHTTPSApp {
 
     public Database getDatabase() {
         return database.get();
+    }
+
+    public ChannelManager getChannelManager() {
+        return channelManager;
     }
 
     /**

@@ -35,16 +35,81 @@ body {
     transition: visibility 0s linear 0s, opacity 0.2s ease;
 }
 
-.menu-fullscreen {
-    left: 0px;
-    top: 0px;
+.context-menu.menu-fullscreen {
+    left: 0;
+    top: 0;
     width: 100%;
     height: 100%;
-    overflow-y: auto;
+    max-width: none;
+    max-height: none;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+    gap: 4px;
+    padding: 16px 14px calc(14px + env(safe-area-inset-bottom, 0px));
     overflow-x: hidden;
-    position: fixed;
+    overflow-y: auto;
+    text-align: left;
+    background: rgba(0, 0, 0, 0.55) !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+}
+
+.context-menu.menu-fullscreen .menu-options {
+    background-color: #2d2d2d;
+    border: 1px solid #5a5a5a;
+    border-radius: 16px;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+    margin: 0;
+    padding: 8px 0;
+    max-height: min(72vh, 560px);
+    overflow-y: auto;
+}
+
+.context-menu.menu-fullscreen .menu-options .menu-option {
+    font-size: 18px;
+    line-height: 1.35;
+    padding: 16px 20px;
+    white-space: normal;
+}
+
+.context-menu.menu-fullscreen .menu-options .menu-option:active {
+    background: rgba(48, 100, 119, 0.4);
+}
+
+.context-menu.menu-fullscreen .menu-options .menu-option::before {
+    display: none;
+}
+
+.context-menu.menu-fullscreen .menu-options .menu-option.menu-option-mark::before,
+.context-menu.menu-fullscreen .menu-options .menu-option.menu-option-circle-mark::before {
+    display: inline;
+    margin-right: 12px;
+}
+
+.context-menu.menu-fullscreen .menu-options .menu-divider {
+    font-size: 15px;
+    padding: 10px 20px;
+    margin: 6px 0;
+}
+
+.context-menu.menu-fullscreen .menu-close-btn {
+    position: static;
+    align-self: flex-end;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 36px;
+    line-height: 44px;
     text-align: center;
-    padding-top: 20%;
+    color: #f2f2f2;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
 }
 .context-menu .menu-options {
     list-style: none;

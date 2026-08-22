@@ -7,6 +7,7 @@ import com.phlox.server.utils.HTTPUtils;
 import com.phlox.server.utils.MultiMap;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.channels.ChannelDefinition;
 import com.phlox.simpleserver.exec.CgiType;
 import com.phlox.simpleserver.handlers.HandlersUtils;
 import com.phlox.simpleserver.utils.Utils;
@@ -32,7 +33,7 @@ import proguard.annotation.Keep;
 
 @SuppressWarnings("DeprecatedIsStillUsed")
 public interface SHTTPSConfig {
-    int CONFIG_VERSION = 5;
+    int CONFIG_VERSION = 6;
     String KEY_ROOT_DIR = "root_dir";
     String KEY_RENDER_FOLDERS = "render_folders";
     String KEY_ALLOW_EDITING = "allow_editing";
@@ -53,6 +54,8 @@ public interface SHTTPSConfig {
     String KEY_DATABASE_PATH = "database_path";
     String KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API = "allow_database_table_data_editing_api";
     String KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API = "allow_database_custom_sql_remote_api";
+    String KEY_DB_TRANSACTION_MAX_LIFETIME_MS = "db_transaction_max_lifetime_ms";
+    String KEY_DB_TRANSACTION_INACTIVITY_TIMEOUT_MS = "db_transaction_inactivity_timeout_ms";
     String KEY_REDIRECT_RULES = "redirect_rules";
     String KEY_CONFIG_VERSION = "config_version";
     String KEY_AUTH_MODE = "auth_mode";
@@ -74,6 +77,23 @@ public interface SHTTPSConfig {
     String KEY_HEADERS_OVERRIDES = "headers_overrides";
     String KEY_WEBDAV_SUPPORT = "webdav_support";
     String KEY_SCREEN_SHARE = "screen_share";
+    String KEY_SCREEN_MONITOR = "screen_monitor";
+    /**
+     * Deliberately the same string the Android build has always written into its own preferences,
+     * so that hoisting this setting up here left every stored value where it was.
+     */
+    String KEY_ALLOW_REMOTE_CONTROL = "allow_remote_control";
+
+    /** {@link #getScreenMonitor()} value meaning "whichever display is primary right now". */
+    int SCREEN_MONITOR_PRIMARY = -1;
+    String KEY_CHANNELS_ENABLED = "channels_enabled";
+    String KEY_ALLOW_DYNAMIC_CHANNEL_CREATION = "allow_dynamic_channel_creation";
+    String KEY_MAX_DYNAMIC_CHANNELS = "max_dynamic_channels";
+    String KEY_MAX_PARTICIPANTS_PER_CHANNEL = "max_participants_per_channel";
+    String KEY_CHANNEL_IDLE_TIMEOUT_MS = "channel_idle_timeout_ms";
+    String KEY_CHANNEL_MESSAGE_RATE_LIMIT_PER_SECOND = "channel_message_rate_limit_per_second";
+    String KEY_CHANNEL_MAX_MESSAGE_BYTES = "channel_max_message_bytes";
+    String KEY_PREDEFINED_CHANNELS = "predefined_channels";
 
     default void runMigrations() {
         if (getConfigVersion() == CONFIG_VERSION) return;
@@ -118,6 +138,12 @@ public interface SHTTPSConfig {
                 setCustomHeaders(null);
             }
             setConfigVersion(5);
+        }
+        if (getConfigVersion() == 5) {
+            //channels arrived with version 6; every one of their settings defaults to off, so an
+            //existing configuration needs nothing converted - only stamping, so this branch is not
+            //re-entered
+            setConfigVersion(6);
         }
     }
 
@@ -274,6 +300,42 @@ public interface SHTTPSConfig {
 
     default void setAllowDatabaseCustomSqlRemoteApi(boolean value) {
         setBoolean(KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API, value);
+    }
+
+    int DB_TRANSACTION_TIMEOUT_MIN_MS = 100;
+    int DB_TRANSACTION_TIMEOUT_MAX_MS = 60_000;
+
+    /**
+     * How long a transaction driven over {@code /api/db/transaction} may live, however busy the
+     * client keeps it.
+     * <p>
+     * Such a transaction holds the database's single write thread for its whole life, so every other
+     * write waits behind it - this is the cap that keeps that bounded, not a nicety. Clamped on read
+     * so a hand-edited configuration can not produce an effectively unbounded transaction.
+     */
+    default int getDBTransactionMaxLifetimeMillis() {
+        return clampDBTransactionTimeout(getInt(KEY_DB_TRANSACTION_MAX_LIFETIME_MS, 5000));
+    }
+
+    default void setDBTransactionMaxLifetimeMillis(int millis) {
+        setInt(KEY_DB_TRANSACTION_MAX_LIFETIME_MS, millis);
+    }
+
+    /**
+     * How long a transaction driven over {@code /api/db/transaction} may sit without a command
+     * before it is rolled back. Bounds the common case of a client that opened a transaction and
+     * then went away or got distracted.
+     */
+    default int getDBTransactionInactivityTimeoutMillis() {
+        return clampDBTransactionTimeout(getInt(KEY_DB_TRANSACTION_INACTIVITY_TIMEOUT_MS, 2000));
+    }
+
+    default void setDBTransactionInactivityTimeoutMillis(int millis) {
+        setInt(KEY_DB_TRANSACTION_INACTIVITY_TIMEOUT_MS, millis);
+    }
+
+    static int clampDBTransactionTimeout(int millis) {
+        return Math.max(DB_TRANSACTION_TIMEOUT_MIN_MS, Math.min(DB_TRANSACTION_TIMEOUT_MAX_MS, millis));
     }
 
     /**
@@ -458,6 +520,119 @@ public interface SHTTPSConfig {
             }
         }
         setJSONArray(KEY_CGI_TYPES, jCgiTypes);
+    }
+
+    /**
+     * The master switch for WebSocket channels ({@code /api/channels/**}). Off by default: a
+     * server that does not need channels should not be listening for them.
+     */
+    default boolean isChannelsEnabled() {
+        return getBoolean(KEY_CHANNELS_ENABLED, false);
+    }
+
+    default void setChannelsEnabled(boolean enabled) {
+        setBoolean(KEY_CHANNELS_ENABLED, enabled);
+    }
+
+    /** Whether {@code POST /api/channels} may create channels at runtime. */
+    default boolean getAllowDynamicChannelCreation() {
+        return getBoolean(KEY_ALLOW_DYNAMIC_CHANNEL_CREATION, false);
+    }
+
+    default void setAllowDynamicChannelCreation(boolean allow) {
+        setBoolean(KEY_ALLOW_DYNAMIC_CHANNEL_CREATION, allow);
+    }
+
+    /** Cap on the number of channels created at runtime, predefined ones not counted. */
+    default int getMaxDynamicChannels() {
+        return getInt(KEY_MAX_DYNAMIC_CHANNELS, 20);
+    }
+
+    default void setMaxDynamicChannels(int value) {
+        setInt(KEY_MAX_DYNAMIC_CHANNELS, value);
+    }
+
+    /** Default participant cap; a channel may lower or raise it for itself. */
+    default int getMaxParticipantsPerChannel() {
+        return getInt(KEY_MAX_PARTICIPANTS_PER_CHANNEL, 50);
+    }
+
+    default void setMaxParticipantsPerChannel(int value) {
+        setInt(KEY_MAX_PARTICIPANTS_PER_CHANNEL, value);
+    }
+
+    /** How long an empty, non-persistent channel survives before it is collected. */
+    default int getChannelIdleTimeoutMillis() {
+        return getInt(KEY_CHANNEL_IDLE_TIMEOUT_MS, 600_000);
+    }
+
+    default void setChannelIdleTimeoutMillis(int millis) {
+        setInt(KEY_CHANNEL_IDLE_TIMEOUT_MS, millis);
+    }
+
+    /**
+     * Incoming-message limit per channel connection, enforced by a token bucket per open socket;
+     * a connection that exceeds it is closed with 4429. Zero or less turns the limit off.
+     */
+    default int getChannelMessageRateLimitPerSecond() {
+        return getInt(KEY_CHANNEL_MESSAGE_RATE_LIMIT_PER_SECOND, 20);
+    }
+
+    default void setChannelMessageRateLimitPerSecond(int value) {
+        setInt(KEY_CHANNEL_MESSAGE_RATE_LIMIT_PER_SECOND, value);
+    }
+
+    /**
+     * The biggest message a channel connection may send, in bytes - the cap that makes binary relay
+     * ({@code binaryAllowed}, §7.1) safe to leave on.
+     * <p>
+     * <b>It applies to the whole endpoint, not to one channel.</b> All channels share a single
+     * {@code ChannelWebSocketHandler} and therefore a single set of WebSocket options, and the limit
+     * is enforced by the frame reader before any channel is consulted; a connection that goes over
+     * it is closed with 1009. So raising this to carry 8 MB blobs on one channel lets every other
+     * channel's connection buffer 8 MB too - which is the memory a single talking peer can make the
+     * server allocate, per connection. Raise it deliberately.
+     */
+    default int getChannelMaxMessageBytes() {
+        return getInt(KEY_CHANNEL_MAX_MESSAGE_BYTES, 1024 * 1024);
+    }
+
+    default void setChannelMaxMessageBytes(int value) {
+        setInt(KEY_CHANNEL_MAX_MESSAGE_BYTES, value);
+    }
+
+    /**
+     * Channels that exist for as long as the server runs. Order carries no meaning here - a
+     * channel is always addressed by its id - so the set-backed array storage on Android is fine.
+     * <p>
+     * An entry that does not parse - a hand-edited file, an imported blob, a mode from a later
+     * version - is skipped rather than thrown out of: this list is read while the server starts, and
+     * one unusable channel must not be the reason the server does not come up at all.
+     */
+    default @Nullable List<ChannelDefinition> getPredefinedChannels() {
+        JSONArray jChannels = getJsonArray(KEY_PREDEFINED_CHANNELS, null);
+        if (jChannels == null) return null;
+        ArrayList<ChannelDefinition> channels = new ArrayList<>(jChannels.length());
+        for (int i = 0; i < jChannels.length(); ++i) {
+            Object obj = jChannels.opt(i);
+            if (obj instanceof JSONObject) {
+                try {
+                    channels.add(ChannelDefinition.deserialize((JSONObject) obj));
+                } catch (JSONException ignored) {
+                }
+            }
+        }
+        return channels;
+    }
+
+    default void setPredefinedChannels(@Nullable List<ChannelDefinition> list) {
+        JSONArray jChannels = new JSONArray();
+        if (list != null) {
+            for (ChannelDefinition channel : list) {
+                jChannels.put(channel.serialize());
+            }
+        }
+        setJSONArray(KEY_PREDEFINED_CHANNELS, jChannels);
     }
 
     default @Nullable List<CORSMiddleware.CORSRule> getCORSRules() {
@@ -700,6 +875,38 @@ public interface SHTTPSConfig {
         setBoolean(KEY_SCREEN_SHARE, value);
     }
 
+    /**
+     * Which display to share, as an index into the screens the platform reports, or
+     * {@link #SCREEN_MONITOR_PRIMARY} for whichever one is primary at the time.
+     * <p>
+     * An index that no longer exists - the monitor was unplugged since it was chosen - is
+     * expected to fall back to the primary display rather than fail to start.
+     */
+    default int getScreenMonitor() {
+        return getInt(KEY_SCREEN_MONITOR, SCREEN_MONITOR_PRIMARY);
+    }
+
+    default void setScreenMonitor(int value) {
+        setInt(KEY_SCREEN_MONITOR, value);
+    }
+
+    /**
+     * Whether a viewer allowed to watch the screen may also drive it - move the pointer, click and
+     * type. Off by default, and meaningless without {@link #isScreenShareEnabled()}, which is what
+     * registers the endpoint this travels over.
+     * <p>
+     * Turning it on is not on its own enough to be controlled: the platform still has to be able to
+     * inject input at all - an accessibility service the user granted, on Android - and the account
+     * doing it still needs {@code CONTROL_SCREEN} on top of {@code VIEW_SCREEN}.
+     */
+    default boolean isRemoteControlEnabled() {
+        return getBoolean(KEY_ALLOW_REMOTE_CONTROL, false);
+    }
+
+    default void setRemoteControlEnabled(boolean value) {
+        setBoolean(KEY_ALLOW_REMOTE_CONTROL, value);
+    }
+
     int getInt(String key, int defaultValue);
 
     void setInt(String key, int value);
@@ -815,6 +1022,8 @@ public interface SHTTPSConfig {
         }
         result.put(KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API, isAllowDatabaseTableDataEditingApi());
         result.put(KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API, isAllowDatabaseCustomSqlRemoteApi());
+        result.put(KEY_DB_TRANSACTION_MAX_LIFETIME_MS, getDBTransactionMaxLifetimeMillis());
+        result.put(KEY_DB_TRANSACTION_INACTIVITY_TIMEOUT_MS, getDBTransactionInactivityTimeoutMillis());
 
         List<RedirectsMiddleware.RedirectRule> redirectRules = getRedirectRules();
         if (redirectRules != null) {
@@ -867,8 +1076,31 @@ public interface SHTTPSConfig {
             result.put(KEY_HEADERS_OVERRIDES, headerOverridesRaw);
         }
 
+        result.put(KEY_CHANNELS_ENABLED, isChannelsEnabled());
+        result.put(KEY_ALLOW_DYNAMIC_CHANNEL_CREATION, getAllowDynamicChannelCreation());
+        result.put(KEY_MAX_DYNAMIC_CHANNELS, getMaxDynamicChannels());
+        result.put(KEY_MAX_PARTICIPANTS_PER_CHANNEL, getMaxParticipantsPerChannel());
+        result.put(KEY_CHANNEL_IDLE_TIMEOUT_MS, getChannelIdleTimeoutMillis());
+        result.put(KEY_CHANNEL_MESSAGE_RATE_LIMIT_PER_SECOND, getChannelMessageRateLimitPerSecond());
+        result.put(KEY_CHANNEL_MAX_MESSAGE_BYTES, getChannelMaxMessageBytes());
+
+        //predefined channels carry only the hash of a channel password, so the exported blob holds
+        //no channel secret in readable form
+        JSONArray predefinedChannelsRaw = getJsonArray(KEY_PREDEFINED_CHANNELS, null);
+        if (predefinedChannelsRaw != null) {
+            result.put(KEY_PREDEFINED_CHANNELS, predefinedChannelsRaw);
+        }
+
         String defaultCharset = getDefaultTextCharset();
         if (defaultCharset != null) result.put(KEY_DEFAULT_TEXT_CHARSET, defaultCharset);
+
+        //WebDAV and screen sharing. Both KEY_WEBDAV_SUPPORT and KEY_SCREEN_SHARE were missing here
+        //since they were introduced, which is exactly the kind of omission ChannelsConfigTest was
+        //written to catch
+        result.put(KEY_WEBDAV_SUPPORT, getWebDavSupport());
+        result.put(KEY_SCREEN_SHARE, isScreenShareEnabled());
+        result.put(KEY_SCREEN_MONITOR, getScreenMonitor());
+        result.put(KEY_ALLOW_REMOTE_CONTROL, isRemoteControlEnabled());
 
         return result;
     }
@@ -960,6 +1192,12 @@ public interface SHTTPSConfig {
         if (json.has(KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API)) {
             setAllowDatabaseTableDataEditingApi(json.optBoolean(KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API, false));
         }
+        if (json.has(KEY_DB_TRANSACTION_MAX_LIFETIME_MS)) {
+            setDBTransactionMaxLifetimeMillis(json.optInt(KEY_DB_TRANSACTION_MAX_LIFETIME_MS, 5000));
+        }
+        if (json.has(KEY_DB_TRANSACTION_INACTIVITY_TIMEOUT_MS)) {
+            setDBTransactionInactivityTimeoutMillis(json.optInt(KEY_DB_TRANSACTION_INACTIVITY_TIMEOUT_MS, 2000));
+        }
         if (json.has(KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API)) {
             setAllowDatabaseCustomSqlRemoteApi(json.optBoolean(KEY_ALLOW_DATABASE_CUSTOM_SQL_REMOTE_API, false));
         }
@@ -1031,6 +1269,37 @@ public interface SHTTPSConfig {
             setJSONArray(KEY_HEADERS_OVERRIDES, arr != null ? arr : new JSONArray());
         }
         if (json.has(KEY_DEFAULT_TEXT_CHARSET)) setDefaultTextCharset(json.optString(KEY_DEFAULT_TEXT_CHARSET, null));
+
+        if (json.has(KEY_CHANNELS_ENABLED)) setChannelsEnabled(json.optBoolean(KEY_CHANNELS_ENABLED, false));
+        if (json.has(KEY_ALLOW_DYNAMIC_CHANNEL_CREATION)) {
+            setAllowDynamicChannelCreation(json.optBoolean(KEY_ALLOW_DYNAMIC_CHANNEL_CREATION, false));
+        }
+        if (json.has(KEY_MAX_DYNAMIC_CHANNELS)) setMaxDynamicChannels(json.optInt(KEY_MAX_DYNAMIC_CHANNELS, 20));
+        if (json.has(KEY_MAX_PARTICIPANTS_PER_CHANNEL)) {
+            setMaxParticipantsPerChannel(json.optInt(KEY_MAX_PARTICIPANTS_PER_CHANNEL, 50));
+        }
+        if (json.has(KEY_CHANNEL_IDLE_TIMEOUT_MS)) {
+            setChannelIdleTimeoutMillis(json.optInt(KEY_CHANNEL_IDLE_TIMEOUT_MS, 600_000));
+        }
+        if (json.has(KEY_CHANNEL_MAX_MESSAGE_BYTES)) {
+            setChannelMaxMessageBytes(json.optInt(KEY_CHANNEL_MAX_MESSAGE_BYTES, 1024 * 1024));
+        }
+        if (json.has(KEY_CHANNEL_MESSAGE_RATE_LIMIT_PER_SECOND)) {
+            setChannelMessageRateLimitPerSecond(json.optInt(KEY_CHANNEL_MESSAGE_RATE_LIMIT_PER_SECOND, 20));
+        }
+        if (json.has(KEY_PREDEFINED_CHANNELS)) {
+            JSONArray arr = json.optJSONArray(KEY_PREDEFINED_CHANNELS);
+            setJSONArray(KEY_PREDEFINED_CHANNELS, arr != null ? arr : new JSONArray());
+        }
+
+        if (json.has(KEY_WEBDAV_SUPPORT)) setWebDavSupport(json.optBoolean(KEY_WEBDAV_SUPPORT, false));
+        if (json.has(KEY_SCREEN_SHARE)) setScreenShareEnabled(json.optBoolean(KEY_SCREEN_SHARE, false));
+        if (json.has(KEY_SCREEN_MONITOR)) {
+            setScreenMonitor(json.optInt(KEY_SCREEN_MONITOR, SCREEN_MONITOR_PRIMARY));
+        }
+        if (json.has(KEY_ALLOW_REMOTE_CONTROL)) {
+            setRemoteControlEnabled(json.optBoolean(KEY_ALLOW_REMOTE_CONTROL, false));
+        }
 
         // Apply config version last so any incompatible/old field shapes were already accepted with their
         // documented semantics. The caller is responsible for invoking runMigrations() afterwards if needed.

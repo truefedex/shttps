@@ -5,25 +5,27 @@ import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.responses.TextResponse;
-import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.TableDataSerializer;
 import com.phlox.simpleserver.database.model.TableData;
-import com.phlox.simpleserver.utils.AbstractDataStreamer;
+import com.phlox.simpleserver.database.operations.CustomSqlOperation;
+import com.phlox.simpleserver.database.operations.DBOperation;
+import com.phlox.simpleserver.database.operations.DBOperationException;
 import com.phlox.simpleserver.utils.Holder;
-import com.phlox.simpleserver.utils.SqlStatementSplitter;
 
-import org.json.JSONArray;
-
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
 
 public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
-    public static final String CUSTOM_SQL_DATABASE_SUBJECT_CONSTANT = "*";
-    public static final String CUSTOM_SQL_DATABASE_OPERATION = "EXECUTE";
+    private static final int RESPONSE_BUFFER_SIZE = 1024 * 1024;
+    private static final int DEFAULT_LIMIT = 100;
+    /**
+     * The answer to SQL the database rejected. Not a standard status code, but it is the one this
+     * endpoint has always used and the web console tells it apart from a server fault.
+     */
+    private static final int CODE_SQL_FAILED = 420;
+    private static final String PHRASE_SQL_FAILED = "Method Failure";
 
     public DBCustomSQLRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
         super(database, config, authManager);
@@ -34,117 +36,51 @@ public class DBCustomSQLRequestHandler extends BaseDBRequestHandler {
         if (!request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_POST});
         }
-        if (!config.isAllowDatabaseCustomSqlRemoteApi()) {
-            return StandardResponses.FORBIDDEN("Database custom SQL remote API is disabled");
-        }
-        int limit = request.queryParams.containsKey("limit") ?
-                Integer.parseInt(request.queryParams.get("limit")) : 100;
-        int offset = request.queryParams.containsKey("offset") ?
-                Integer.parseInt(request.queryParams.get("offset")) : 0;
-        boolean includeColumnNames = request.queryParams.containsKey("includeNames") &&
-                Boolean.parseBoolean(request.queryParams.get("includeNames"));
         context.requestBodyReader.readRequestBody(request);
-        final String sql = new String(request.body.asBytes(), StandardCharsets.UTF_8);
-        if (sql.trim().isEmpty()) {
-            return StandardResponses.BAD_REQUEST("SQL query is empty");
-        }
 
-        User user = checkUser(context);
-        Database database = this.database.get();
+        Database database = currentDatabase();
         if (database == null) {
             return StandardResponses.NOT_FOUND();
         }
+        User user = checkUser(context);
+        try {
+            //asked before the body is decoded: a disabled feature answers the same either way
+            DBOperation.checkCustomSqlEnabled(config);
+            //this endpoint pages in the response rather than in SQL: the statement runs whole and
+            //the serializer skips and counts rows as it writes them out
+            int limit = parseInt(request.queryParams.get("limit"), DEFAULT_LIMIT, "limit");
+            int offset = parseInt(request.queryParams.get("offset"), 0, "offset");
+            boolean includeColumnNames = Boolean.parseBoolean(request.queryParams.get("includeNames"));
 
-        return database.runTransaction(db -> {
-            if (checkIsForbidden(db, user, CUSTOM_SQL_DATABASE_SUBJECT_CONSTANT,
-                    CUSTOM_SQL_DATABASE_OPERATION, null,
-                    User.DBRights.EXEC_SQL)) return StandardResponses.FORBIDDEN();
-
-            List<String> sqlStatements = SqlStatementSplitter.split(sql);
-            if (sqlStatements.isEmpty()) {
-                return StandardResponses.BAD_REQUEST("SQL query is empty");
+            String sql = new String(request.body.asBytes(), StandardCharsets.UTF_8);
+            TableData result = runInTransaction(database,
+                    new CustomSqlOperation(config, authManager, new CustomSqlOperation.Params(sql)), user);
+            if (result == null) {
+                //the last statement produced no rows - an INSERT, or DDL
+                return new TextResponse(200, "OK", "{}");
             }
-            try {
-                // Only the last statement can return data
-                // execute previous statements first
-                for (int i = 0; i < sqlStatements.size() - 1; i++) {
-                    String stmt = sqlStatements.get(i);
-                    TableData data = db.query(stmt);
-                    if (data != null) {
-                        data.close();
-                    }
-                }
-                // now execute the last statement and return its data
-                String lastSQLStat = sqlStatements.get(sqlStatements.size() - 1);
-
-                TableData result = db.query(lastSQLStat);
-                if (result == null) {
-                    return new TextResponse(200, "OK", "{}");
-                }
-                SQLResponseStreamer streamer = new SQLResponseStreamer(result, offset, limit,
-                        includeColumnNames);
-                streamer.startDataGenerationThread();
-                Response response = new Response(streamer.getInputStream());
-                response.setContentType("application/json");
-                return response;
-            } catch (Exception e) {
-                return new TextResponse(420, "Method Failure", e.getMessage());
+            TableDataSerializer.Options options = new TableDataSerializer.Options()
+                    .paging(offset, limit)
+                    .includeColumnNames(includeColumnNames);
+            return TableDataResponseStreamer.respondWith(RESPONSE_BUFFER_SIZE, result, options);
+        } catch (DBOperationException e) {
+            if (e.kind == DBOperationException.Kind.FAILED) {
+                return new TextResponse(CODE_SQL_FAILED, PHRASE_SQL_FAILED, e.getMessage());
             }
-        });
+            return toResponse(e);
+        } catch (Exception e) {
+            return toResponse(e, "");
+        }
     }
 
-    private static class SQLResponseStreamer extends AbstractDataStreamer {
-        private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
-        private final TableData responseData;
-        private final int offset;
-        private final int limit;
-        private final boolean includeColumnNames;
-
-        public SQLResponseStreamer(TableData responseData, int offset, int limit,
-                                   boolean includeColumnNames) {
-            super(1024 * 1024);
-            this.responseData = responseData;
-            this.offset = offset;
-            this.limit = limit;
-            this.includeColumnNames = includeColumnNames;
+    private static int parseInt(String value, int defaultValue, String name) throws DBOperationException {
+        if (value == null) {
+            return defaultValue;
         }
-
-        @Override
-        protected void generateData(OutputStream output) throws Exception {
-            try {
-                String responsePrefix = "{\"offset\":" + offset +
-                        ",\"limit\":" + limit;
-                responsePrefix += ",";
-                if (includeColumnNames) {
-                    JSONArray columnNames = new JSONArray(responseData.getColumnNames());
-                    responsePrefix += "\"columns\":" + columnNames + ",";
-                }
-                responsePrefix += "\"data\":[";
-                output.write(responsePrefix.getBytes(StandardCharsets.UTF_8));
-
-                if (offset > 0) {
-                    boolean canSkip = responseData.skip(offset);
-                    if (!canSkip) {
-                        output.write("]}".getBytes(StandardCharsets.UTF_8));
-                        return;
-                    }
-                }
-                int count = 0;
-                while (responseData.next() && count < limit) {
-                    if (count > 0) {
-                        output.write(",".getBytes(StandardCharsets.UTF_8));
-                    }
-                    output.write(responseData.currentRowToJson().toString().getBytes(StandardCharsets.UTF_8));
-                    count++;
-                }
-                output.write("]}".getBytes(StandardCharsets.UTF_8));
-            } finally {
-                try {
-                    responseData.close();
-                } catch (Exception e) {
-                    logger.stackTrace(e);
-                }
-            }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw DBOperationException.badRequest(name + " must be a number, got: " + value);
         }
     }
 }
