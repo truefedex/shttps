@@ -18,11 +18,13 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -31,6 +33,19 @@ public class DatabaseAndroid implements Database {
     private final SQLiteDatabase database;
     private final ExecutorService writeExecutor;
     private final SimpleDatabaseOperations simpleDBOperations;
+    /**
+     * True on the write executor's thread. Writes are serialized through a single thread, so a
+     * write submitted from that thread would wait for a queue that only it can drain - see
+     * {@link #checkNotOnWriteThread()}.
+     */
+    private final ThreadLocal<Boolean> onWriteThread = new ThreadLocal<>();
+
+    /**
+     * How much of a cell value one query fetches: characters for a text column, bytes for a blob.
+     * Kept well under the cursor window limit, which a whole large value would not fit into.
+     */
+    private static final int CELL_STREAM_CHUNK_UNITS = 8 * 1024;
+    private static final byte[] EMPTY_PART = new byte[0];
 
     public DatabaseAndroid(Context context, File directory, String name) {
         File dbFile = new File(directory, name);
@@ -49,6 +64,34 @@ public class DatabaseAndroid implements Database {
         return path;
     }
 
+    /**
+     * Runs a write on the single write thread and waits for it, rethrowing what it threw unwrapped.
+     */
+    private <T> T submitWrite(Callable<T> task) throws Exception {
+        checkNotOnWriteThread();
+        return DatabaseExecutorSupport.await(writeExecutor.submit(() -> {
+            onWriteThread.set(Boolean.TRUE);
+            try {
+                return task.call();
+            } finally {
+                onWriteThread.set(Boolean.FALSE);
+            }
+        }));
+    }
+
+    /**
+     * A transaction scope runs on the write thread; calling back into this Database from there
+     * would enqueue work behind the very task that is waiting for it. Fail loudly instead of
+     * hanging - the scope is given its own {@link DatabaseOperations} and is meant to use that.
+     */
+    private void checkNotOnWriteThread() {
+        if (Boolean.TRUE.equals(onWriteThread.get())) {
+            throw new IllegalStateException("This Database method was called from inside a " +
+                    "transaction scope, which would deadlock the write thread. Use the " +
+                    "DatabaseOperations passed to the scope instead.");
+        }
+    }
+
     @Override
     public Map<String, Object> getStatus() throws IOException {
         Map<String, Object> status = new HashMap<>();
@@ -62,6 +105,8 @@ public class DatabaseAndroid implements Database {
 
     @Override
     public void close() throws Exception {
+        //the write thread belongs to this instance; without this every database swap leaks one
+        writeExecutor.shutdownNow();
         database.close();
     }
 
@@ -150,17 +195,17 @@ public class DatabaseAndroid implements Database {
     @Override
     public TableData query(String query, Object[] args, boolean possiblyWriteOperation) throws Exception {
         if (possiblyWriteOperation) {
-            return writeExecutor.submit(() -> simpleDBOperations.query(query)).get();
+            return submitWrite(() -> simpleDBOperations.query(query));
         }
         return simpleDBOperations.query(query);
     }
 
     @Override
     public void execute(String query) throws Exception {
-        writeExecutor.submit(() -> {
+        submitWrite(() -> {
             simpleDBOperations.execute(query);
             return 0;
-        }).get();
+        });
     }
 
     @Override
@@ -177,42 +222,78 @@ public class DatabaseAndroid implements Database {
 
     @Override
     public long insert(String tableName, JSONObject values) throws Exception {
-        return writeExecutor.submit(() ->
-                simpleDBOperations.insert(tableName, values)
-        ).get();
+        return submitWrite(() -> simpleDBOperations.insert(tableName, values));
     }
 
     @Override
     public int update(String tableName, JSONObject values, String[] whereFilters, Object[] whereArgs) throws Exception {
-        return writeExecutor.submit(() ->
-                simpleDBOperations.update(tableName, values, whereFilters, whereArgs)
-        ).get();
+        return submitWrite(() -> simpleDBOperations.update(tableName, values, whereFilters, whereArgs));
     }
 
     @Override
     public int delete(String tableName, String[] whereFilters, Object[] whereArgs) throws Exception {
-        return writeExecutor.submit(() ->
-                simpleDBOperations.delete(tableName, whereFilters, whereArgs)
-        ).get();
+        return submitWrite(() -> simpleDBOperations.delete(tableName, whereFilters, whereArgs));
     }
 
     @Override
     public <T> T runTransaction(DatabaseTransactionScope<T> tx) throws Exception {
-        return writeExecutor.submit(() -> {
-            database.beginTransaction();
+        return runTransaction(tx, new TransactionAbortHandle());
+    }
+
+    @Override
+    public <T> T runTransaction(DatabaseTransactionScope<T> tx, TransactionAbortHandle abortHandle) throws Exception {
+        Callable<T> task = () -> {
+            //the handle interrupts this thread to wake a scope that is waiting rather than working
+            abortHandle.attachWorker(Thread.currentThread());
             try {
-                T result = tx.execute(simpleDBOperations);
-                database.setTransactionSuccessful();
-                return result;
+                database.beginTransaction();
+                try {
+                    try {
+                        //a per-scope wrapper, never shared: simpleDBOperations is the same instance
+                        //every non-transactional caller uses, so the abort state can not live on it
+                        T result = tx.execute(new AbortableDatabaseOperations(simpleDBOperations, abortHandle));
+                        //an abort that landed after the last operation must not be committed
+                        abortHandle.checkNotAborted();
+                        database.setTransactionSuccessful();
+                        return result;
+                    } finally {
+                        //the scope is over, so stop taking interrupts and clear any that arrived.
+                        //endTransaction() below waits on the connection pool, and an interrupted
+                        //endTransaction would leave this shared SQLiteDatabase mid-transaction for
+                        //every later caller
+                        abortHandle.detachWorker();
+                    }
+                } finally {
+                    //without setTransactionSuccessful() this rolls back
+                    database.endTransaction();
+                }
+            } catch (Exception e) {
+                //whatever ended the scope, an aborted transaction is reported as such: a scope
+                //parked on a queue comes back with InterruptedException, one between statements
+                //with TransactionAbortedException
+                if (abortHandle.isAborted()) {
+                    throw new TransactionAbortedException(abortHandle.getReason(), e);
+                }
+                throw e;
             } finally {
-                database.endTransaction();
+                //no-op when the scope already detached; here for the paths that never reached it,
+                //and to make sure no interrupt is left set for the next task in the queue
+                abortHandle.detachWorker();
             }
-        }).get();
+        };
+        return submitWrite(task);
     }
 
     public class SimpleDatabaseOperations implements DatabaseOperations {
         private SimpleDatabaseOperations() {
 
+        }
+
+        @Override
+        public Table[] getTables() throws Exception {
+            //one SQLiteDatabase, and its transactions are scoped to the thread that opened them,
+            //so reading the schema here is already inside whatever transaction is running
+            return DatabaseAndroid.this.getTables();
         }
 
         @Override
@@ -247,10 +328,7 @@ public class DatabaseAndroid implements Database {
             String[] whereArgsStr = null;
             if (whereFilters != null && whereFilters.length > 0) {
                 whereClause = DBUtils.buildSimpleWhereStatement(whereFilters);
-                whereArgsStr = new String[whereFilters.length];
-                for (int i = 0; i < whereFilters.length; i++) {
-                    whereArgsStr[i] = whereArgs[i].toString();
-                }
+                whereArgsStr = bindArgs(whereArgs);
             }
             return database.update(tableName, toContentValues(values), whereClause, whereArgsStr);
         }
@@ -261,14 +339,9 @@ public class DatabaseAndroid implements Database {
             String[] whereArgsStr = null;
             if (whereFilters != null && whereFilters.length > 0) {
                 whereClause = DBUtils.buildSimpleWhereStatement(whereFilters);
-                whereArgsStr = new String[whereFilters.length];
-                for (int i = 0; i < whereFilters.length; i++) {
-                    whereArgsStr[i] = whereArgs[i].toString();
-                }
+                whereArgsStr = bindArgs(whereArgs);
             }
-            String finalWhereClause = whereClause;
-            String[] finalWhereArgsStr = whereArgsStr;
-            return database.delete(tableName, finalWhereClause, finalWhereArgsStr);
+            return database.delete(tableName, whereClause, whereArgsStr);
         }
 
         @Override
@@ -305,6 +378,10 @@ public class DatabaseAndroid implements Database {
                 String where = DBUtils.buildSimpleWhereStatement(whereFilters);
                 sql.append(" WHERE ").append(where);
             }
+            //the total is the count of everything matching, so it is taken before the ordering and
+            //the page window are appended: count(*) returns a single row, which any OFFSET would
+            //skip - leaving the caller with a total of zero on every page but the first
+            String countSql = sql.toString();
             if (orderBy != null) {
                 if (!DBUtils.isValidColumnName(orderBy)) {
                     throw new SecurityException("Invalid column name: " + orderBy);
@@ -336,7 +413,7 @@ public class DatabaseAndroid implements Database {
             }
 
             if (outCount != null) {
-                String sqlString = String.format(sql.toString(), "count(*)");
+                String sqlString = String.format(countSql, "count(*)");
 
                 try (Cursor cursor = database.rawQuery(sqlString, whereArgsStr)) {
                     outCount.set(cursor.moveToNext() ? cursor.getLong(0) : 0);
@@ -357,9 +434,14 @@ public class DatabaseAndroid implements Database {
                 throw new SecurityException("Invalid column name: " + column);
             }
 
+            //length(CAST(x AS BLOB)) rather than length(x): the value is answered as bytes, and
+            //length() counts characters for a text value - so anything outside ASCII would be
+            //announced shorter than it is and the client would stop reading too early. On a blob
+            //the cast changes nothing. Note this is a byte count, while the reader below walks the
+            //value in the units substr() uses, which for text are characters.
             StringBuilder infoSql = new StringBuilder("SELECT typeof(")
-                    .append("\"").append(column).append("\"").append("), length(")
-                    .append("\"").append(column).append("\"").append(") FROM ").append(table);
+                    .append("\"").append(column).append("\"").append("), length(CAST(")
+                    .append("\"").append(column).append("\"").append(" AS BLOB)) FROM ").append(table);
             String where = null;
             if (filters != null && !filters.isEmpty()) {
                 where = DBUtils.buildSimpleWhereStatement(filters.toArray(new String[0]));
@@ -378,18 +460,24 @@ public class DatabaseAndroid implements Database {
                     type = cursor.getString(0);
                     length = cursor.getLong(1);
                 } else {
+                    //no such row - the only case that means "not found"
                     return null;
                 }
             }
-            if (type == null || length == 0 || type.equals("null")) {
-                return null;
+
+            CellDataStreamInfo streamInfo = new CellDataStreamInfo();
+            if (type == null || type.equals("null")) {
+                //the row exists but the cell is empty: info without a stream, which the caller
+                //answers with "no content". Returning null here would claim the row is missing,
+                //which is what the desktop implementation never did.
+                streamInfo.type = "null";
+                return streamInfo;
             }
 
             if (!(type.equals("blob") || type.equals("text"))) {
                 throw new IllegalArgumentException("Invalid column type: " + type);
             }
 
-            CellDataStreamInfo streamInfo = new CellDataStreamInfo();
             streamInfo.type = type;
             streamInfo.length = length;
             streamInfo.mimeType = type.equals("text") ? "text/plain" : "application/octet-stream";
@@ -400,62 +488,132 @@ public class DatabaseAndroid implements Database {
             }
             sql.append(" LIMIT 1");
 
+            final boolean isText = type.equals("text");
             streamInfo.inputStream = new InputStream() {
-                private Cursor cursor;
-                private byte[] currentBlobBytes = null;
-                private int currentBlobOffset = 0;
-                private long bytesRead = 0;
+                /**
+                 * How much of the value has been fetched, counted the way {@code substr} counts it:
+                 * characters for a text value, bytes for a blob. Not the same as the number of
+                 * bytes handed out, which is what UTF-8 makes of those characters.
+                 */
+                private long unitsFetched = 0;
+                private byte[] currentPart = EMPTY_PART;
+                private int currentOffset = 0;
+                /** Set once a query comes back short, meaning there is nothing left to fetch. */
+                private boolean exhausted = false;
 
                 {
-                    readNextBlobPart();
+                    fetchNextPart();
                 }
 
                 @Override
                 public int read() throws IOException {
-                    if (currentBlobOffset >= currentBlobBytes.length) {
-                        readNextBlobPart();
-                    }
-                    if (currentBlobBytes == null || currentBlobBytes.length == 0) {
+                    if (!ensureAvailable()) {
                         return -1;
                     }
-                    bytesRead++;
-                    return currentBlobBytes[currentBlobOffset++] & 0xFF;
+                    return currentPart[currentOffset++] & 0xFF;
                 }
 
                 @Override
                 public int read(byte[] b) throws IOException {
-                    if (currentBlobOffset >= currentBlobBytes.length) {
-                        readNextBlobPart();
-                    }
-                    if (currentBlobBytes == null || currentBlobBytes.length == 0) {
-                        return -1;
-                    }
-                    int readed = Math.min(b.length, currentBlobBytes.length - currentBlobOffset);
-                    System.arraycopy(currentBlobBytes, currentBlobOffset, b, 0, readed);
-                    currentBlobOffset += readed;
-                    bytesRead += readed;
-                    return readed;
+                    return read(b, 0, b.length);
                 }
 
                 @Override
-                public void close() throws IOException {
-                    cursor.close();
+                public int read(byte[] b, int off, int len) throws IOException {
+                    if (len == 0) {
+                        return 0;
+                    }
+                    if (!ensureAvailable()) {
+                        return -1;
+                    }
+                    int count = Math.min(len, currentPart.length - currentOffset);
+                    System.arraycopy(currentPart, currentOffset, b, off, count);
+                    currentOffset += count;
+                    return count;
                 }
 
-                private void readNextBlobPart() {
+                /** Refills from the database when the piece in hand is used up. */
+                private boolean ensureAvailable() {
+                    while (currentOffset >= currentPart.length) {
+                        if (exhausted) {
+                            return false;
+                        }
+                        fetchNextPart();
+                    }
+                    return true;
+                }
+
+                @Override
+                public void close() {
+                    //every query closes its own cursor, so there is nothing left open here
+                }
+
+                private void fetchNextPart() {
                     String[] arguments = new String[filtersArgs.size() + 2];
-                    arguments[0] = Long.toString(bytesRead + 1);
-                    arguments[1] = Long.toString(bytesRead + 1024 * 8);//8KB to not exceed android cursor limit
+                    arguments[0] = Long.toString(unitsFetched + 1);
+                    //a length, not an end offset: substr(X, Y, Z) returns Z units from Y
+                    arguments[1] = Long.toString(CELL_STREAM_CHUNK_UNITS);
                     System.arraycopy(filtersArgsStr, 0, arguments, 2, filtersArgsStr.length);
-                    cursor = database.rawQuery(sql.toString(), arguments);
-                    cursor.moveToNext();
-                    currentBlobBytes = cursor.getBlob(0);
-                    currentBlobOffset = 0;
-                    cursor.close();
+                    try (Cursor cursor = database.rawQuery(sql.toString(), arguments)) {
+                        long unitsInPart = 0;
+                        if (cursor.moveToNext()) {
+                            if (isText) {
+                                //not getBlob: on a text column the cursor appends a terminating
+                                //zero byte, which would corrupt the value - and, because a query
+                                //past the end then returns one byte rather than none, would leave
+                                //nothing to detect the end of the value by
+                                String part = cursor.getString(0);
+                                if (part != null) {
+                                    //sqlite counts characters, so this has to count them the same
+                                    //way: String.length() would count a surrogate pair twice and
+                                    //skip half of the next piece
+                                    unitsInPart = part.codePointCount(0, part.length());
+                                    currentPart = part.getBytes(StandardCharsets.UTF_8);
+                                } else {
+                                    currentPart = EMPTY_PART;
+                                }
+                            } else {
+                                byte[] part = cursor.getBlob(0);
+                                currentPart = part != null ? part : EMPTY_PART;
+                                unitsInPart = currentPart.length;
+                            }
+                        } else {
+                            currentPart = EMPTY_PART;
+                        }
+                        currentOffset = 0;
+                        unitsFetched += unitsInPart;
+                        //a short answer means the value ended inside this piece
+                        exhausted = unitsInPart < CELL_STREAM_CHUNK_UNITS;
+                    }
                 }
             };
             return streamInfo;
         }
+    }
+
+    /**
+     * The bind arguments of a where clause, as the platform wants them.
+     * <p>
+     * One per argument, not one per filter: a single {@code IN} filter carries as many arguments as
+     * it has placeholders, so sizing this by the number of filters leaves the statement with fewer
+     * arguments than it has {@code ?} and the query is rejected.
+     */
+    private static String[] bindArgs(Object[] whereArgs) {
+        if (whereArgs == null) {
+            return null;
+        }
+        String[] args = new String[whereArgs.length];
+        for (int i = 0; i < whereArgs.length; i++) {
+            Object value = whereArgs[i];
+            if (value == null || JSONObject.NULL.equals(value)) {
+                //the platform binds where-arguments as strings and has no way to express NULL;
+                //say so instead of failing later with a NullPointerException
+                throw new IllegalArgumentException("Where argument #" + i + " is null, which can " +
+                        "not be used in a filter - compare with IS NULL in a custom SQL query instead");
+            }
+            args[i] = value.toString();
+        }
+        return args;
     }
 
     private static ContentValues toContentValues(JSONObject values) {

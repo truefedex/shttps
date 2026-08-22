@@ -117,12 +117,9 @@ public class PlatformUtilsImpl implements SHTTPSPlatformUtils {
 
     @Override
     public DocumentFile getDefaultRootDir() {
-        //try to get jar path and use folder www near it as root dir
-        String jarPath = getClass().getProtectionDomain().getCodeSource().getLocation().getPath();
-        File www = new File(jarPath).getParentFile().toPath().resolve("www").toFile();
-        if (!www.exists()) {
-            if (!www.mkdirs())
-                throw new RuntimeException("Failed to create www folder near jar file: " + jarPath);
+        File www = new File(System.getProperty("user.home"), ".shttps" + File.separator + "www");
+        if (!www.isDirectory() && !www.mkdirs()) {
+            throw new RuntimeException("Failed to create default www folder: " + www.getAbsolutePath());
         }
         return DocumentFile.fromFile(www);
     }

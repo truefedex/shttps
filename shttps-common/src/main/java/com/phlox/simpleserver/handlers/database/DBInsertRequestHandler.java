@@ -7,16 +7,13 @@ import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.operations.DBOperation;
+import com.phlox.simpleserver.database.operations.InsertOperation;
 import com.phlox.simpleserver.utils.Holder;
-import com.phlox.simpleserver.utils.Utils;
 
 import org.json.JSONObject;
 
-import java.util.Map;
-
 public class DBInsertRequestHandler extends BaseDBRequestHandler {
-    public static final String INSERT_OPERATION = "INSERT";
-
     public DBInsertRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
         super(database, config, authManager);
     }
@@ -26,42 +23,24 @@ public class DBInsertRequestHandler extends BaseDBRequestHandler {
         if (!request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_POST});
         }
-
-        if (!config.isAllowDatabaseTableDataEditingApi()) {
-            return StandardResponses.FORBIDDEN("Database table data editing API is disabled");
-        }
-
         context.requestBodyReader.readRequestBody(request);
-        String table = request.urlEncodedPostParams.get("table");
-        if (table == null) {
-            return StandardResponses.BAD_REQUEST("table parameter is required");
-        }
-        JSONObject rowJson;
-        try {
-            String rowJsonStr = request.urlEncodedPostParams.get("values");
-            rowJson = new JSONObject(rowJsonStr);
-        } catch (Exception e) {
-            return StandardResponses.BAD_REQUEST("Invalid JSON data: " + e.getMessage());
-        }
 
-        User user = checkUser(context);
-        Database database = this.database.get();
+        Database database = currentDatabase();
         if (database == null) {
             return StandardResponses.NOT_FOUND();
         }
-        return database.runTransaction(db -> {
-            if (checkIsForbidden(db, user, table, INSERT_OPERATION, Map.of(
-                    "values", rowJson.toString()
-            ), User.DBRights.CREATE))
-                return StandardResponses.FORBIDDEN();
-            try {
-                long id = db.insert(table, rowJson);
-                JSONObject responseJson = new JSONObject();
-                responseJson.put("generated_id", id);
-                return StandardResponses.OK(responseJson.toString(), "application/json");
-            } catch (Exception e) {
-                return StandardResponses.INTERNAL_SERVER_ERROR("Failed to insert data: " + e.getMessage());
-            }
-        });
+        User user = checkUser(context);
+        try {
+            //asked before the body is decoded: a disabled feature answers the same either way
+            DBOperation.checkTableDataEditingEnabled(config);
+            InsertOperation.Params params = InsertOperation.Params.parse(
+                    request.urlEncodedPostParams.get("table"),
+                    request.urlEncodedPostParams.get("values"));
+            JSONObject result = runInTransaction(database,
+                    new InsertOperation(config, authManager, params), user);
+            return StandardResponses.OK(result.toString(), "application/json");
+        } catch (Exception e) {
+            return toResponse(e, "Failed to insert data: ");
+        }
     }
 }

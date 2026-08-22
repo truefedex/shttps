@@ -1,33 +1,41 @@
-name: Make android example and commandline app artifacts
+name: Make commandline and desktop Windows artifacts
 
-on: push
+on: workflow_dispatch
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v4
-    - name: Set up JDK 17
+    - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
-        java-version: '17'
+        java-version: '21'
         distribution: 'temurin'
         cache: gradle
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-      
-    - name: Build android example with Gradle
-      run: ./gradlew :shttps-android-exemplum:assembleDebug
-    - name: Build commandline app with Gradle
-      run: ./gradlew :shttps-commandline:shadowJar
-      
+    # jpackage MSI packaging needs WiX 3 (candle/light). windows-latest ships 3.14
+    # and sets WIX, but the bin dir is not always on PATH.
+    - name: Add WiX to PATH
+      run: echo "$(Join-Path $env:WIX 'bin')" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+    - name: Build commandline jar and desktop MSI
+      run: .\gradlew.bat :shttps-commandline:shadowJar :shttps-desktop:packageMsi --no-daemon
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: commandline-jar-and-desktop-msi
+        path: |
+          shttps-commandline/build/libs/shttps-commandline-*-all.jar
+          builds/main/msi/*.msi
+        if-no-files-found: error
+
     - name: Release
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: |
-          shttps-android-exemplum/build/outputs/apk/debug/shttps-android-exemplum-debug.apk
           shttps-commandline/build/libs/shttps-commandline-*-all.jar
-
+          builds/main/msi/*.msi

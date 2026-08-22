@@ -5,7 +5,7 @@ import com.phlox.simpleserver.database.model.TableData;
 import org.json.JSONObject;
 
 public final class DatabaseMigrator {
-    public static final int CURRENT_SCHEMA_VERSION = 5;
+    public static final int CURRENT_SCHEMA_VERSION = 6;
     private DatabaseMigrator() {}
 
     public static void runMigrations(Database db, boolean usersInDB) {
@@ -63,6 +63,11 @@ public final class DatabaseMigrator {
             if (shttpsDBVersion == 4) {
                 runVersion4to5Migration(db, usersInDB);
                 shttpsDBVersion = 5;
+            }
+
+            if (shttpsDBVersion == 5) {
+                runVersion5to6Migration(db, usersInDB);
+                shttpsDBVersion = 6;
             }
 
         } catch (Exception e) {
@@ -149,6 +154,21 @@ public final class DatabaseMigrator {
         });
     }
 
+    private static void runVersion5to6Migration(Database db, boolean usersInDB) throws Exception {
+        db.runTransaction((DatabaseOperations database) -> {
+            if (usersInDB) {
+                //no backfill: existing principals hold no channel rights until an administrator
+                //grants them, the same way system_rights was introduced in version 4
+                database.execute("ALTER TABLE 'user'" +
+                        " ADD COLUMN 'channel_rights' INTEGER NOT NULL DEFAULT 0");
+                database.execute("ALTER TABLE 'user_role'" +
+                        " ADD COLUMN 'channel_rights' INTEGER NOT NULL DEFAULT 0");
+            }
+            database.update("shttps_version", new JSONObject("{\"version\": 6}"), null, null);
+            return true;
+        });
+    }
+
     public static void toggleUsersInDB(Database db, boolean usersInDB) throws Exception {
         db.runTransaction((DatabaseOperations database) -> {
             toggleUsersInDB(database, usersInDB);
@@ -164,6 +184,7 @@ public final class DatabaseMigrator {
                     "'db_rights' INTEGER NOT NULL," +
                     "'storage_limit' INTEGER," +
                     "'system_rights' INTEGER NOT NULL DEFAULT 0," +
+                    "'channel_rights' INTEGER NOT NULL DEFAULT 0," +
                     "PRIMARY KEY('name')" +
                     ");");
             database.execute("CREATE TABLE IF NOT EXISTS 'shttps_db_access_rule' (" +
@@ -195,7 +216,8 @@ public final class DatabaseMigrator {
                     "'last_login' INTEGER," +
                     "'storage_limit' INTEGER," +
                     "'system_rights' INTEGER NOT NULL DEFAULT 0," +
-                    "'used_storage' INTEGER NOT NULL DEFAULT 0" +
+                    "'used_storage' INTEGER NOT NULL DEFAULT 0," +
+                    "'channel_rights' INTEGER NOT NULL DEFAULT 0" +
                     ");");
             database.execute("CREATE INDEX role_index ON 'user'('role')");
         } else {

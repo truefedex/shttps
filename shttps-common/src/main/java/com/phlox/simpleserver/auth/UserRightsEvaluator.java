@@ -112,6 +112,11 @@ public class UserRightsEvaluator {
         return role != null ? role.systemRights : user.systemRights;
     }
 
+    public EnumSet<User.ChannelRights> userChannelRights(@NotNull User user) {
+        UserRole role = loadRole(user.role);
+        return role != null ? role.channelRights : user.channelRights;
+    }
+
     public Long getStorageLimit(User user) {
         UserRole role = loadRole(user.role);
         return role != null ? role.storageLimit : user.storageLimit;

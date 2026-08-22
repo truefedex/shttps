@@ -28,13 +28,10 @@ function onLongPress(element, callback) {
     element.addEventListener('contextmenu', function(e) {
       e.preventDefault();
       e.stopPropagation();
-      // Create a synthetic event with pageX/pageY for compatibility
-      if (!e.pageX && e.touches && e.touches[0]) {
-        e.pageX = e.touches[0].clientX;
-        e.pageY = e.touches[0].clientY;
-      } else if (!e.pageX) {
-        e.pageX = e.clientX;
-        e.pageY = e.clientY;
+      if (e.clientX == null) {
+        let touch = e.touches && e.touches[0];
+        e.clientX = touch ? touch.clientX : 0;
+        e.clientY = touch ? touch.clientY : 0;
       }
       callback(e);
     });
@@ -48,6 +45,10 @@ function onLongPress(element, callback) {
     timeoutId = setTimeout(function() {
       timeoutId = null;
       e.stopPropagation();
+      if (e.clientX == null && e.touches && e.touches[0]) {
+        e.clientX = e.touches[0].clientX;
+        e.clientY = e.touches[0].clientY;
+      }
       callback(e);
     }, 500);
   });
@@ -93,12 +94,12 @@ function displayContextMenuWithAnchorRect(anchorRct, contextMenu) {
   contextMenu.style.position = "fixed";
 
   if (smallScreen) {
-    // For mobile, set fullscreen mode first
     contextMenu.classList.add("menu-fullscreen");
     contextMenu.style.left = "0";
     contextMenu.style.top = "0";
     contextMenu.style.width = "100%";
     contextMenu.style.height = "100%";
+    contextMenu.style.display = "flex";
     contextMenu.querySelector(".menu-close-btn").style.display = "block";
   } else {
     // For desktop, calculate position and size

@@ -9,12 +9,17 @@ let allowEditing = false;
 
 let resizeTimer;
 
+function getDefaultViewMode() {
+  // grid view requires thumbnails support (radioGrid rendered server-side) and JS running
+  return document.getElementById("radioGrid") != null ? "grid" : "list";
+}
+
 function renderFileList() {
   let container = document.getElementById("files-container");
   container.innerHTML = "";
   let viewMode = localStorage.getItem("file-list-view-mode");
   if (!viewMode) {
-    viewMode = "list";
+    viewMode = getDefaultViewMode();
   }
   if (smallScreen) {
     viewMode = "list";
@@ -123,7 +128,7 @@ function renderFileList() {
       // With pointer: right click shows context menu, double click opens
       a.addEventListener('contextmenu', function (e) {
         e.preventDefault();
-        showContextMenu(e.pageX, e.pageY, href, file.directory);
+        showContextMenu(e.clientX, e.clientY, href, file.directory);
       });
       a.addEventListener('dblclick', function (e) {
         e.preventDefault();
@@ -132,7 +137,7 @@ function renderFileList() {
     } else {
       // Without pointer: long press shows context menu
       onLongPress(a, function (e) {
-        showContextMenu(e.pageX, e.pageY, href, file.directory);
+        showContextMenu(e.clientX, e.clientY, href, file.directory);
       });
     }
     a.classList.add("file-item");
@@ -785,6 +790,9 @@ function loadPath(directoryPath, searchQuery = null) {
   let sort = "default";
   let currentSortReversed = "false";
   let viewMode = localStorage.getItem("file-list-view-mode");
+  if (!viewMode) {
+    viewMode = getDefaultViewMode();
+  }
   if (viewMode == "grid") {
     sort = "gallery";
   } else if (viewMode == "table") {
@@ -1076,7 +1084,7 @@ function onPageLoad() {
 
   let viewMode = localStorage.getItem("file-list-view-mode");
   if (!viewMode) {
-    viewMode = "list";
+    viewMode = getDefaultViewMode();
   }
   let actionBar = document.getElementById("actionbar");
   if (actionBar) actionBar.style.display = "flex";

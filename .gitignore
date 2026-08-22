@@ -21,6 +21,12 @@ out/
 .gradle/
 build/
 
+# Kotlin
+.kotlin
+
+# Distribution output (desktop installers, jars)
+builds/
+
 # Local configuration file (sdk path, etc)
 local.properties
 

@@ -8,19 +8,10 @@ import com.phlox.server.utils.MultiMap;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.operations.ReadCellOperation;
 import com.phlox.simpleserver.utils.Holder;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
-public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
-    public static final String READ_CELL_OPERATION = "READ_CELL";
-
+public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler {
     public DBSingleCellDataRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
         super(database, config, authManager);
     }
@@ -31,63 +22,28 @@ public class DBSingleCellDataRequestHandler extends BaseDBRequestHandler{
                 !request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_POST});
         }
+        MultiMap<String, String> params = readParams(context, request);
 
-        MultiMap<String, String> params;
-        if (request.method.equals(Request.METHOD_GET)) {
-            params = request.queryParams;
-        } else {
-            context.requestBodyReader.readRequestBody(request);
-            params = request.urlEncodedPostParams;
-        }
-        String table = params.get("table");
-        if (table == null) {
-            return StandardResponses.BAD_REQUEST("table parameter is required");
-        }
-        String column = params.get("column");
-        List<String> filters = new ArrayList<>();
-        List<Object> filtersArgs = new ArrayList<>();
-        String filtersJsonStr = params.get("filters");
-        JSONObject filtersJson = normalizeFilters(filtersJsonStr);
-        JSONArray filtersJsonArray = filtersJson.getJSONArray("clauses");
-        JSONArray filtersArgsJsonArray = filtersJson.getJSONArray("args");
-        for (int i = 0; i < filtersJsonArray.length(); i++) {
-            filters.add(filtersJsonArray.getString(i));
-        }
-        for (int i = 0; i < filtersArgsJsonArray.length(); i++) {
-            filtersArgs.add(filtersArgsJsonArray.get(i));
-        }
-
-        Database database = this.database.get();
+        Database database = currentDatabase();
         if (database == null) {
             return StandardResponses.NOT_FOUND();
         }
         User user = checkUser(context);
-        return database.runTransaction(db -> {
-            if (checkIsForbidden(db, user, table, READ_CELL_OPERATION, Map.of(
-                    "column", column,
-                    "filters", filtersJson.toString()
-            ), User.DBRights.READ))
-                return StandardResponses.FORBIDDEN();
+        try {
+            ReadCellOperation.Params operationParams = ReadCellOperation.Params.parse(
+                    params.get("table"), params.get("column"), params.get("filters"));
+            Database.CellDataStreamInfo cell = runInTransaction(database,
+                    new ReadCellOperation(config, authManager, operationParams), user);
 
-            InputStream stream = null;
-            try {
-                Database.CellDataStreamInfo cellDataStreamInfo = db.getSingleCellDataStream(table, column, filters, filtersArgs);
-                if (cellDataStreamInfo == null) {
-                    return StandardResponses.NOT_FOUND();
-                }
-                stream = cellDataStreamInfo.inputStream;
-                if (stream == null) {
-                    return StandardResponses.NO_CONTENT();//cell value is null or wrong type (only string or binary is supported)
-                }
-
-                return new Response(cellDataStreamInfo.mimeType, cellDataStreamInfo.length, stream);
-            } catch (Exception e) {
-                return StandardResponses.INTERNAL_SERVER_ERROR(e.getMessage());
-            } finally {
-                if (stream != null) {
-                    stream.close();
-                }
+            if (cell.inputStream == null) {
+                //the cell is null, or holds something other than text or a blob
+                return StandardResponses.NO_CONTENT();
             }
-        });
+            //the stream is the response body and stays open until the body has been sent; closing
+            //it here would hand the client a stream that is already finished
+            return new Response(cell.mimeType, cell.length, cell.inputStream);
+        } catch (Exception e) {
+            return toResponse(e, "");
+        }
     }
 }

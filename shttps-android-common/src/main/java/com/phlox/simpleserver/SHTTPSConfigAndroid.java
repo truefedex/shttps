@@ -38,7 +38,6 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
     private static final String KEY_INTENT_SENDING_HANDLERS_URL_PATH_PREFIX = "intent_sending_handlers_url_path_prefix";
     private static final String KEY_INTENT_SENDERS = "intent_senders";
     private static final String KEY_KEEP_SCREEN_ON_WHILE_SHARING = "keep_screen_on_while_sharing";
-    private static final String KEY_ALLOW_REMOTE_CONTROL = "allow_remote_control";
 
     public SHTTPSConfigAndroid(Context context, String prefName, SHTTPSPlatformUtils platformUtils) {
         this.context = context;
@@ -179,18 +178,9 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
         setBoolean(KEY_KEEP_SCREEN_ON_WHILE_SHARING, value);
     }
 
-    /**
-     * Whether remote clients watching the shared screen may also control the device (inject touch
-     * and key events). Only meaningful together with screen sharing. Off by default - it hands full
-     * control of the device to anyone who can reach the shared screen.
-     */
-    public boolean isRemoteControlEnabled() {
-        return getBoolean(KEY_ALLOW_REMOTE_CONTROL, false);
-    }
-
-    public void setRemoteControlEnabled(boolean value) {
-        setBoolean(KEY_ALLOW_REMOTE_CONTROL, value);
-    }
+    //isRemoteControlEnabled/setRemoteControlEnabled moved up to SHTTPSConfig when the desktop
+    //gained remote control. The key string went with them unchanged, so preferences written by
+    //older versions of this app are still read.
 
     // General utility methods
 

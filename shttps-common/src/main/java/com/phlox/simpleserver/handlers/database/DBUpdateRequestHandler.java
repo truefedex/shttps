@@ -7,18 +7,13 @@ import com.phlox.server.responses.StandardResponses;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.database.operations.DBOperation;
+import com.phlox.simpleserver.database.operations.UpdateOperation;
 import com.phlox.simpleserver.utils.Holder;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
 public class DBUpdateRequestHandler extends BaseDBRequestHandler {
-    public static final String UPDATE_OPERATION = "UPDATE";
-
     public DBUpdateRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
         super(database, config, authManager);
     }
@@ -28,57 +23,25 @@ public class DBUpdateRequestHandler extends BaseDBRequestHandler {
         if (!request.method.equals(Request.METHOD_PUT)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_PUT});
         }
-
-        if (!config.isAllowDatabaseTableDataEditingApi()) {
-            return StandardResponses.FORBIDDEN("Database table data editing API is disabled");
-        }
-
         context.requestBodyReader.readRequestBody(request);
-        String table = request.urlEncodedPostParams.get("table");
-        if (table == null) {
-            return StandardResponses.BAD_REQUEST("table parameter is required");
-        }
-        List<String> filters = new ArrayList<>();
-        List<Object> filtersArgs = new ArrayList<>();
-        String filtersJsonStr = request.urlEncodedPostParams.get("filters");
-        JSONObject filtersJson = normalizeFilters(filtersJsonStr);
-        JSONArray filtersJsonArray = filtersJson.getJSONArray("clauses");
-        JSONArray filtersArgsJsonArray = filtersJson.getJSONArray("args");
-        for (int i = 0; i < filtersJsonArray.length(); i++) {
-            filters.add(filtersJsonArray.getString(i));
-        }
-        for (int i = 0; i < filtersArgsJsonArray.length(); i++) {
-            filtersArgs.add(filtersArgsJsonArray.get(i));
-        }
-        JSONObject rowJson;
-        try {
-            String rowJsonStr = request.urlEncodedPostParams.get("values");
-            rowJson = new JSONObject(rowJsonStr);
-        } catch (Exception e) {
-            return StandardResponses.BAD_REQUEST("Invalid JSON data: " + e.getMessage());
-        }
 
-        Database database = this.database.get();
+        Database database = currentDatabase();
         if (database == null) {
             return StandardResponses.NOT_FOUND();
         }
         User user = checkUser(context);
-        return database.runTransaction(db -> {
-            if (checkIsForbidden(db, user, table, UPDATE_OPERATION, Map.of(
-                    "values", rowJson.toString(),
-                    "filters", filtersJson.toString()
-            ), User.DBRights.UPDATE))
-                return StandardResponses.FORBIDDEN();
-            try {
-                int updatedRows = db.update(table, rowJson,
-                        filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]));
-                JSONObject responseJson = new JSONObject();
-                responseJson.put("updated_rows", updatedRows);
-                return StandardResponses.OK(responseJson.toString());
-            } catch (Exception e) {
-                return StandardResponses.INTERNAL_SERVER_ERROR("Failed to update data: " + e.getMessage());
-            }
-        });
-
+        try {
+            //asked before the body is decoded: a disabled feature answers the same either way
+            DBOperation.checkTableDataEditingEnabled(config);
+            UpdateOperation.Params params = UpdateOperation.Params.parse(
+                    request.urlEncodedPostParams.get("table"),
+                    request.urlEncodedPostParams.get("values"),
+                    request.urlEncodedPostParams.get("filters"));
+            int updatedRows = runInTransaction(database,
+                    new UpdateOperation(config, authManager, params), user);
+            return StandardResponses.OK(new JSONObject().put("updated_rows", updatedRows).toString());
+        } catch (Exception e) {
+            return toResponse(e, "Failed to update data: ");
+        }
     }
 }

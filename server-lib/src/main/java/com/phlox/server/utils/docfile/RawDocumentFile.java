@@ -308,6 +308,30 @@ public class RawDocumentFile extends DocumentFile {
         }
     }
 
+    /**
+     * Turns a {@code file:} URI or a filesystem path that may still contain
+     * URL-encoded sequences (e.g. {@code Program%20Files} from {@code URL.getPath()})
+     * into a decoded local path.
+     */
+    public static String toFilePath(String uriOrPath) {
+        if (uriOrPath == null || uriOrPath.isEmpty()) {
+            return uriOrPath;
+        }
+        if (uriOrPath.startsWith(FILE_URI_PREFIX)) {
+            return fileUriToFilePath(uriOrPath);
+        }
+        if (uriOrPath.indexOf('%') < 0) {
+            return uriOrPath;
+        }
+        String slashified = uriOrPath.replace('\\', '/');
+        String uri = slashified.startsWith("/") ? "file:" + slashified : "file:/" + slashified;
+        try {
+            return fileUriToFilePath(uri);
+        } catch (RuntimeException e) {
+            return uriOrPath;
+        }
+    }
+
     @Override
     public String getRelativePath(DocumentFile directOrIndirectChild) {
         if (!isDirectory() || directOrIndirectChild == null) {

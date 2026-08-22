@@ -5,25 +5,18 @@ import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.utils.MultiMap;
-import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.database.DBFilters;
 import com.phlox.simpleserver.database.Database;
-import com.phlox.simpleserver.database.model.TableData;
-import com.phlox.simpleserver.utils.AbstractDataStreamer;
+import com.phlox.simpleserver.database.TableDataSerializer;
+import com.phlox.simpleserver.database.operations.DBOperationException;
+import com.phlox.simpleserver.database.operations.ReadTableOperation;
+import com.phlox.simpleserver.database.operations.TableDataResult;
 import com.phlox.simpleserver.utils.Holder;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
 public class DBTableDataRequestHandler extends BaseDBRequestHandler {
-    public static final String READ_TABLE_OPERATION = "READ_TABLE";
+    private static final int RESPONSE_BUFFER_SIZE = 1024;
 
     public DBTableDataRequestHandler(Holder<Database> database, SHTTPSConfig config, com.phlox.simpleserver.auth.AuthManager authManager) {
         super(database, config, authManager);
@@ -35,133 +28,48 @@ public class DBTableDataRequestHandler extends BaseDBRequestHandler {
                 !request.method.equals(Request.METHOD_POST)) {
             return StandardResponses.METHOD_NOT_ALLOWED(new String[]{Request.METHOD_GET, Request.METHOD_POST});
         }
-        MultiMap<String, String> params;
-        if (request.method.equals(Request.METHOD_GET)) {
-            params = request.queryParams;
-        } else {
-            context.requestBodyReader.readRequestBody(request);
-            params = request.urlEncodedPostParams;
-        }
-        String table = params.get("table");
-        if (table == null) {
-            return StandardResponses.BAD_REQUEST("table parameter is required");
-        }
-        String columns = params.get("columns");
-        String offsetParam = params.get("offset");
-        String limitParam = params.get("limit");
-        String sort = params.get("sort");
-        String sortDir = params.get("sort-order");
-        boolean includeRowId = Boolean.parseBoolean(params.get("includeRowId"));
-        boolean rowsAsObjects = Boolean.parseBoolean(params.get("rowsAsObjects"));
-        boolean includeTotal = Boolean.parseBoolean(params.get("includeTotal"));
+        MultiMap<String, String> params = readParams(context, request);
 
-        List<String> filters = new ArrayList<>();
-        List<Object> filtersArgs = new ArrayList<>();
-        String filtersJsonStr = params.get("filters");
-        JSONObject filtersJson = normalizeFilters(filtersJsonStr);
-        JSONArray filtersJsonArray = filtersJson.getJSONArray("clauses");
-        JSONArray filtersArgsJsonArray = filtersJson.getJSONArray("args");
-        for (int i = 0; i < filtersJsonArray.length(); i++) {
-            filters.add(filtersJsonArray.getString(i));
-        }
-        for (int i = 0; i < filtersArgsJsonArray.length(); i++) {
-            filtersArgs.add(filtersArgsJsonArray.get(i));
-        }
-
-        Database database = this.database.get();
+        Database database = currentDatabase();
         if (database == null) {
             return StandardResponses.NOT_FOUND();
         }
         User user = checkUser(context);
-        Long offset = offsetParam != null ? Long.parseLong(offsetParam) : null;
-        Long limit = limitParam != null ? Long.parseLong(limitParam) : null;
-        Response checkResponse = database.runTransaction(db -> {
-            if (checkIsForbidden(db, user, table, READ_TABLE_OPERATION, Map.of(
-                    "columns", columns != null ? columns : "",
-                    "offset", offset != null ? offset : "",
-                    "limit", limit != null ? limit : "",
-                    "sort", sort != null ? sort : "",
-                    "sortDir", sortDir != null ? sortDir : "",
-                    "includeRowId", includeRowId,
-                    "rowsAsObjects", rowsAsObjects,
-                    "includeTotal", includeTotal,
-                    "filters", filtersJson.toString()
-            ), User.DBRights.READ))
-                return StandardResponses.FORBIDDEN();
-            return null;
-        });
-        if (checkResponse != null) {
-            return checkResponse;
-        }
-
-        Holder<Long> outTotal = includeTotal ? new Holder<>(0L) : null;
-
         try {
-            TableData tableData = database.getTableDataSecure(table, columns != null ? columns.split(",") : null,
-                    offset, limit,
-                    filters.toArray(new String[0]), filtersArgs.toArray(new Object[0]),
-                    sort, sortDir != null && sortDir.equalsIgnoreCase("desc"),
-                    includeRowId, outTotal);
-            SQLResponseStreamer streamer = new SQLResponseStreamer(tableData,
-                    rowsAsObjects, outTotal);
-            streamer.startDataGenerationThread();
-            Response response = new Response(streamer.getInputStream());
-            response.setContentType("application/json");
-            return response;
-        } catch (SecurityException e) {
-            return StandardResponses.FORBIDDEN(e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return StandardResponses.BAD_REQUEST(e.getMessage());
+            ReadTableOperation.Params operationParams = new ReadTableOperation.Params(
+                    params.get("table"),
+                    params.get("columns"),
+                    parseLong(params.get("offset"), "offset"),
+                    parseLong(params.get("limit"), "limit"),
+                    params.get("sort"),
+                    params.get("sort-order"),
+                    Boolean.parseBoolean(params.get("includeRowId")),
+                    Boolean.parseBoolean(params.get("includeTotal")),
+                    Boolean.parseBoolean(params.get("rowsAsObjects")),
+                    DBFilters.parse(params.get("filters")));
+
+            //the rights check and the read happen in the same transaction, so the data returned is
+            //the data the check was made against
+            TableDataResult result = runInTransaction(database,
+                    new ReadTableOperation(config, authManager, operationParams), user);
+
+            TableDataSerializer.Options options = new TableDataSerializer.Options()
+                    .rowsAsObjects(operationParams.rowsAsObjects)
+                    .total(result.total);
+            return TableDataResponseStreamer.respondWith(RESPONSE_BUFFER_SIZE, result.data, options);
         } catch (Exception e) {
-            return StandardResponses.INTERNAL_SERVER_ERROR(e.getMessage());
+            return toResponse(e, "");
         }
     }
 
-    private static class SQLResponseStreamer extends AbstractDataStreamer {
-        private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
-        private final TableData responseData;
-        private final boolean rowsAsObjects;
-        private final Holder<Long> includeTotal;
-
-        public SQLResponseStreamer(TableData responseData, boolean rowsAsObjects, Holder<Long> includeTotal) {
-            super(1024);
-            this.responseData = responseData;
-            this.rowsAsObjects = rowsAsObjects;
-            this.includeTotal = includeTotal;
+    private static Long parseLong(String value, String name) throws DBOperationException {
+        if (value == null) {
+            return null;
         }
-
-        @Override
-        protected void generateData(OutputStream output) throws Exception {
-            try {
-                String responsePrefix;
-                if (includeTotal != null) {
-                    long total = includeTotal.get();
-                    responsePrefix = "{\"total\":" + total + ",";
-                } else {
-                    responsePrefix = "{";
-                }
-                responsePrefix += "\"data\":[";
-                output.write(responsePrefix.getBytes(StandardCharsets.UTF_8));
-
-                int count = 0;
-                while (responseData.next()) {
-                    if (count > 0) {
-                        output.write(",".getBytes(StandardCharsets.UTF_8));
-                    }
-                    String rowStr = rowsAsObjects ?
-                            responseData.currentRowToJsonObject().toString() :
-                            responseData.currentRowToJson().toString();
-                    output.write(rowStr.getBytes(StandardCharsets.UTF_8));
-                    count++;
-                }
-                output.write("]}".getBytes(StandardCharsets.UTF_8));
-            } finally {
-                try {
-                    responseData.close();
-                } catch (Exception e) {
-                    logger.stackTrace(e);
-                }
-            }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            throw DBOperationException.badRequest(name + " must be a number, got: " + value);
         }
     }
 }

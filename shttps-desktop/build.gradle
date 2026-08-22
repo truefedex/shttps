@@ -1,0 +1,108 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
+plugins {
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.compose)
+}
+
+group = 'com.phlox.simpleserver'
+version = project.hasProperty('app.version.name') ? project.property('app.version.name') : '1.0-SNAPSHOT'
+
+dependencies {
+    implementation project(':server-lib')
+    implementation project(':shttps-common')
+    implementation project(':shttps-desktop-common')
+
+    implementation libs.qrcodegen
+
+    implementation(compose.runtime)
+    implementation(compose.ui)
+    implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
+    implementation(compose.materialIconsExtended)
+    implementation(compose.components.resources)
+
+    implementation libs.navigation.compose
+    implementation libs.lifecycle.viewmodel.compose
+
+    implementation libs.kotlinx.serialization.json
+    implementation libs.kotlinx.coroutines.core
+    implementation libs.kotlinx.coroutines.swing
+    implementation libs.kotlinx.coroutines.core.jvm
+
+    implementation libs.filekit.core
+    implementation libs.filekit.dialogs
+    implementation libs.filekit.dialogs.compose
+
+    implementation libs.json
+    implementation libs.composenativetray
+    implementation libs.auto.launch
+
+    testImplementation libs.kotlin.test
+}
+
+test {
+    useJUnitPlatform()
+}
+kotlin {
+    jvmToolchain(21)
+}
+
+sourceSets {
+    main {
+        kotlin {
+            srcDir("$buildDir/generated/buildConfig")
+        }
+    }
+}
+
+// Add build configuration to access version at runtime
+tasks.register('generateBuildConfig') {
+    doLast {
+        def buildConfigDir = file("${layout.buildDirectory.asFile.get()}/generated/buildConfig")
+        buildConfigDir.mkdirs()
+        
+        def buildConfigFile = new File(buildConfigDir, "BuildConfig.kt")
+        buildConfigFile.text = """package com.phlox.simpleserver.buildconfig
+
+object BuildConfig {
+    const val VERSION_NAME = "${project.version}"
+    const val VERSION_CODE = ${project.hasProperty('app.version.code') ? project.property('app.version.code') : '1'}
+    const val APPLICATION_NAME = "Simple HTTP Server"
+    const val BUILD_TYPE = "Desktop"
+    const val PAID_VERSION = true
+}
+"""
+    }
+}
+
+compileKotlin.dependsOn generateBuildConfig
+
+compose.desktop {
+    application {
+        mainClass = "com.phlox.simpleserver.MainKt"
+        nativeDistributions {
+            modules("java.instrument", "java.sql", "jdk.security.auth", "jdk.unsupported")
+
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
+
+            packageVersion = project.version.toString()
+            packageName = "SHTTPS"
+            description = "A simple HTTP server for sharing files and web prototyping."
+            copyright = "2020-2025. Fedir Tsapana"
+            vendor = "Fedir Tsapana"
+            outputBaseDir.set(project.layout.buildDirectory.dir("../../builds"))
+
+            windows {
+                iconFile.set(project.file("src/main/resources/icons/app_icon.ico"))
+                dirChooser = true
+                perUserInstall = false
+                upgradeUuid = "53dae249-9e99-4475-89d4-c563c69eebe9"
+                menuGroup = "SHTTPS"
+                shortcut = true
+            }
+        }
+    }
+}

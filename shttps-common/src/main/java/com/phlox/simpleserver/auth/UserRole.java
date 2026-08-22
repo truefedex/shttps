@@ -16,23 +16,41 @@ public class UserRole implements Serializable {
     public static final String FIELD_DB_RIGHTS = "db_rights";
     public static final String FIELD_FILE_STORAGE_SIZE_LIMIT = "storage_limit";
     public static final String FIELD_SYSTEM_RIGHTS = "system_rights";
+    public static final String FIELD_CHANNEL_RIGHTS = "channel_rights";
 
     public @NotNull String name;
     public @NotNull EnumSet<User.FileSystemRights> fsRights;
     public @NotNull EnumSet<User.DBRights> dbRights;
     public @Nullable Long storageLimit = null;
     public @NotNull EnumSet<User.SystemRights> systemRights;
+    public @NotNull EnumSet<User.ChannelRights> channelRights;
 
+    /**
+     * The channel-less constructor, kept so callers that predate channels keep compiling; the role
+     * starts with no channel rights, matching what a role stored before channels existed reads
+     * back as.
+     */
     public UserRole(@NotNull String name,
                     @NotNull EnumSet<User.FileSystemRights> fsRights,
                     @NotNull EnumSet<User.DBRights> dbRights,
                     @Nullable Long storageLimit,
                     @NotNull EnumSet<User.SystemRights> systemRights) {
+        this(name, fsRights, dbRights, storageLimit, systemRights,
+                EnumSet.noneOf(User.ChannelRights.class));
+    }
+
+    public UserRole(@NotNull String name,
+                    @NotNull EnumSet<User.FileSystemRights> fsRights,
+                    @NotNull EnumSet<User.DBRights> dbRights,
+                    @Nullable Long storageLimit,
+                    @NotNull EnumSet<User.SystemRights> systemRights,
+                    @NotNull EnumSet<User.ChannelRights> channelRights) {
         this.name = name;
         this.fsRights = fsRights;
         this.dbRights = dbRights;
         this.storageLimit = storageLimit;
         this.systemRights = systemRights;
+        this.channelRights = channelRights;
     }
 
     public @NotNull JSONObject serialize() {
@@ -61,6 +79,12 @@ public class UserRole implements Serializable {
             rightsMask |= (1 << right.ordinal());
         }
         object.put(FIELD_SYSTEM_RIGHTS, rightsMask);
+
+        rightsMask = 0;
+        for (User.ChannelRights right : channelRights) {
+            rightsMask |= (1 << right.ordinal());
+        }
+        object.put(FIELD_CHANNEL_RIGHTS, rightsMask);
 
         return object;
     }
@@ -96,6 +120,14 @@ public class UserRole implements Serializable {
             }
         }
 
-        return new UserRole(name, fsRights, dbRights, storageLimit, systemRights);
+        EnumSet<User.ChannelRights> channelRights = EnumSet.noneOf(User.ChannelRights.class);
+        rightsMask = object.optInt(FIELD_CHANNEL_RIGHTS, 0);
+        for (User.ChannelRights right : User.ChannelRights.values()) {
+            if ((rightsMask & (1 << right.ordinal())) != 0) {
+                channelRights.add(right);
+            }
+        }
+
+        return new UserRole(name, fsRights, dbRights, storageLimit, systemRights, channelRights);
     }
 }
