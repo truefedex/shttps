@@ -5,7 +5,11 @@ plugins {
 }
 
 group = 'com.phlox.server'
-version = '3.0.0'
+//Same single source as the desktop and Android builds - ../version.properties, handed to every
+//module as a project property by settings.gradle. This jar used to carry a hardcoded version on
+//the theory that it ships on its own schedule; in practice it shipped from the same runs as the
+//installers and quietly stayed at 3.0.0 while everything else moved on.
+version = project.hasProperty('app.version.name') ? project.property('app.version.name') : '1.0-SNAPSHOT'
 
 def mainClassName = "com.phlox.server.Main"
 
@@ -32,6 +36,11 @@ java {
 jar {
     manifest {
         attributes 'Main-Class': "$mainClassName"
+        //What `shttps --version` prints, read back through Package.getImplementationVersion() so
+        //the number is written down once. shadowJar inherits this manifest, so the fat jar carries
+        //it too. See Main.ManifestVersion.
+        attributes 'Implementation-Title': 'shttps'
+        attributes 'Implementation-Version': project.version
         attributes 'Class-Path': configurations.compileClasspath.collect { it.getName() }.join(' ')
     }
 }

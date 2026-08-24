@@ -7,9 +7,9 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Set up JDK 21
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         java-version: '21'
         distribution: 'temurin'
@@ -23,17 +23,27 @@ jobs:
     - name: Build commandline jar and desktop MSI
       run: .\gradlew.bat :shttps-commandline:shadowJar :shttps-desktop:packageMsi --no-daemon
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+    # Two artifacts rather than one, because `if-no-files-found: error` only fires when *nothing*
+    # matched: with both globs in a single step the MSI always matches, so a jar that failed to
+    # appear would be missing from the download and the job would still be green. Split, each glob
+    # has to find its own file. It also means the jar can be downloaded on its own rather than dug
+    # out of a 120 MB zip, under the path it was built at.
+    - name: Upload commandline jar
+      uses: actions/upload-artifact@v7
       with:
-        name: commandline-jar-and-desktop-msi
-        path: |
-          shttps-commandline/build/libs/shttps-commandline-*-all.jar
-          builds/main/msi/*.msi
+        name: commandline-jar
+        path: shttps-commandline/build/libs/shttps-commandline-*-all.jar
+        if-no-files-found: error
+
+    - name: Upload desktop MSI
+      uses: actions/upload-artifact@v7
+      with:
+        name: desktop-msi
+        path: builds/main/msi/*.msi
         if-no-files-found: error
 
     - name: Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: |
@@ -57,9 +67,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Set up JDK 21
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         java-version: '21'
         distribution: 'temurin'
@@ -206,14 +216,14 @@ jobs:
         done
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: desktop-dmg-${{ matrix.arch }}
         path: builds/main/dmg/*.dmg
         if-no-files-found: error
 
     - name: Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: builds/main/dmg/*.dmg
