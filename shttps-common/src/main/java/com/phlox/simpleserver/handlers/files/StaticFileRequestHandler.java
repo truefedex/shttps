@@ -66,7 +66,7 @@ public class StaticFileRequestHandler extends BaseFileRequestHandler {
             } catch (Exception e) { logger.stackTrace(e); }
 
             if (date != null && (file.lastModified() / 1000) <= (date.getTime() / 1000)) {//comparing skipping milliseconds
-                return StandardResponses.NOT_MODIFIED();
+                return StandardResponses.NOT_MODIFIED(file.lastModified());
             }
         }
         String type = "application/octet-stream";

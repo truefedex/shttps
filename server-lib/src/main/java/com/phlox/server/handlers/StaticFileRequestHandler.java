@@ -51,10 +51,7 @@ public class StaticFileRequestHandler implements RequestHandler {
             } catch (Exception e) { e.printStackTrace(); }
 
             if (date != null && (file.lastModified() / 1000) <= (date.getTime() / 1000)) {//comparing skipping milliseconds
-                Response response = new Response();
-                response.code = 304;
-                response.phrase = "Not Modified";
-                return response;
+                return StandardResponses.NOT_MODIFIED(file.lastModified());
             }
         }
         String type = "application/octet-stream";

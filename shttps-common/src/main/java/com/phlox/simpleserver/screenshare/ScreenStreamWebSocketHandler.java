@@ -95,6 +95,8 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
     private static final String REASON_UNSUPPORTED = "unsupported";
     /** The platform refused the event - on Windows typically a window running elevated. */
     private static final String REASON_INPUT_FAILED = "input-failed";
+    /** The platform has not been given permission to be controlled at all. */
+    private static final String REASON_INPUT_PERMISSION = "input-permission";
     private static final String REASON_OK = "ok";
 
     private final SHTTPSConfig config;
@@ -356,6 +358,9 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
             case UNSUPPORTED:
                 sendControlStatus(pump, true, REASON_UNSUPPORTED, target);
                 break;
+            case NO_PERMISSION:
+                sendControlStatus(pump, true, REASON_INPUT_PERMISSION, target);
+                break;
             case FAILED:
             default:
                 sendControlStatus(pump, true, REASON_TEXT_FAILED, target);
@@ -374,6 +379,9 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
                 break;
             case UNSUPPORTED:
                 sendControlStatus(pump, true, REASON_UNSUPPORTED, target);
+                break;
+            case NO_PERMISSION:
+                sendControlStatus(pump, true, REASON_INPUT_PERMISSION, target);
                 break;
             case FAILED:
             default:

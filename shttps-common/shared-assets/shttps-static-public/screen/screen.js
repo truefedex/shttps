@@ -89,7 +89,6 @@ var sawDesktopPlatform = false;
 var inputLayer = null;
 var textField = null;
 var captureButton = null;
-var captureBanner = null;
 /**
  * Whether this machine's keys are being forwarded instead of acted on locally. Off by default and
  * toggled deliberately: while it is on the page swallows Ctrl+C, F5 and the rest, which is the
@@ -911,7 +910,6 @@ function setupControlInput() {
   inputLayer = document.getElementById("screen-input");
   textField = document.getElementById("control-text");
   captureButton = document.getElementById("keyboard-capture");
-  captureBanner = document.getElementById("capture-banner");
 
   //a device that can not hover and points coarsely is a touch screen: no keys to forward, so the
   //text field is the only way to type. Anything else gets its real key presses sent instead
@@ -1096,7 +1094,6 @@ function setKeyboardCaptured(captured) {
   }
   captureButton.textContent = keyboardCaptured ? "RELEASE KEYBOARD" : "CAPTURE KEYBOARD";
   captureButton.classList.toggle("active", keyboardCaptured);
-  captureBanner.classList.toggle("hidden", !keyboardCaptured);
 }
 
 function onKeyboardCaptureClick() {
@@ -1525,7 +1522,9 @@ function showControlHint(reason) {
     "no-text-field": "No text field is focused on the device",
     "text-failed": "The app on the device refused the text",
     "unsupported": "That action is not available on this machine",
-    "input-failed": "The window in front could not be reached - it may be running as administrator"
+    "input-failed": "The window in front could not be reached - it may be running as administrator",
+    "input-permission": "The device has not been allowed to be controlled - grant this app the " +
+      "Accessibility permission in its system settings, then reconnect"
   };
   if (texts[reason]) {
     showHint(texts[reason]);

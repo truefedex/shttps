@@ -21,11 +21,6 @@
     <video id="screen-video" muted playsinline autoplay disablepictureinpicture></video>
     <!-- catches pointer events while control is on: over the video, but under the message box -->
     <div id="screen-input" class="screen-input hidden"></div>
-    <!-- while the keyboard is captured this page swallows Ctrl+W and F5, so the way out has to
-         stay on screen the whole time rather than be something to remember -->
-    <div id="capture-banner" class="capture-banner hidden">
-      Keyboard captured &mdash; press Ctrl+Alt+Shift+Esc or click RELEASE KEYBOARD to get it back
-    </div>
     <div id="screen-message" class="screen-message">
       <div id="screen-message-title" class="screen-message-title">Connecting…</div>
       <div id="screen-message-text" class="screen-message-text"></div>
@@ -48,9 +43,13 @@
     </div>
     <!-- shown instead of the buttons above when the far end is a desktop rather than a phone -->
     <div id="desktop-controls" class="desktop-controls hidden">
+      <!-- the button is its own indicator: it turns red and reads RELEASE KEYBOARD while
+           capturing, and the release chord lives in the tooltip rather than in a banner over
+           the picture. There is always a way out - the browser reserves Escape for leaving
+           fullscreen, which brings this toolbar back. -->
       <button id="keyboard-capture" class="screen-button"
               onclick="onKeyboardCaptureClick();"
-              title="Send this keyboard&#39;s keys to the remote computer, shortcuts included">CAPTURE KEYBOARD</button>
+              title="Send this keyboard&#39;s keys to the remote computer, shortcuts included. Release it again with this button or Ctrl+Alt+Shift+Esc">CAPTURE KEYBOARD</button>
     </div>
     <button class="screen-button" onclick="onFullscreenClick();">
       <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">

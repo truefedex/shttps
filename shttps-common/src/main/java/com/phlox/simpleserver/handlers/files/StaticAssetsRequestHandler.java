@@ -67,7 +67,7 @@ public class StaticAssetsRequestHandler implements RequestHandler {
             } catch (Exception e) { e.printStackTrace(); }
 
             if (date != null && (assetLastModified / 1000) <= (date.getTime() / 1000)) {//comparing skipping milliseconds
-                return StandardResponses.NOT_MODIFIED();
+                return StandardResponses.NOT_MODIFIED(assetLastModified);
             }
         }
         String type = "application/octet-stream";

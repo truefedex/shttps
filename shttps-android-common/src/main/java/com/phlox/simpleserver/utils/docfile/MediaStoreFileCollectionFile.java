@@ -94,6 +94,7 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
                                 MediaStore.Files.FileColumns.MIME_TYPE,
                                 MediaStore.Files.FileColumns.SIZE,
                                 MediaStore.Files.FileColumns.DATE_MODIFIED,
+                                MediaStore.Files.FileColumns.DATE_ADDED,
                                 MediaStore.Files.FileColumns.RELATIVE_PATH
                         },
                         null,
@@ -104,8 +105,10 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
                         String name = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME));
                         String type = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE));
                         long length = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE));
-                        long lastModified = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_MODIFIED));
-                        long created = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_ADDED));
+                        long lastModified = mediaStoreEpochSecondsToMillis(
+                                cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_MODIFIED)));
+                        long created = mediaStoreEpochSecondsToMillis(
+                                cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_ADDED)));
                         String path = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.RELATIVE_PATH));
                         return new MediaStoreFileCollectionFile(context, this, newUri, name, type, length, lastModified, created, path);
                     }
@@ -370,6 +373,7 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
                     MediaStore.Files.FileColumns.MIME_TYPE,
                     MediaStore.Files.FileColumns.SIZE,
                     MediaStore.Files.FileColumns.DATE_MODIFIED,
+                    MediaStore.Files.FileColumns.DATE_ADDED,
                     MediaStore.Files.FileColumns.RELATIVE_PATH
             };
 
@@ -398,8 +402,8 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
                         String name = cursor.getString(nameColumn);
                         String type = cursor.getString(typeColumn);
                         long length = cursor.getLong(lengthColumn);
-                        long lastModified = cursor.getLong(lastModifiedColumn);
-                        long created = cursor.getLong(createdColumn);
+                        long lastModified = mediaStoreEpochSecondsToMillis(cursor.getLong(lastModifiedColumn));
+                        long created = mediaStoreEpochSecondsToMillis(cursor.getLong(createdColumn));
                         String relativePath = cursor.getString(relativePathColumn);
                         files.add(new MediaStoreFileCollectionFile(context, this, uri, name, type, length, lastModified, created, relativePath));
                     }
@@ -527,5 +531,13 @@ public class MediaStoreFileCollectionFile extends DocumentFile {
     @Override
     public long getStorageFreeSpace() {
         return Long.MAX_VALUE;
+    }
+
+    /**
+     * MediaStore {@code DATE_MODIFIED} / {@code DATE_ADDED} are seconds since the epoch;
+     * {@link DocumentFile} timestamps are milliseconds.
+     */
+    private static long mediaStoreEpochSecondsToMillis(long epochSeconds) {
+        return epochSeconds * 1000L;
     }
 }

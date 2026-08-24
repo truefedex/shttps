@@ -2,6 +2,10 @@ package com.phlox.server.responses;
 
 import static java.net.HttpURLConnection.*;
 
+import com.phlox.server.utils.HTTPUtils;
+
+import java.util.Date;
+
 public final class StandardResponses {
     public static final String PHRASE_NOT_FOUND = "Not found";
     public static final String PHRASE_OK = "Ok";
@@ -63,6 +67,13 @@ public final class StandardResponses {
     }
 
     public static Response NOT_MODIFIED() { return new Response(HTTP_NOT_MODIFIED, PHRASE_NOT_MODIFIED); }
+
+    public static Response NOT_MODIFIED(long lastModifiedMillis) {
+        Response response = NOT_MODIFIED();
+        response.headers.add(Response.HEADER_LAST_MODIFIED,
+                HTTPUtils.getHTTPDateFormat().format(new Date(lastModifiedMillis)));
+        return response;
+    }
 
     public static Response UNSUPPORTED_MEDIA_TYPE() { return new Response(HTTP_UNSUPPORTED_TYPE, PHRASE_UNSUPPORTED_MEDIA_TYPE); }
 }
