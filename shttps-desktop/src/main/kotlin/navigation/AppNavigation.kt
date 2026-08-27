@@ -18,6 +18,7 @@ import com.phlox.simpleserver.MainWindowEvents
 import com.phlox.simpleserver.auth.User
 import com.phlox.simpleserver.auth.UserRole
 import com.phlox.simpleserver.screens.VersionInfoScreen
+import com.phlox.simpleserver.screens.attributions.AttributionsScreen
 import com.phlox.simpleserver.screens.auth.AuthDetailsScreen
 import com.phlox.simpleserver.screens.auth.UserDetailsScreen
 import com.phlox.simpleserver.screens.auth.roles.RolesListScreen
@@ -299,6 +300,17 @@ fun AppNavigationGraph(
         
         composable<VersionInfoRoute> {
             VersionInfoScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToAttributions = {
+                    navController.navigate(AttributionsRoute)
+                }
+            )
+        }
+
+        composable<AttributionsRoute> {
+            AttributionsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }

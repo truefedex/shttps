@@ -1,0 +1,225 @@
+{
+  "_comment": [
+    "Third-party components distributed with the open source desktop build.",
+    "Hand maintained: versions here mirror gradle/libs.versions.toml and the resolved",
+    "transitive graph, so bumping a dependency means editing this file too.",
+    "'platforms' may be omitted, which means the entry applies to every operating system.",
+    "Anything under an LGPL or GPL licence must carry a 'sourceUrl' - AttributionsTest enforces it.",
+    "Do not add test-scope artifacts, or artifacts of other modules (picocli is commandline only,",
+    "the vendored io.nayuki.fastqrcodegen is Android only)."
+  ],
+  "attributions": [
+    {
+      "name": "Kotlin Standard Library",
+      "version": "2.4.10",
+      "copyright": "Copyright 2010-2026 JetBrains s.r.o. and Kotlin Programming Language contributors",
+      "license": "Apache License 2.0",
+      "url": "https://kotlinlang.org/",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/JetBrains/kotlin"
+    },
+    {
+      "name": "Compose Multiplatform",
+      "version": "1.11.1",
+      "copyright": "Copyright 2020-2026 JetBrains s.r.o. and respective authors and developers. Copyright 2019-2021 The Android Open Source Project",
+      "license": "Apache License 2.0",
+      "url": "https://www.jetbrains.com/lp/compose-multiplatform/",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/JetBrains/compose-multiplatform"
+    },
+    {
+      "name": "Skiko",
+      "version": "0.144.6",
+      "copyright": "Copyright 2020-2026 JetBrains s.r.o.",
+      "license": "Apache License 2.0",
+      "url": "https://github.com/JetBrains/skiko",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/JetBrains/skiko",
+      "note": "Kotlin bindings for Skia, used by Compose Multiplatform for all rendering."
+    },
+    {
+      "name": "Skia",
+      "copyright": "Copyright 2011-2026 Google LLC",
+      "license": "BSD 3-Clause License",
+      "url": "https://skia.org/",
+      "licenseUrl": "https://github.com/google/skia/blob/main/LICENSE",
+      "sourceUrl": "https://github.com/google/skia",
+      "note": "The graphics engine, distributed inside the Skiko native libraries above."
+    },
+    {
+      "name": "kotlinx.coroutines",
+      "version": "1.11.0",
+      "copyright": "Copyright 2016-2026 JetBrains s.r.o.",
+      "license": "Apache License 2.0",
+      "url": "https://github.com/Kotlin/kotlinx.coroutines",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/Kotlin/kotlinx.coroutines"
+    },
+    {
+      "name": "kotlinx.serialization",
+      "version": "1.11.0",
+      "copyright": "Copyright 2017-2026 JetBrains s.r.o.",
+      "license": "Apache License 2.0",
+      "url": "https://github.com/Kotlin/kotlinx.serialization",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/Kotlin/kotlinx.serialization"
+    },
+    {
+      "name": "kotlinx.atomicfu",
+      "version": "0.28.0",
+      "copyright": "Copyright 2017-2026 JetBrains s.r.o.",
+      "license": "Apache License 2.0",
+      "url": "https://github.com/Kotlin/kotlinx-atomicfu",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/Kotlin/kotlinx-atomicfu"
+    },
+    {
+      "name": "Navigation Compose (Compose Multiplatform)",
+      "version": "2.9.2",
+      "copyright": "Copyright 2017-2026 The Android Open Source Project, JetBrains s.r.o.",
+      "license": "Apache License 2.0",
+      "url": "https://github.com/JetBrains/compose-multiplatform-core",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/JetBrains/compose-multiplatform-core"
+    },
+    {
+      "name": "Lifecycle ViewModel Compose (Compose Multiplatform)",
+      "version": "2.11.0",
+      "copyright": "Copyright 2017-2026 The Android Open Source Project, JetBrains s.r.o.",
+      "license": "Apache License 2.0",
+      "url": "https://github.com/JetBrains/compose-multiplatform-core",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/JetBrains/compose-multiplatform-core",
+      "note": "Includes the accompanying androidx.savedstate artifact."
+    },
+    {
+      "name": "QR Code generator library",
+      "version": "1.8.0",
+      "copyright": "Copyright (c) Project Nayuki",
+      "license": "MIT License",
+      "url": "https://www.nayuki.io/page/qr-code-generator-library",
+      "licenseUrl": "https://github.com/nayuki/QR-Code-generator/blob/master/LICENSE.md",
+      "sourceUrl": "https://github.com/nayuki/QR-Code-generator"
+    },
+    {
+      "name": "JSON-java",
+      "version": "20260814",
+      "copyright": "Copyright (c) 2002 JSON.org",
+      "license": "Public Domain",
+      "url": "https://github.com/stleary/JSON-java",
+      "licenseUrl": "https://github.com/stleary/JSON-java/blob/master/LICENSE",
+      "sourceUrl": "https://github.com/stleary/JSON-java"
+    },
+    {
+      "name": "kXML 2",
+      "version": "2.3.0",
+      "copyright": "Copyright (c) 2002-2004 Stefan Haustein, Oberhausen, Rhld., Germany",
+      "license": "MIT License",
+      "url": "https://kxml.sourceforge.net/",
+      "licenseUrl": "https://opensource.org/licenses/MIT"
+    },
+    {
+      "name": "SQLite JDBC Driver",
+      "version": "3.53.2.1",
+      "copyright": "Copyright (c) 2007 David Crawshaw, Taro L. Saito and contributors",
+      "license": "Apache License 2.0",
+      "url": "https://github.com/xerial/sqlite-jdbc",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/xerial/sqlite-jdbc",
+      "note": "Ships the SQLite native library for each supported platform."
+    },
+    {
+      "name": "SQLite",
+      "license": "Public Domain",
+      "url": "https://www.sqlite.org/",
+      "licenseUrl": "https://www.sqlite.org/copyright.html",
+      "note": "The database engine itself, distributed inside the JDBC driver above."
+    },
+    {
+      "name": "SLF4J",
+      "version": "2.0.18",
+      "copyright": "Copyright (c) 2004-2026 QOS.ch Sarl (Switzerland)",
+      "license": "MIT License",
+      "url": "https://www.slf4j.org/",
+      "licenseUrl": "https://www.slf4j.org/license.html",
+      "sourceUrl": "https://github.com/qos-ch/slf4j",
+      "note": "slf4j-api and slf4j-simple."
+    },
+    {
+      "name": "ProGuard Annotations",
+      "version": "7.9.1",
+      "copyright": "Copyright (c) 2002-2026 Guardsquare NV",
+      "license": "Apache License 2.0",
+      "url": "https://www.guardsquare.com/proguard",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/Guardsquare/proguard"
+    },
+    {
+      "name": "JetBrains Java Annotations",
+      "version": "26.1.0",
+      "copyright": "Copyright 2000-2026 JetBrains s.r.o.",
+      "license": "Apache License 2.0",
+      "url": "https://github.com/JetBrains/java-annotations",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/JetBrains/java-annotations"
+    },
+    {
+      "name": "JSpecify",
+      "version": "1.0.0",
+      "copyright": "Copyright (c) The JSpecify Authors",
+      "license": "Apache License 2.0",
+      "url": "https://jspecify.dev/",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "sourceUrl": "https://github.com/jspecify/jspecify"
+    },
+    {
+      "name": "FileKit",
+      "version": "0.11.0",
+      "copyright": "Copyright (c) 2024 Vince Glb",
+      "license": "MIT License",
+      "url": "https://github.com/vinceglb/FileKit",
+      "licenseUrl": "https://github.com/vinceglb/FileKit/blob/main/LICENSE",
+      "sourceUrl": "https://github.com/vinceglb/FileKit",
+      "note": "filekit-core, filekit-dialogs and filekit-dialogs-compose."
+    },
+    {
+      "name": "AutoLaunch",
+      "version": "0.8.0",
+      "copyright": "Copyright (c) 2024 Vince Glb",
+      "license": "MIT License",
+      "url": "https://github.com/vinceglb/AutoLaunch",
+      "licenseUrl": "https://github.com/vinceglb/AutoLaunch/blob/main/LICENSE",
+      "sourceUrl": "https://github.com/vinceglb/AutoLaunch"
+    },
+    {
+      "name": "Compose Native Tray",
+      "version": "1.3.3",
+      "copyright": "Copyright (c) 2025 Elie Gambache (kdroidFilter)",
+      "license": "MIT License",
+      "url": "https://github.com/kdroidFilter/ComposeNativeTray",
+      "licenseUrl": "https://github.com/kdroidFilter/ComposeNativeTray/blob/master/LICENSE",
+      "sourceUrl": "https://github.com/kdroidFilter/ComposeNativeTray",
+      "note": "Includes its Nucleus (core-runtime, darkmode-detector) and PlatformTools dependencies."
+    },
+    {
+      "name": "Java Native Access (JNA)",
+      "version": "5.18.1",
+      "copyright": "Copyright (c) 2007-2026 Timothy Wall and the JNA contributors",
+      "license": "Apache License 2.0 (this application uses it under the Apache option of its Apache-2.0 / LGPL-2.1-or-later dual licence)",
+      "url": "https://github.com/java-native-access/jna",
+      "licenseUrl": "https://github.com/java-native-access/jna/blob/master/LICENSE",
+      "sourceUrl": "https://github.com/java-native-access/jna",
+      "note": "Reaches operating system APIs directly: used by the tray and file dialog libraries above, and by screen capture and remote control where this build has them."
+    },
+    {
+      "name": "OpenJDK Runtime Environment",
+      "version": "21",
+      "copyright": "Copyright (c) Oracle and/or its affiliates and the OpenJDK contributors",
+      "license": "GNU General Public License, version 2, with the Classpath Exception",
+      "url": "https://openjdk.org/",
+      "licenseUrl": "https://openjdk.org/legal/gplv2+ce.html",
+      "sourceUrl": "https://github.com/openjdk/jdk",
+      "note": "A trimmed Java runtime is bundled inside the installer; its own legal notices ship in the 'legal' folder of the installation directory."
+    }
+  ]
+}

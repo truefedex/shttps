@@ -135,6 +135,7 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
      * type is decided by {@link #getTLSCert()} based on the .bks vs anything-else suffix.
      */
     public static final String IMPORTED_TLS_CERT_FILE_NAME = "imported_tls_cert.pfx";
+    public static final String DEFAULT_DATABASE_FILE_NAME = "database.sqlite";
 
     @Override
     public void installTLSCertBytes(byte[] bytes) {
@@ -173,6 +174,19 @@ public class SHTTPSConfigImpl implements SHTTPSConfig {
         } catch (IOException e) {
             logger.e("Failed to install imported TLS certificate", e);
         }
+    }
+
+    /**
+     * A database file next to the config file, rather than a fixed spot under the home directory:
+     * the command line build takes an arbitrary {@code --config} path, and two servers started from
+     * two configs must not end up sharing one SQLite file, one WAL and one users table.
+     */
+    @Override
+    public String getDefaultDatabasePath() {
+        //a bare relative --config has no parent - the very null that made this method necessary
+        File parent = file.getAbsoluteFile().getParentFile();
+        if (parent == null) parent = new File(".");
+        return new File(parent, DEFAULT_DATABASE_FILE_NAME).getAbsolutePath();
     }
 
     @Override

@@ -241,7 +241,7 @@ private fun RedirectRuleItem(
                     Text(
                         text = stringResource(Res.string.http_status, rule.code),
                         style = MaterialTheme.typography.caption,
-                        color = MaterialTheme.colors.primary
+                        color = MaterialTheme.colors.secondaryVariant
                     )
                 }
                 

@@ -100,7 +100,7 @@ public class HTMLTemplate {
                 }
                 Object field = findData(name);
                 if (field != null) {
-                    stringBuffer.append(field.toString());
+                    appendEscaped(stringBuffer, field.toString());
                 }
                 cursor = singleMatcher.end();
             } else {
@@ -109,6 +109,38 @@ public class HTMLTemplate {
         }
         if (cursor <= end) {
             stringBuffer.append(template, cursor, end + 1);
+        }
+    }
+
+    /**
+     * Appends value with HTML special characters replaced by entities. Every substitution made by
+     * this template engine goes through here: values are data (file names, request paths, user
+     * input), never markup, so leaving them as-is would allow HTML/script injection. The escaped
+     * set is safe both in text content and inside a double- or single-quoted attribute value.
+     */
+    private static void appendEscaped(StringBuilder stringBuffer, String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '&':
+                    stringBuffer.append("&amp;");
+                    break;
+                case '<':
+                    stringBuffer.append("&lt;");
+                    break;
+                case '>':
+                    stringBuffer.append("&gt;");
+                    break;
+                case '"':
+                    stringBuffer.append("&quot;");
+                    break;
+                case '\'':
+                    stringBuffer.append("&#39;");
+                    break;
+                default:
+                    stringBuffer.append(c);
+                    break;
+            }
         }
     }
 

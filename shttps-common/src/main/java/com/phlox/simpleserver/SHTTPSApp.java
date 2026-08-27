@@ -179,16 +179,46 @@ public class SHTTPSApp {
 
     public synchronized void initIO() {
         if (config.isDatabaseEnabled()) {
+            String path = resolveDatabasePath();
+            if (path == null) {
+                logger.e("Database is enabled but \"" + SHTTPSConfig.KEY_DATABASE_PATH + "\" is not set" +
+                        " in the config, and this platform offers no default location. Set \"" +
+                        SHTTPSConfig.KEY_DATABASE_PATH + "\" to the SQLite file to use, or turn \"" +
+                        SHTTPSConfig.KEY_DATABASE_ENABLED + "\" off. Starting without a database.");
+                return;
+            }
             try {
-                Database database = databaseFabric.openDatabase(config.getDatabasePath());
+                Database database = databaseFabric.openDatabase(path);
                 Map<String, Object> bdStatus = database.getStatus();
                 logger.i("Database opened: " + bdStatus);
                 DatabaseMigrator.runMigrations(database, config.isStoreUsersInDatabase());
                 setDatabase(database);
             } catch (Exception e) {
-                logger.e("Failed to open database", e);
+                logger.e("Failed to open database: " + path, e);
             }
         }
+    }
+
+    /**
+     * The database file to open, filling in the platform default for a config that switched the
+     * feature on without naming one - the way the constructor fills in a missing root dir. That is
+     * the normal state of a hand-written command line config: {@link SHTTPSConfig#getDatabasePath()}
+     * defaults to null, and a config file written by the desktop build stores it as an empty string,
+     * so both count as "not set" here.
+     * <p>
+     * A resolved default is written back to the config, so the file is named in one place and
+     * everything else reading the path afterwards - the status page, backup export - sees the same
+     * one. Null only when the platform has no default either; that is the caller's to report.
+     */
+    private @Nullable String resolveDatabasePath() {
+        String path = config.getDatabasePath();
+        if (path != null && !path.isEmpty()) return path;
+        String defaultPath = config.getDefaultDatabasePath();
+        if (defaultPath == null || defaultPath.isEmpty()) return null;
+        logger.i("Database is enabled without a \"" + SHTTPSConfig.KEY_DATABASE_PATH + "\"; using " +
+                defaultPath);
+        config.setDatabasePath(defaultPath);
+        return defaultPath;
     }
 
     public synchronized void startServer() throws UnrecoverableKeyException, CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {

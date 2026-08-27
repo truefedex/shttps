@@ -286,6 +286,22 @@ public interface SHTTPSConfig {
         setString(KEY_DATABASE_PATH, value);
     }
 
+    /**
+     * Where this platform would keep a database when {@link #KEY_DATABASE_ENABLED} is on but no
+     * {@link #KEY_DATABASE_PATH} was ever set - the database counterpart of
+     * {@link com.phlox.simpleserver.utils.SHTTPSPlatformUtils#getDefaultRootDir()}. Deliberately
+     * not folded into {@link #getDatabasePath()}: that getter answers what the config actually
+     * holds, and a derived value there would travel into {@link #serializeAll()} and into every
+     * "has the user picked a database?" check that today compares against null or "".
+     * <p>
+     * Null means this platform has nowhere sensible to put one, in which case
+     * {@link SHTTPSApp#initIO()} reports the missing key rather than guessing. Defaulted so that
+     * adding it does not break config implementations living outside this build.
+     */
+    default @Nullable String getDefaultDatabasePath() {
+        return null;
+    }
+
     default boolean isAllowDatabaseTableDataEditingApi() {
         return getBoolean(KEY_ALLOW_DATABASE_TABLE_DATA_EDITING_API, false);
     }

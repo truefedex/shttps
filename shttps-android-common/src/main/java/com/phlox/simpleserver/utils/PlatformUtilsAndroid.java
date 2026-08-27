@@ -1,16 +1,22 @@
 package com.phlox.simpleserver.utils;
 
 import android.annotation.SuppressLint;
+import android.app.ActivityManager;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.ImageDecoder;
 import android.media.ThumbnailUtils;
 import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.Build;
+import android.os.SystemClock;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.Size;
 
 import com.phlox.server.utils.SHTTPSLoggerProxy;
@@ -228,5 +234,198 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
     @Override
     public XmlPullParser newXMLPullParser() throws XmlPullParserException {
         return android.util.Xml.newPullParser();
+    }
+
+    @Override
+    public BatteryInfo getBatteryInfo() {
+        try {
+            //a null receiver just reads the sticky broadcast - nothing is registered and nothing has to be
+            //unregistered. Needs no permission, same for the BatteryManager properties below.
+            Intent sticky = ctx.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (sticky == null) {
+                //happens on some emulators and ROMs
+                return null;
+            }
+            if (!sticky.getBooleanExtra(BatteryManager.EXTRA_PRESENT, true)) {
+                //no battery in this machine at all - show no card rather than a card full of zeroes
+                return null;
+            }
+
+            BatteryInfo info = new BatteryInfo();
+
+            int level = sticky.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+            int scale = sticky.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+            if (level >= 0 && scale > 0) {
+                //the scale is not always 100
+                info.levelPercent = Math.min(100, level * 100 / scale);
+            }
+
+            //tenths of a degree Celsius. A device without a battery thermistor reports 0, which would
+            //otherwise render as a perfectly plausible looking "0.0 C"
+            int temperature = sticky.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0);
+            if (temperature != 0 && temperature > -500 && temperature < 1500) {
+                info.temperatureCelsius = temperature / 10f;
+            }
+
+            info.status = mapBatteryStatus(sticky.getIntExtra(BatteryManager.EXTRA_STATUS,
+                    BatteryManager.BATTERY_STATUS_UNKNOWN));
+            info.health = mapBatteryHealth(sticky.getIntExtra(BatteryManager.EXTRA_HEALTH,
+                    BatteryManager.BATTERY_HEALTH_UNKNOWN));
+            info.powerSource = mapPowerSource(sticky.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1));
+
+            int voltage = sticky.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
+            if (voltage > 0) {
+                //documented as millivolts, but a few devices report microvolts
+                info.voltageMillivolts = voltage > 100000 ? voltage / 1000 : voltage;
+            }
+
+            info.technology = trimToNull(sticky.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY));
+
+            BatteryManager batteryManager = (BatteryManager) ctx.getSystemService(Context.BATTERY_SERVICE);
+            if (batteryManager != null) {
+                //microampere-hours remaining. Devices that do not implement it answer with 0 or one
+                //of the int extremes, and a few report the wrong unit altogether - so the result has to
+                //land somewhere a battery plausibly could, the same test the design capacity gets
+                int chargeCounter = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER);
+                if (chargeCounter > 0) {
+                    int mah = chargeCounter / 1000;
+                    if (mah >= 50 && mah <= 100000) {
+                        info.chargeCounterMah = mah;
+                    }
+                }
+            }
+
+            info.capacityMah = readDesignCapacityMah();
+
+            return info.hasAnyData() ? info : null;
+        } catch (Throwable e) {
+            //this is optional information on the status page - it must never fail the status response
+            logger.w("Failed to read battery info", e);
+            return null;
+        }
+    }
+
+    @Override
+    public DeviceInfo getDeviceInfo() {
+        try {
+            DeviceInfo info = new DeviceInfo();
+
+            info.manufacturer = trimToNull(Build.MANUFACTURER);
+            info.model = trimToNull(Build.MODEL);
+            //the os.name property says "Linux" here, which is true and useless on a phone
+            info.osName = "Android";
+            info.osRelease = trimToNull(Build.VERSION.RELEASE);
+            info.apiLevel = Build.VERSION.SDK_INT;
+
+            //the name the user gave the phone. Often unset, and readable without any permission
+            try {
+                info.deviceName = trimToNull(
+                        Settings.Global.getString(ctx.getContentResolver(), Settings.Global.DEVICE_NAME));
+            } catch (Throwable ignored) {
+                //not every ROM has the setting
+            }
+
+            ActivityManager activityManager = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+            if (activityManager != null) {
+                ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+                activityManager.getMemoryInfo(memoryInfo);
+                if (memoryInfo.totalMem > 0) {
+                    info.totalRamBytes = memoryInfo.totalMem;
+                }
+                if (memoryInfo.availMem > 0) {
+                    info.availableRamBytes = memoryInfo.availMem;
+                }
+            }
+
+            //elapsedRealtime and not uptimeMillis: the latter stops while the device sleeps, so on a
+            //phone it would report a fraction of the real uptime
+            info.systemUptimeMillis = SystemClock.elapsedRealtime();
+
+            return info.hasAnyData() ? info : null;
+        } catch (Throwable e) {
+            logger.w("Failed to read device info", e);
+            return null;
+        }
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /**
+     * Design capacity of the battery, in mAh, or null when we cannot get it.
+     * <p>
+     * There is no public API for this. PowerProfile is a blocked non-SDK interface, so on most current
+     * devices this simply fails and the row is left out - which is the intended outcome. The obvious
+     * alternative, dividing the charge counter by the charge level, is deliberately not used: it swings
+     * wildly at low levels and means nothing at zero, and a wrong mAh figure is worse than a missing one.
+     */
+    private Integer readDesignCapacityMah() {
+        try {
+            Class<?> powerProfileClass = Class.forName("com.android.internal.os.PowerProfile");
+            Object powerProfile = powerProfileClass.getConstructor(Context.class).newInstance(ctx);
+            Object capacity = powerProfileClass.getMethod("getBatteryCapacity").invoke(powerProfile);
+            if (capacity instanceof Number) {
+                double mah = ((Number) capacity).doubleValue();
+                //a device that has the class but no profile entry answers 0
+                if (mah >= 100 && mah <= 100000) {
+                    return (int) Math.round(mah);
+                }
+            }
+        } catch (Throwable ignored) {
+            //expected on any device that enforces the non-SDK interface restrictions
+        }
+        return null;
+    }
+
+    private static String mapBatteryStatus(int status) {
+        switch (status) {
+            case BatteryManager.BATTERY_STATUS_CHARGING:
+                return BatteryInfo.STATUS_CHARGING;
+            case BatteryManager.BATTERY_STATUS_DISCHARGING:
+                return BatteryInfo.STATUS_DISCHARGING;
+            case BatteryManager.BATTERY_STATUS_FULL:
+                return BatteryInfo.STATUS_FULL;
+            case BatteryManager.BATTERY_STATUS_NOT_CHARGING:
+                return BatteryInfo.STATUS_NOT_CHARGING;
+            default:
+                return null;
+        }
+    }
+
+    private static String mapBatteryHealth(int health) {
+        switch (health) {
+            case BatteryManager.BATTERY_HEALTH_GOOD:
+                return BatteryInfo.HEALTH_GOOD;
+            case BatteryManager.BATTERY_HEALTH_OVERHEAT:
+                return BatteryInfo.HEALTH_OVERHEAT;
+            case BatteryManager.BATTERY_HEALTH_COLD:
+                return BatteryInfo.HEALTH_COLD;
+            case BatteryManager.BATTERY_HEALTH_DEAD:
+                return BatteryInfo.HEALTH_DEAD;
+            case BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE:
+                return BatteryInfo.HEALTH_OVER_VOLTAGE;
+            case BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE:
+                return BatteryInfo.HEALTH_UNSPECIFIED_FAILURE;
+            default:
+                return null;
+        }
+    }
+
+    private static String mapPowerSource(int plugged) {
+        switch (plugged) {
+            case 0:
+                return BatteryInfo.POWER_SOURCE_NONE;
+            case BatteryManager.BATTERY_PLUGGED_AC:
+                return BatteryInfo.POWER_SOURCE_AC;
+            case BatteryManager.BATTERY_PLUGGED_USB:
+                return BatteryInfo.POWER_SOURCE_USB;
+            case BatteryManager.BATTERY_PLUGGED_WIRELESS:
+                return BatteryInfo.POWER_SOURCE_WIRELESS;
+            default:
+                return null;
+        }
     }
 }

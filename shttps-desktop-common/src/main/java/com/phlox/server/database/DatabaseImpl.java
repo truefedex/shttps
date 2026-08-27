@@ -95,16 +95,26 @@ public class DatabaseImpl implements Database {
     public Map<String, Object> getStatus() throws Exception {
         Map<String, Object> status = new HashMap<>();
         status.put("path", path);
-        status.put("size", new File(path).length());
+        //an in-memory database has no file, and nothing here is worth an NPE over a missing size
+        status.put("size", path == null || path.isEmpty() ? 0L : new File(path).length());
         int tablesCount = 0;
+        String sqliteVersion = null;
         try (Connection connection = provideConnection()) {
             Statement statement = connection.createStatement();
             ResultSet rs = statement.executeQuery("SELECT COUNT(name) FROM sqlite_master WHERE type='table' AND name!='android_metadata' AND name NOT LIKE 'sqlite_%'");
             if (rs.next()) {
                 tablesCount = rs.getInt(1);
             }
+            //after the count has been read: re-executing a Statement closes its previous ResultSet
+            rs = statement.executeQuery("SELECT sqlite_version()");
+            if (rs.next()) {
+                sqliteVersion = rs.getString(1);
+            }
         }
         status.put("tablesCount", tablesCount);
+        if (sqliteVersion != null) {
+            status.put("sqliteVersion", sqliteVersion);
+        }
         return status;
     }
 

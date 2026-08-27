@@ -12,9 +12,10 @@ dependencies {
     compileOnly libs.json
     compileOnly libs.kxml
 
-    //org.json is provided by the platform at runtime (Android brings its own), but tests need a
-    //real implementation on their classpath
+    //org.json is provided by the platform at runtime (Android brings its own), and the xmlpull
+    //API comes with the platform too, but tests need real implementations on their classpath
     testImplementation libs.json
+    testImplementation libs.kxml
     testImplementation libs.junit5.jupiter.api
     testRuntimeOnly libs.junit5.jupiter.engine
     testRuntimeOnly libs.junit5.platform.launcher

@@ -84,7 +84,11 @@ compose.desktop {
     application {
         mainClass = "com.phlox.simpleserver.MainKt"
         nativeDistributions {
-            modules("java.instrument", "java.sql", "jdk.security.auth", "jdk.unsupported")
+            modules("java.instrument", "java.sql", "jdk.security.auth", "jdk.unsupported",
+                    //jdk.management carries com.sun.management.OperatingSystemMXBean, the only
+                    //way to the machine's physical memory. Without it named here the jlinked
+                    //image simply has no such class and the status page loses the RAM row
+                    "java.management", "jdk.management")
 
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
 

@@ -42,10 +42,16 @@ jobs:
         path: builds/main/msi/*.msi
         if-no-files-found: error
 
+      # RELEASE_NOTES.md holds the notes for the latest version only, and every job in this
+      # workflow passes the same file, so whichever one reaches the release first writes the body
+      # and the rest rewrite it identically. Not append_body - that would stamp the notes once per
+      # job. The path is relative to the checkout root, which in the OSS repository is this
+      # directory, not the shttps-oss folder it sits in inside the umbrella project.
     - name: Release
       uses: softprops/action-gh-release@v3
       if: startsWith(github.ref, 'refs/tags/')
       with:
+        body_path: RELEASE_NOTES.md
         files: |
           shttps-commandline/build/libs/shttps-commandline-*-all.jar
           builds/main/msi/*.msi
@@ -226,6 +232,7 @@ jobs:
       uses: softprops/action-gh-release@v3
       if: startsWith(github.ref, 'refs/tags/')
       with:
+        body_path: RELEASE_NOTES.md
         files: builds/main/dmg/*.dmg
 
     # if: always() - a failed build must not leave the certificate and its private key sitting in
@@ -307,6 +314,7 @@ jobs:
       uses: softprops/action-gh-release@v3
       if: startsWith(github.ref, 'refs/tags/')
       with:
+        body_path: RELEASE_NOTES.md
         files: |
           builds/main/deb/*.deb
           builds/main/rpm/*.rpm

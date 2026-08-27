@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.phlox.simpleserver.theme.SuccessGreen
 import com.phlox.simpleserver.shttps_desktop.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import com.phlox.server.handlers.router.middleware.impl.RedirectsMiddleware.RedirectRule
@@ -97,8 +98,8 @@ fun RedirectEditScreen(
                     Text(
                         text = stringResource(Res.string.redirect_rule_configuration),
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colors.primary
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colors.secondaryVariant
                     )
 
                     // From Pattern Field
@@ -229,8 +230,8 @@ fun RedirectEditScreen(
                     Text(
                         text = stringResource(Res.string.help),
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colors.primary
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colors.secondaryVariant
                     )
                     Text(
                         text = stringResource(Res.string.help_from_pattern),
@@ -293,7 +294,7 @@ private fun RegexTestDialog(
                     Text(
                         text = testResult,
                         style = MaterialTheme.typography.body2,
-                        color = if (testResult.startsWith("✓")) MaterialTheme.colors.primary else MaterialTheme.colors.error
+                        color = if (testResult.startsWith("✓")) SuccessGreen else MaterialTheme.colors.error
                     )
                 }
             }

@@ -319,38 +319,20 @@ function openInSQLEditor() {
     }
 }
 
-function createTable() {
+async function createTable() {
     const sql = generateSQL();
     if (!sql) return;
-    
+
     // Show loader
     document.getElementById('loader').style.display = 'block';
-
-    // Send request to create table
-    fetch('/api/db/query?' + new URLSearchParams({
-        'include-names': true,
-        'limit': 100
-    }).toString(), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'text/plain'
-        },
-        body: sql
-    })
-    .then(async response => {
-        if (response.ok) {
-            window.location.href = 'index.html';
-        } else {
-            const err = await response.text();
-            alert('Error creating table: ' + err);
-        }
-    })
-    .catch(error => {
+    try {
+        await runSql(sql);
+        window.location.href = 'index.html';
+    } catch (error) {
         alert('Error creating table: ' + error);
-    })
-    .finally(() => {
+    } finally {
         document.getElementById('loader').style.display = 'none';
-    });
+    }
 }
 
 // Initialize the page

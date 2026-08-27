@@ -11,7 +11,7 @@
 </head>
 <body id="root" onload="onPageLoad();">
   <div class="header">
-    <button id="menu-button" class="menu-button" onclick="onMenuClick(event);">☰</button>
+    <button id="menu-button" class="menu-button">☰</button>
     <div id="loader" class="loader"></div>
     <div id="path">System Status Dashboard</div>
   </div>
@@ -24,22 +24,6 @@
       <li class="menu-option" id="mm-back-to-files">Back to files</li>
     </ul>
   </div>
-  <script>
-    function onMenuClick(e) {
-      let menuButton = document.getElementById("menu-button");
-      let mainMenu = document.getElementById("main-menu");
-      let mmBackToFiles = document.getElementById("mm-back-to-files");
-      if (mmBackToFiles) {
-        mmBackToFiles.onclick = function () {
-          window.location.href = "/?forceContents=true";
-        }
-      }
-      let rect = menuButton.getBoundingClientRect();
-      displayContextMenuWithAnchorRect(rect, mainMenu);
-      e.stopPropagation();
-      e.preventDefault();
-    }
-  </script>
 </body>
 </html>
 

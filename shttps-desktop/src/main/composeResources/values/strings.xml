@@ -270,6 +270,15 @@
     <string name="label_os_architecture">OS Architecture</string>
     <string name="unknown">Unknown</string>
 
+    <!-- Attributions -->
+    <string name="attributions">Third-party licenses</string>
+    <string name="attributions_intro">This application is built with the open source components listed below. Each remains the property of its authors and is distributed under its own license.</string>
+    <string name="attributions_shown_for">Shown for: %1$s on %2$s</string>
+    <string name="attributions_none">No third-party component information is available in this build.</string>
+    <string name="attribution_website">Website</string>
+    <string name="attribution_license">License</string>
+    <string name="attribution_source">Source</string>
+
     <!-- Shared chrome / dialogs -->
     <string name="cd_back">Back</string>
     <string name="cd_menu">Menu</string>

@@ -4,10 +4,44 @@ let selectedFiles = [];
 let lastSelectedElement = null;
 let currentPath = decodeURIComponent(window.location.pathname);
 let currentSearchQuery = null;
-let touchscreen = window.matchMedia("(any-pointer: coarse)").matches;
 let allowEditing = false;
 
 let resizeTimer;
+
+const TABLE_COLUMNS = [
+  { sort: "default", label: "File Name", grow: 1 },
+  { sort: "modified", label: "Last Modified", width: "190px" },
+  { sort: "size", label: "Size", width: "70px" }
+];
+
+const THUMBNAIL_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "bmp", "tga", "avi", "mp4", "3gp"];
+
+const EXTENSIONS_TO_STORE_UNCOMPRESSED = "mp3,aacmp3,aac,ogg,m4a,mp4,mkv,avi,mov,webm,flac,opus,jpg,jpeg,png,gif,webp,heic,heif,tiff,pdf,docx,xlsx,pptx,odt,ods,odp,epub,cbz,cbr,zip,rar,7z,gz,xz,bz2,tar.gz,tgz,apk,jar,war,ear,iso,dmg";
+
+/** Percent-encodes every path segment, leaving the separators alone. */
+function encodePath(path) {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+/** The inverse of encodePath: an href from the listing back to a plain path. */
+function decodePath(href) {
+  return href.split("/").map(decodeURIComponent).join("/");
+}
+
+/** The <a> of every file item currently rendered, in display order. */
+function listedFileItems() {
+  return Array.from(document.querySelectorAll("#files-container .file-item-wrapper > a.file-item"));
+}
+
+/** Names of the items currently listed, to detect upload and paste conflicts. */
+function listedFileNames() {
+  return listedFileItems().map(a => extractFileOrFolderName(decodePath(a.getAttribute("href"))));
+}
+
+/** The view mode the user picked, or the best default this server can offer. */
+function getViewMode() {
+  return localStorage.getItem("file-list-view-mode") || getDefaultViewMode();
+}
 
 function getDefaultViewMode() {
   // grid view requires thumbnails support (radioGrid rendered server-side) and JS running
@@ -17,97 +51,40 @@ function getDefaultViewMode() {
 function renderFileList() {
   let container = document.getElementById("files-container");
   container.innerHTML = "";
-  let viewMode = localStorage.getItem("file-list-view-mode");
-  if (!viewMode) {
-    viewMode = getDefaultViewMode();
-  }
-  if (smallScreen) {
-    viewMode = "list";
-  }
-  let itemsPerRow = 1;
+  let viewMode = smallScreen ? "list" : getViewMode();
   let availableWidth = window.innerWidth - 20;//- page padding
   let itemsMarging = 5;
-  if (viewMode == "list") {
-    let minItemSize = 300;
-    itemsPerRow = Math.floor(availableWidth / minItemSize);
-  } else if (viewMode == "grid") {
-    let minItemSize = 140;
-    itemsPerRow = Math.floor(availableWidth / minItemSize);
-  }
-  if (itemsPerRow == 0) itemsPerRow = 1;
+  //table is one item per row, the other modes fit as many as their minimal size allows
+  let minItemSize = viewMode == "grid" ? 140 : 300;
+  let itemsPerRow = viewMode == "table" ? 1 : Math.floor(availableWidth / minItemSize);
+  if (itemsPerRow < 1) itemsPerRow = 1;//a viewport narrower than one item still gets one column
   let itemWidth = (availableWidth - (itemsMarging * (itemsPerRow - 1))) / itemsPerRow;
-  let itemsInRow = 0;
-  let columnsTemplate = "";
-  for (let i = 0; i < itemsPerRow; i++) {
-    columnsTemplate += "1fr ";//itemWidth+"px ";
-  }
-  container.style.gridTemplateColumns = columnsTemplate;
+  container.style.gridTemplateColumns = "1fr ".repeat(itemsPerRow);
+  container.style.gridAutoRows = viewMode == "grid" ? itemWidth + "px" : "auto";
   container.dataset.viewMode = viewMode;
 
-  switch (viewMode) {
-    case "grid":
-      container.style.gridAutoRows = itemWidth + "px";
-      break;
-
-    case "table":
-      container.style.gridAutoRows = "auto";
-      let captionDiv = document.createElement("div");
-      captionDiv.classList.add("table-caption");
-
-      let currentSort = localStorage.sort ? localStorage.sort : "default";
-      let currentSortReversed = localStorage.sortReversed == "true";
-      let sortMark = "";
-
-      let fileNameCaptionDiv = document.createElement("div");
-      if (currentSort == "default") {
-        sortMark = currentSortReversed ? "↑" : "↓";
-      } else sortMark = "";
-      fileNameCaptionDiv.innerText = sortMark + " File Name";
-      fileNameCaptionDiv.style.flexGrow = 1;
-      fileNameCaptionDiv.addEventListener("click", function () { tableSortChange("default"); });
-      captionDiv.appendChild(fileNameCaptionDiv);
-      let modifiedCaptionDiv = document.createElement("div");
-      if (currentSort == "modified") {
-        sortMark = currentSortReversed ? "↑" : "↓";
-      } else sortMark = "";
-      modifiedCaptionDiv.innerText = sortMark + " Last Modified";
-      modifiedCaptionDiv.style.width = "190px";
-      modifiedCaptionDiv.addEventListener("click", function () { tableSortChange("modified"); });
-      captionDiv.appendChild(modifiedCaptionDiv);
-      let fileSizeCaptionDiv = document.createElement("div");
-      if (currentSort == "size") {
-        sortMark = currentSortReversed ? "↑" : "↓";
-      } else sortMark = "";
-      fileSizeCaptionDiv.innerText = sortMark + " Size";
-      fileSizeCaptionDiv.style.width = "70px";
-      fileSizeCaptionDiv.addEventListener("click", function () { tableSortChange("size"); });
-      captionDiv.appendChild(fileSizeCaptionDiv);
-      container.appendChild(captionDiv);
-      break;
-
-    default:
-      container.style.gridAutoRows = "auto";
-      break;
+  if (viewMode == "table") {
+    container.appendChild(createTableCaption());
   }
 
-  for (let i = 0; i < files.length; i++) {
-    let file = files[i];
-    
-    // Create wrapper for file item (to support checkbox)
-    let fileItemWrapper = document.createElement("div");
-    fileItemWrapper.classList.add("file-item-wrapper");
-    
-    let a = document.createElement("a");
-    a.dataset.directory = file.directory;
-    let path = currentPath + (currentPath.endsWith("/") ? "" : "/") + 
+  for (let file of files) {
+    let path = currentPath + (currentPath.endsWith("/") ? "" : "/") +
       (file.relativePath != null ? file.relativePath : "") + file.name;
     if (file.directory) {
       path = path + "/";
     }
-    let href = path.split("/").map(encodeURIComponent).join("/");
+    let href = encodePath(path);
+
+    // Create wrapper for file item (to support checkbox)
+    let fileItemWrapper = document.createElement("div");
+    fileItemWrapper.classList.add("file-item-wrapper");
+
+    let a = document.createElement("a");
+    a.classList.add("file-item");
+    a.dataset.directory = file.directory;
     a.setAttribute("href", href);
     a.setAttribute("title", file.name);
-    
+
     // Add checkbox when deviceHasPointer == false
     if (!deviceHasPointer && allowEditing) {
       let checkbox = document.createElement("input");
@@ -120,10 +97,8 @@ function renderFileList() {
       });
       fileItemWrapper.appendChild(checkbox);
     }
-    
+
     a.addEventListener('click', onFileItemClick);
-    
-    // Set up event handlers based on deviceHasPointer
     if (deviceHasPointer) {
       // With pointer: right click shows context menu, double click opens
       a.addEventListener('contextmenu', function (e) {
@@ -140,90 +115,107 @@ function renderFileList() {
         showContextMenu(e.clientX, e.clientY, href, file.directory);
       });
     }
-    a.classList.add("file-item");
 
-    if (viewMode == "grid") {
-      a.classList.add("grid-card");
-      let mediaWrapper = document.createElement("div");
-      mediaWrapper.classList.add("grid-card-media");
-      a.appendChild(mediaWrapper);
-
-      let fileExt = file.name.includes(".") ? file.name.split('.').pop().toLowerCase() : "";
-      if (!file.directory) {
-        let needThumbnail = false;
-        if (["jpg", "jpeg", "png", "gif", "bmp", "tga", "avi", "mp4", "3gp"].includes(fileExt)) {
-          needThumbnail = true;
-        }
-        try {
-          let f = new File(file.name);
-          if (f.type.startsWith("image/") || f.type.startsWith("video/")) {
-            needThumbnail = true;
-          }
-        } catch (error) { }
-        if (needThumbnail) {
-          let thumbnail = document.createElement("img");
-          thumbnail.src = "/api/file/thumbnail?path=" + encodeURIComponent(path);
-          thumbnail.classList.add("grid-file-thumbnail");
-          thumbnail.addEventListener('error', function (e) {
-            e.target.src = "/shttps-static-public/file-browser/broken-thumbnail.png";
-            thumbnail.style["object-fit"] = "contain";
-          });
-          mediaWrapper.appendChild(thumbnail);
-        } else {
-          let fileEXTDiv = document.createElement("div");
-          fileEXTDiv.innerText = fileExt ? fileExt : file.name.substring(0, 4).toUpperCase();
-          fileEXTDiv.classList.add("grid-file-ext");
-          mediaWrapper.appendChild(fileEXTDiv);
-        }
-      } else {
-        let folderPlaceholder = document.createElement("div");
-        folderPlaceholder.classList.add("grid-folder-placeholder");
-        folderPlaceholder.innerText = "📁";
-        mediaWrapper.appendChild(folderPlaceholder);
-      }
-      let fileNameOverlay = document.createElement("div");
-      fileNameOverlay.innerText = file.name;
-      fileNameOverlay.classList.add("grid-file-name");
-      a.appendChild(fileNameOverlay);
-    } else {
-      let div = document.createElement("div");
-      if (file.directory) div.classList.add("folder");
-      switch (viewMode) {
-        case "table":
-          a.style.textDecoration = "none";
-          div.style.display = "flex";
-          let fileNameDiv = document.createElement("div");
-          fileNameDiv.innerText = file.name;
-          fileNameDiv.classList.add("table-file-name");
-          div.appendChild(fileNameDiv);
-          let modifiedDiv = document.createElement("div");
-          modifiedDiv.innerText = new Date(file.modified).toLocaleString().replace(",", "");
-          modifiedDiv.classList.add("table-file-date");
-          div.appendChild(modifiedDiv);
-          let sizeDiv = document.createElement("div");
-          if (!file.directory) {
-            sizeDiv.innerText = file.length;
-          }
-          sizeDiv.classList.add("table-file-size");
-          div.appendChild(sizeDiv);
-          break;
-        default://list
-          div.innerText = file.name;
-          break;
-      }
-      a.appendChild(div);
+    switch (viewMode) {
+      case "grid":
+        appendGridCardContent(a, file, path);
+        break;
+      case "table":
+        appendTableRowContent(a, file);
+        break;
+      default://list
+        let div = document.createElement("div");
+        if (file.directory) div.classList.add("folder");
+        div.innerText = file.name;
+        a.appendChild(div);
+        break;
     }
+
     fileItemWrapper.appendChild(a);
     container.appendChild(fileItemWrapper);
-    itemsInRow++;
-    if (itemsInRow >= itemsPerRow) {
-      itemsInRow = 0;
+  }
+
+  let dropHint = document.getElementById("drop-hint");
+  if (dropHint) {
+    let showDropHint = allowEditing && deviceHasPointer && files.length < 2;
+    dropHint.style.display = showDropHint ? "inline-block" : "none";
+  }
+}
+
+/** The clickable header of the table view, one cell per sortable column. */
+function createTableCaption() {
+  let currentSort = localStorage.sort ? localStorage.sort : "default";
+  let currentSortReversed = localStorage.sortReversed == "true";
+  let captionDiv = document.createElement("div");
+  captionDiv.classList.add("table-caption");
+  for (let column of TABLE_COLUMNS) {
+    let columnDiv = document.createElement("div");
+    let sortMark = currentSort == column.sort ? (currentSortReversed ? "↑" : "↓") : "";
+    columnDiv.innerText = sortMark + " " + column.label;
+    if (column.grow) columnDiv.style.flexGrow = column.grow;
+    if (column.width) columnDiv.style.width = column.width;
+    columnDiv.addEventListener("click", function () { tableSortChange(column.sort); });
+    captionDiv.appendChild(columnDiv);
+  }
+  return captionDiv;
+}
+
+function appendGridCardContent(a, file, path) {
+  a.classList.add("grid-card");
+  let mediaWrapper = document.createElement("div");
+  mediaWrapper.classList.add("grid-card-media");
+  a.appendChild(mediaWrapper);
+
+  if (file.directory) {
+    let folderPlaceholder = document.createElement("div");
+    folderPlaceholder.classList.add("grid-folder-placeholder");
+    folderPlaceholder.innerText = "📁";
+    mediaWrapper.appendChild(folderPlaceholder);
+  } else {
+    let fileExt = file.name.includes(".") ? file.name.split('.').pop().toLowerCase() : "";
+    if (THUMBNAIL_EXTENSIONS.includes(fileExt)) {
+      let thumbnail = document.createElement("img");
+      thumbnail.src = "/api/file/thumbnail?path=" + encodeURIComponent(path);
+      thumbnail.classList.add("grid-file-thumbnail");
+      thumbnail.addEventListener('error', function (e) {
+        e.target.src = "/shttps-static-public/file-browser/broken-thumbnail.png";
+        thumbnail.style["object-fit"] = "contain";
+      });
+      mediaWrapper.appendChild(thumbnail);
+    } else {
+      let fileEXTDiv = document.createElement("div");
+      fileEXTDiv.innerText = fileExt ? fileExt : file.name.substring(0, 4).toUpperCase();
+      fileEXTDiv.classList.add("grid-file-ext");
+      mediaWrapper.appendChild(fileEXTDiv);
     }
   }
 
-  let showDropHint = allowEditing && !touchscreen && files.length < 2;
-  let dropHint = document.getElementById("drop-hint");
-  if (dropHint) dropHint.style.display = showDropHint ? "inline-block" : "none";
+  let fileNameOverlay = document.createElement("div");
+  fileNameOverlay.innerText = file.name;
+  fileNameOverlay.classList.add("grid-file-name");
+  a.appendChild(fileNameOverlay);
+}
+
+function appendTableRowContent(a, file) {
+  a.style.textDecoration = "none";
+  let div = document.createElement("div");
+  if (file.directory) div.classList.add("folder");
+  div.style.display = "flex";
+  let fileNameDiv = document.createElement("div");
+  fileNameDiv.innerText = file.name;
+  fileNameDiv.classList.add("table-file-name");
+  div.appendChild(fileNameDiv);
+  let modifiedDiv = document.createElement("div");
+  modifiedDiv.innerText = new Date(file.modified).toLocaleString().replace(",", "");
+  modifiedDiv.classList.add("table-file-date");
+  div.appendChild(modifiedDiv);
+  let sizeDiv = document.createElement("div");
+  if (!file.directory) {
+    sizeDiv.innerText = file.length;
+  }
+  sizeDiv.classList.add("table-file-size");
+  div.appendChild(sizeDiv);
+  a.appendChild(div);
 }
 
 function tableSortChange(clickedSort) {
@@ -252,33 +244,17 @@ function onUploadFilesSelected(input) {
 
 function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
   if (uploadInProgress || !allowEditing) return;
-  let xhr = new XMLHttpRequest();
   let formData = new FormData();
-  let lastSpeedUpdateTime = new Date();
-  let lastSpeedLoaded = 0;
+  let listed = listedFileNames();
   let conflicts = new Set();
   for (let i = 0; i < files.length; i++) {
     let file = files[i];
     let nameWithRelativePath = relativePaths != null ? relativePaths[i] : file.name;
     formData.append("files[]", file, nameWithRelativePath);
-    let fileElements = document.getElementById("files-container").childNodes;
-    for (let j = 0; j < fileElements.length; j++) {
-      let element = fileElements[j];
-      // Handle both old structure (direct 'a' elements) and new structure (wrapped in div)
-      let a = element.nodeName.toLowerCase() == 'a' ? element : element.querySelector('a');
-      if (!a) continue;
-      let href = a.getAttribute("href");
-      let path = href.split("/").map(decodeURIComponent).join("/");
-      let upperLevelFileNameElement = relativePaths != null ? relativePaths[i] : file.name;
-      if (upperLevelFileNameElement.startsWith("/")) {
-        upperLevelFileNameElement = upperLevelFileNameElement.substring(1);
-      }
-      if (upperLevelFileNameElement.includes("/")) {
-        upperLevelFileNameElement = upperLevelFileNameElement.split("/")[0];
-      }
-      if (extractFileOrFolderName(path) == upperLevelFileNameElement) {
-        conflicts.add(upperLevelFileNameElement);
-      }
+    //only the topmost element of an uploaded tree can clash with what is listed here
+    let topLevelName = nameWithRelativePath.replace(/^\//, "").split("/")[0];
+    if (listed.includes(topLevelName)) {
+      conflicts.add(topLevelName);
     }
   }
 
@@ -296,10 +272,13 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
   let button = document.getElementById("upload-button");
   let textElement = button.querySelector(".button__text");
   let speedElement = button.querySelector(".button__speed");
-  textElement.textContent = "UPLOADING...";
-  if (speedElement) {
-    speedElement.textContent = "";
-    speedElement.style.visibility = "hidden";
+  let progressElement = button.querySelector(".button__progress");
+  let lastSpeedUpdateTime = new Date();
+  let lastSpeedLoaded = 0;
+
+  function showSpeed(text) {
+    speedElement.textContent = text;
+    speedElement.style.visibility = text ? "visible" : "hidden";
   }
 
   function formatSpeed(bytesPerSecond) {
@@ -313,64 +292,48 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
     return Math.max(bytesPerSecond, 1).toFixed(0) + " B/s";
   }
 
+  function uploadFinished() {
+    textElement.textContent = "UPLOAD FILES";
+    progressElement.classList.add('notransition');
+    progressElement.style.width = "0%";
+    progressElement.offsetHeight; // Trigger a reflow, flushing the CSS changes
+    progressElement.classList.remove('notransition');
+    showSpeed("");
+    uploadInProgress = false;
+  }
+
+  textElement.textContent = "UPLOADING...";
+  showSpeed("");
+
+  let xhr = new XMLHttpRequest();
+
   xhr.upload.onprogress = function (event) {
     let now = new Date();
     let timeSinceUpdate = (now - lastSpeedUpdateTime) / 1000;
     if ((timeSinceUpdate >= 1) || event.loaded === event.total) {
       let bytesDiff = event.loaded - lastSpeedLoaded;
       let bytesPerSecond = timeSinceUpdate > 0 ? bytesDiff / timeSinceUpdate : 0;
-      if (speedElement) {
-        let speedText = formatSpeed(bytesPerSecond);
-        if (speedText) {
-          speedElement.textContent = speedText;
-          speedElement.style.visibility = "visible";
-        }
-      }
+      showSpeed(formatSpeed(bytesPerSecond));
       lastSpeedUpdateTime = now;
       lastSpeedLoaded = event.loaded;
     }
-    let percent = event.loaded * 100 / event.total;
-    button.querySelector(".button__progress").style.width = percent + "%";
+    progressElement.style.width = (event.loaded * 100 / event.total) + "%";
   };
 
   xhr.onload = function () {
-    textElement.textContent = "UPLOAD FILES";
-    let progressElement = button.querySelector(".button__progress");
-    progressElement.classList.add('notransition');
-    progressElement.style.width = "0%";
-    progressElement.offsetHeight; // Trigger a reflow, flushing the CSS changes
-    progressElement.classList.remove('notransition');
-    uploadInProgress = false;
-    if (speedElement) {
-      speedElement.textContent = "";
-      speedElement.style.visibility = "hidden";
-    }
-
+    uploadFinished();
     if (xhr.status == 204) {
       setTimeout(() => {//wait for server to process files
         loadPath(basePath);
       }, 500);
     } else {
-      // Handle HTTP error status codes
       alert('Error while uploading files: ' + xhr.status + ' ' + xhr.statusText + '\n' + xhr.responseText);
       loadPath(basePath);
     }
   };
 
-  xhr.onerror = function (e) {
-    textElement.textContent = "UPLOAD FILES";
-    let progressElement = button.querySelector(".button__progress");
-    progressElement.classList.add('notransition');
-    progressElement.style.width = "0%";
-    progressElement.offsetHeight;
-    progressElement.classList.remove('notransition');
-    uploadInProgress = false;
-    if (speedElement) {
-      speedElement.textContent = "";
-      speedElement.style.visibility = "hidden";
-    }
-    
-    // Handle network-level errors
+  xhr.onerror = function () {
+    uploadFinished();
     alert('Network error while uploading files. Please check your connection.');
     loadPath(basePath);
   };
@@ -383,27 +346,21 @@ function startFilesUpload(basePath, files, relativePaths, emptyDirs) {
 function onCheckboxChange(e) {
   let checkbox = e.currentTarget;
   let href = checkbox.dataset.href;
-  let fileItemWrapper = checkbox.closest(".file-item-wrapper");
-  let a = fileItemWrapper ? fileItemWrapper.querySelector("a") : null;
-  
+  let a = checkbox.closest(".file-item-wrapper").querySelector("a");
+  let index = selectedFiles.indexOf(href);
   if (checkbox.checked) {
-    if (selectedFiles.indexOf(href) === -1) {
-      selectedFiles.push(href);
-    }
-    if (a) a.classList.add("selected-item");
+    if (index === -1) selectedFiles.push(href);
+    a.classList.add("selected-item");
   } else {
-    let index = selectedFiles.indexOf(href);
-    if (index > -1) {
-      selectedFiles.splice(index, 1);
-    }
-    if (a) a.classList.remove("selected-item");
+    if (index > -1) selectedFiles.splice(index, 1);
+    a.classList.remove("selected-item");
   }
   updateButtonStates();
 }
 
 function onFileItemOpen(href, isDirectory) {
   if (isDirectory) {
-    let path = href.split("/").map(decodeURIComponent).join("/");
+    let path = decodePath(href);
     if (path.endsWith("/../")) {
       let parts = path.split("/");
       parts.pop(); // remove empty string after trailing slash
@@ -426,21 +383,7 @@ function onFileItemOpen(href, isDirectory) {
 function clearAllSelections(options = {}) {
   let { clearDom = true, updateButtons = true } = options;
   if (clearDom) {
-    let container = document.getElementById("files-container");
-    if (container) {
-      let fileElements = container.childNodes;
-      for (let i = 0; i < fileElements.length; i++) {
-        let element = fileElements[i];
-        if (!element || element.nodeType !== 1) continue;
-        let elementA = element.nodeName.toLowerCase() == 'a' ? element : element.querySelector("a");
-        if (!elementA) continue;
-        elementA.classList.remove("selected-item");
-        if (!deviceHasPointer) {
-          let checkbox = element.querySelector(".file-checkbox");
-          if (checkbox) checkbox.checked = false;
-        }
-      }
-    }
+    listedFileItems().forEach(a => setItemSelected(a, false));
   }
   selectedFiles = [];
   lastSelectedElement = null;
@@ -451,27 +394,15 @@ function clearAllSelections(options = {}) {
 
 function toggleFileSelection(href, a, e) {
   if (a.textContent == "..") return;
-  
+
   // Check for Ctrl/Cmd key (for multi-select toggle)
   let ctrlKey = e && (e.ctrlKey || e.metaKey);
-  
+
   // Handle shift-click for range selection (only for pointer devices)
   if (deviceHasPointer && e && e.shiftKey && lastSelectedElement != null) {
-    let fileElements = document.getElementById("files-container").childNodes;
-    let startIndex = -1;
-    let endIndex = -1;
-    for (let i = 0; i < fileElements.length; i++) {
-      let element = fileElements[i];
-      if (element.nodeName.toLowerCase() != 'div') continue;
-      let elementA = element.querySelector("a");
-      if (!elementA) continue;
-      if (elementA == a) {
-        endIndex = i;
-      }
-      if (elementA == lastSelectedElement) {
-        startIndex = i;
-      }
-    }
+    let items = listedFileItems();
+    let startIndex = items.indexOf(lastSelectedElement);
+    let endIndex = items.indexOf(a);
     if (startIndex != -1 && endIndex != -1) {
       if (startIndex > endIndex) {
         let tmp = startIndex;
@@ -479,15 +410,12 @@ function toggleFileSelection(href, a, e) {
         endIndex = tmp;
       }
       for (let i = startIndex; i <= endIndex; i++) {
-        let element = fileElements[i];
-        if (element.nodeName.toLowerCase() != 'div') continue;
-        let elementA = element.querySelector("a");
-        if (!elementA || elementA.textContent == "..") continue;
+        let elementA = items[i];
+        if (elementA.textContent == "..") continue;
         let elementHref = elementA.getAttribute("href");
-        let index = selectedFiles.indexOf(elementHref);
-        if (index === -1) {
+        if (selectedFiles.indexOf(elementHref) === -1) {
           selectedFiles.push(elementHref);
-          elementA.classList.add("selected-item");
+          setItemSelected(elementA, true);
         }
       }
       lastSelectedElement = a;
@@ -495,36 +423,32 @@ function toggleFileSelection(href, a, e) {
       return;
     }
   }
-  
-  // Handle selection based on modifier keys
+
   if (deviceHasPointer && !ctrlKey) {
     // Without Ctrl: clear all selections and select only this item
     clearAllSelections({ updateButtons: false });
     selectedFiles.push(href);
-    a.classList.add("selected-item");
+    setItemSelected(a, true);
   } else {
     // With Ctrl (or touch device): toggle this item
     let index = selectedFiles.indexOf(href);
     if (index > -1) {
       selectedFiles.splice(index, 1);
-      a.classList.remove("selected-item");
-      if (!deviceHasPointer) {
-        let wrapper = a.closest(".file-item-wrapper");
-        let checkbox = wrapper ? wrapper.querySelector(".file-checkbox") : null;
-        if (checkbox) checkbox.checked = false;
-      }
+      setItemSelected(a, false);
     } else {
       selectedFiles.push(href);
-      a.classList.add("selected-item");
-      if (!deviceHasPointer) {
-        let wrapper = a.closest(".file-item-wrapper");
-        let checkbox = wrapper ? wrapper.querySelector(".file-checkbox") : null;
-        if (checkbox) checkbox.checked = true;
-      }
+      setItemSelected(a, true);
     }
   }
   lastSelectedElement = a;
   updateButtonStates();
+}
+
+/** Marks one file item selected or not, keeping its checkbox (touch UI) in step. */
+function setItemSelected(a, selected) {
+  a.classList.toggle("selected-item", selected);
+  let checkbox = a.closest(".file-item-wrapper").querySelector(".file-checkbox");
+  if (checkbox) checkbox.checked = selected;
 }
 
 function updateButtonStates() {
@@ -565,98 +489,56 @@ function updateScreenSizeAvareUI() {
   renderFileList();
 }
 
-function onNewFolderClick() {
+async function onNewFolderClick() {
   let name = prompt("Please enter new folder name", "New folder");
   if (name == null) return;
-  let xhr = new XMLHttpRequest();
-  xhr.open("POST", "/api/file/new-folder", true);
-  xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-  let data = {
-    path: currentPath,
-    name: name
-  };
-  let urlEncodedDataPairs = [], key;
-  for (key in data) {
-    urlEncodedDataPairs.push(encodeURIComponent(key) + '=' + encodeURIComponent(data[key]));
+  try {
+    await api("POST", "/api/file/new-folder", new URLSearchParams({ path: currentPath, name: name }));
+  } catch (error) {
+    alert("Can not create new folder \"" + name + "\": " + error.message);
   }
-  xhr.send(urlEncodedDataPairs.join("&"));
-  xhr.onload = function () {
-    if (this.status == 204) {
-      loadPath(currentPath);
-    } else {
-      alert("Can not create new folder \"" + name + "\": " + this.statusText + "\n" + this.responseText);
-      loadPath(currentPath);
-    }
-  };
+  loadPath(currentPath);
 }
 
-function onNewFileClick() {
+async function onNewFileClick() {
   let name = prompt("Please enter new file name", "example.txt");
   if (name == null) return;
-  let xhr = new XMLHttpRequest();
-  xhr.open("PUT", "/api/file/upload?path=" + encodeURIComponent(currentPath), true);
   let formData = new FormData();
   formData.append("files[]", new Blob(), name);
-  xhr.send(formData);
-  xhr.onload = function () {
-    if (this.status == 204) {
-      loadPath(currentPath);
-    } else {
-      alert("Can not create new file \"" + name + "\": " + this.statusText + "\n" + this.responseText);
-      loadPath(currentPath);
-    }
-  };
+  try {
+    await api("PUT", "/api/file/upload?path=" + encodeURIComponent(currentPath), formData);
+  } catch (error) {
+    alert("Can not create new file \"" + name + "\": " + error.message);
+  }
+  loadPath(currentPath);
 }
 
-function onPasteClick() {
+async function onPasteClick() {
   let clipboardAction = sessionStorage.getItem("clipboardAction");
   let clipboard = JSON.parse(sessionStorage.getItem("clipboard"));
 
-  let fileElements = document.getElementById("files-container").childNodes;
-  let conflicts = [];
-  for (let i = 0; i < fileElements.length; i++) {
-    let element = fileElements[i];
-    // Handle both old structure (direct 'a' elements) and new structure (wrapped in div)
-    let a = element.nodeName.toLowerCase() == 'a' ? element : element.querySelector('a');
-    if (!a) continue;
-    let href = a.getAttribute("href");
-    let path = href.split("/").map(decodeURIComponent).join("/");
-    for (let j = 0; j < clipboard.length; j++) {
-      let cp = clipboard[j];
-      let fileName = extractFileOrFolderName(path)
-      if (extractFileOrFolderName(cp) == fileName) {
-        conflicts.push(fileName);
-      }
-    }
-  }
-
+  let listed = listedFileNames();
+  let conflicts = clipboard.map(extractFileOrFolderName).filter(name => listed.includes(name));
   if (conflicts.length > 0 &&
     !confirm("Do you want to owerride following items: " + conflicts + "?")) {
     return;
   }
 
-  let xhr = new XMLHttpRequest();
-  xhr.open("POST", "/api/file/move", true);
-  xhr.setRequestHeader('Content-Type', 'application/json');
-  let data = {
-    action: clipboardAction,
-    path: currentPath,
-    files: clipboard
-  };
-  xhr.send(JSON.stringify(data));
-  xhr.onload = function () {
-    if (this.status == 204) {
-      if ("move" == clipboardAction) {
-        sessionStorage.removeItem("clipboard");
-        sessionStorage.removeItem("clipboardAction");
-      }
-      loadPath(currentPath);
-    } else {
-      alert("Can not process command: " + this.statusText + "\n" + this.responseText);
-      loadPath(currentPath);
+  try {
+    await api("POST", "/api/file/move", {
+      action: clipboardAction,
+      path: currentPath,
+      files: clipboard
+    });
+    if ("move" == clipboardAction) {
+      sessionStorage.removeItem("clipboard");
+      sessionStorage.removeItem("clipboardAction");
     }
-    updateButtonStates();
-  };
+  } catch (error) {
+    alert("Can not process command: " + error.message);
+  }
+  loadPath(currentPath);
+  updateButtonStates();
 }
 
 function extractFileOrFolderName(path) {
@@ -666,103 +548,57 @@ function extractFileOrFolderName(path) {
   return fileName;
 }
 
-function onRenameClick() {
-  let filePath = selectedFiles[0].split("/").map(decodeURIComponent).join("/");
+async function onRenameClick(path = selectedFiles[0]) {
+  let filePath = decodePath(path);
   let fileName = extractFileOrFolderName(filePath);
   let name = prompt("Please enter new name", fileName);
   if (name == null) return;
-  let xhr = new XMLHttpRequest();
-  xhr.open("POST", "/api/file/rename", true);
-  xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-  let data = {
-    path: filePath,
-    name: name
-  };
-  let urlEncodedDataPairs = [], key;
-  for (key in data) {
-    urlEncodedDataPairs.push(encodeURIComponent(key) + '=' + encodeURIComponent(data[key]));
+  try {
+    await api("POST", "/api/file/rename", new URLSearchParams({ path: filePath, name: name }));
+  } catch (error) {
+    alert("Can not rename file \"" + fileName + "\" to \"" + name + "\": " + error.message);
   }
-  xhr.send(urlEncodedDataPairs.join("&"));
-  xhr.onload = function () {
-    if (this.status != 204) {
-      alert("Can not rename file \"" + fileName + "\" to \"" + name + "\": " + this.statusText + "\n" + this.responseText);
-    }
-    loadPath(currentPath);
-  };
+  loadPath(currentPath);
 }
 
 function onPushToClipboardClick(action) {
-  let decodedPaths = [];
-  for (let i = 0; i < selectedFiles.length; i++) {
-    let decodedPath = selectedFiles[i].split("/").map(decodeURIComponent).join("/");
-    decodedPaths.push(decodedPath);
-  }
-  sessionStorage.setItem("clipboard", JSON.stringify(decodedPaths));
+  sessionStorage.setItem("clipboard", JSON.stringify(selectedFiles.map(decodePath)));
   sessionStorage.setItem("clipboardAction", action);
   // Clear selections after copying/cutting
   clearAllSelections();
 }
 
-function onDeleteClick() {
-  if (!confirm("Are you sure you want to permamently delete " + selectedFiles.length + " selected item[s]")) return;
-  let xhr = new XMLHttpRequest();
-  xhr.open("DELETE", "/api/file/delete", true);
-  xhr.setRequestHeader('Content-Type', 'application/json');
-  let filenames = [];
-  for (let i = 0; i < selectedFiles.length; i++) {
-    let filePath = selectedFiles[i];
-    let fileNameParts = filePath.split("/").map(decodeURIComponent);
-    let fileName = fileNameParts.pop();
-    if (filePath.endsWith("/")) fileName = fileNameParts.pop();//second pop to get folder name
-    filenames.push(fileName);
+async function onDeleteClick(paths = selectedFiles) {
+  if (!confirm("Are you sure you want to permamently delete " + paths.length + " selected item[s]")) return;
+  try {
+    await api("DELETE", "/api/file/delete", {
+      path: currentPath,
+      files: paths.map(path => extractFileOrFolderName(decodePath(path)))
+    });
+  } catch (error) {
+    alert("Error while deleting files: " + error.message);
   }
-  let data = {
-    path: currentPath,
-    files: filenames
-  };
-  xhr.send(JSON.stringify(data));
-  xhr.onload = function () {
-    if (this.status == 204) {
-      loadPath(currentPath);
-    } else {
-      alert("Error while deleting files: " + this.statusText + "\n" + this.responseText);
-      loadPath(currentPath);
-    }
-  };
+  loadPath(currentPath);
 }
 
-function onZipClick() {
-  let filenames = [];
-  for (let i = 0; i < selectedFiles.length; i++) {
-    let filePath = selectedFiles[i];
-    let fileNameParts = filePath.split("/").map(decodeURIComponent);
-    let fileName = fileNameParts.pop();
-    if (filePath.endsWith("/")) fileName = fileNameParts.pop();//second pop to get folder name
-    filenames.push(fileName);
-  }
-
+function onZipClick(paths = selectedFiles) {
   //instead of using xhr, we can use form submit to download file
   let form = document.createElement("form");
   form.setAttribute("method", "post");
-  let currentFolderName = currentPath.split("/").pop();
   form.setAttribute("action", "/api/file/zip");
   form.setAttribute("target", "_blank");
-  let hiddenField = document.createElement("input");
-  hiddenField.setAttribute("type", "hidden");
-  hiddenField.setAttribute("name", "path");
-  hiddenField.setAttribute("value", currentPath);
-  form.appendChild(hiddenField);
-  hiddenField = document.createElement("input");
-  hiddenField.setAttribute("type", "hidden");
-  hiddenField.setAttribute("name", "files");
-  hiddenField.setAttribute("value", JSON.stringify(filenames));
-  form.appendChild(hiddenField);
-  hiddenField = document.createElement("input");
-  hiddenField.setAttribute("type", "hidden");
-  hiddenField.setAttribute("name", "uncompressed");
-  let extensionsToStoreUncompressed = "mp3,aacmp3,aac,ogg,m4a,mp4,mkv,avi,mov,webm,flac,opus,jpg,jpeg,png,gif,webp,heic,heif,tiff,pdf,docx,xlsx,pptx,odt,ods,odp,epub,cbz,cbr,zip,rar,7z,gz,xz,bz2,tar.gz,tgz,apk,jar,war,ear,iso,dmg";
-  hiddenField.setAttribute("value", extensionsToStoreUncompressed);
-  form.appendChild(hiddenField);
+  let fields = {
+    path: currentPath,
+    files: JSON.stringify(paths.map(path => extractFileOrFolderName(decodePath(path)))),
+    uncompressed: EXTENSIONS_TO_STORE_UNCOMPRESSED
+  };
+  for (let name in fields) {
+    let hiddenField = document.createElement("input");
+    hiddenField.setAttribute("type", "hidden");
+    hiddenField.setAttribute("name", name);
+    hiddenField.setAttribute("value", fields[name]);
+    form.appendChild(hiddenField);
+  }
   document.body.appendChild(form);
   form.submit();
   document.body.removeChild(form);
@@ -781,52 +617,40 @@ function onSearchClick() {
   loadPath(currentPath, searchQuery);
 }
 
-function loadPath(directoryPath, searchQuery = null) {
+async function loadPath(directoryPath, searchQuery = null) {
   // Clear selections when navigating to a new path
   clearAllSelections({ clearDom: false });
   currentPath = directoryPath;
   currentSearchQuery = searchQuery;
   updateSearchButtonState();
+  let viewMode = getViewMode();
   let sort = "default";
-  let currentSortReversed = "false";
-  let viewMode = localStorage.getItem("file-list-view-mode");
-  if (!viewMode) {
-    viewMode = getDefaultViewMode();
-  }
+  let sortReversed = false;
   if (viewMode == "grid") {
     sort = "gallery";
   } else if (viewMode == "table") {
     sort = localStorage.sort ? localStorage.sort : "default";
-    currentSortReversed = localStorage.sortReversed == "true";
+    sortReversed = localStorage.sortReversed == "true";
   }
   document.getElementById("path").innerText = directoryPath;
   document.getElementById("loader").style.visibility = "visible";
   if (window.history.state == null || window.history.state.path != directoryPath) {
-    let encodedPath = directoryPath.split("/").map(encodeURIComponent).join("/");
-    window.history.pushState({ path: directoryPath }, directoryPath, encodedPath);
+    window.history.pushState({ path: directoryPath }, directoryPath, encodePath(directoryPath));
   }
-  let req = new XMLHttpRequest();
-  req.overrideMimeType("application/json");
-  req.open('GET', "/api/file/list?path=" + encodeURIComponent(directoryPath) + 
-  "&sort=" + sort + "&sort-reversed=" + currentSortReversed + 
-  "&search=" + encodeURIComponent(searchQuery || ""), true);
-  req.onload = function () {
-    if (req.status != 200) {
-      alert("Error while loading list of files: " + req.statusText + "\n" + req.responseText);
-      return;
-    }
-    files = JSON.parse(req.responseText);
+  let query = new URLSearchParams({
+    path: directoryPath,
+    sort: sort,
+    "sort-reversed": sortReversed,
+    search: searchQuery || ""
+  });
+  try {
+    files = await api("GET", "/api/file/list?" + query);
     renderFileList();
-  };
-  req.onloadend = function (e) {
+  } catch (error) {
+    alert("Error while loading list of files: " + error.message);
+  } finally {
     document.getElementById("loader").style.visibility = "hidden";
   }
-  req.onreadystatechange = () => {
-    if (req.status === 500) {
-      alert("Error while loading list of files");
-    }
-  };
-  req.send(null);
 }
 
 function onFileItemClick(e) {
@@ -966,17 +790,13 @@ function showContextMenu(x, y, href, isFolder) {
   let moRename = document.getElementById("mo-rename");
   moRename.style.display = !allowEditing ? "none" : "block";
   moRename.onclick = function () {
-    selectedFiles = [href];
-    onRenameClick();
-    selectedFiles = [];
+    onRenameClick(href);
   }
   //delete
   let moDelete = document.getElementById("mo-delete");
   moDelete.style.display = !allowEditing ? "none" : "block";
   moDelete.onclick = function () {
-    selectedFiles = [href];
-    onDeleteClick();
-    selectedFiles = [];
+    onDeleteClick([href]);
   }
   //download
   let moDownload = document.getElementById("mo-download");
@@ -989,9 +809,7 @@ function showContextMenu(x, y, href, isFolder) {
   let moZip = document.getElementById("mo-zip");
   moZip.style.display = isFolder ? "block" : "none";
   moZip.onclick = function () {
-    selectedFiles = [href];
-    onZipClick();
-    selectedFiles = [];
+    onZipClick([href]);
   }
   //copy link
   let moCopyLink = document.getElementById("mo-copy-link");
@@ -1022,80 +840,34 @@ function showContextMenu(x, y, href, isFolder) {
   displayContextMenu(x, y, contextMenu);
 }
 
-function onMenuClick(e) {
-  let menuButton = document.getElementById("menu-button");
-  let mainMenu = document.getElementById("main-menu");
-  let mmStatus = document.getElementById("mm-status");
-  let mmLogin = document.getElementById("mm-login");
-  let mmDatabase = document.getElementById("mm-database");
-  if (mmStatus) {
-    mmStatus.onclick = function () {
-      window.location.href = "/shttps-static-public/status/index.html";
-    }
-  }
-  if (mmDatabase) {
-    mmDatabase.onclick = function () {
-      window.location.href = "/shttps-static-public/db-browser/index.html";
-    }
-  }
-  let mmScreen = document.getElementById("mm-screen");
-  if (mmScreen) {
-    mmScreen.onclick = function () {
-      window.location.href = "/shttps-static-public/screen/index.html";
-    }
-  }
-  if (mmLogin) {
-    mmLogin.onclick = function () {
-      window.location.href = "/shttps-pages/login/";
-    }
-  }
-  let mmLogout = document.getElementById("mm-logout");
-  if (mmLogout) {
-    mmLogout.onclick = function () {
-      let xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/user/logout", true);
-      xhr.send();
-      xhr.onload = function () {
-        if (this.status == 204) {
-          window.location.href = "/";
-        } else {
-          alert("Error while logging out: " + this.statusText + "\n" + this.responseText);
-        }
-      };
-      xhr.onerror = function () {
-        alert("Error while logging out: " + this.statusText + "\n" + this.responseText);
-      };
-    }
-  }
-  let rect = menuButton.getBoundingClientRect();
-  displayContextMenuWithAnchorRect(rect, mainMenu);
-  e.stopPropagation();
-  e.preventDefault();
-}
-
 function onPageLoad() {
   // Prevent native context menu on mobile
   document.addEventListener('contextmenu', function(e) {
     e.preventDefault();
   });
 
+  setupMainMenu({
+    "mm-status": "/shttps-static-public/status/index.html",
+    "mm-database": "/shttps-static-public/db-browser/index.html",
+    "mm-screen": "/shttps-static-public/screen/index.html",
+    "mm-login": "/shttps-pages/login/",
+    "mm-logout": onLogoutClick
+  });
+
   updateButtonStates();
   updateScreenSizeAvareUI();
 
-  let viewMode = localStorage.getItem("file-list-view-mode");
-  if (!viewMode) {
-    viewMode = getDefaultViewMode();
-  }
   let actionBar = document.getElementById("actionbar");
   if (actionBar) actionBar.style.display = "flex";
   document.getElementById("view-mode").style.visibility = "visible";
+  let viewMode = getViewMode();
   let radioToCheck = document.getElementById("radioList");
   if (viewMode == "table") {
     radioToCheck = document.getElementById("radioTable");
   } else if (viewMode == "grid") {
     let gridElement = document.getElementById("radioGrid");
     if (gridElement != null) {
-        radioToCheck = gridElement;
+      radioToCheck = gridElement;
     }
   }
   radioToCheck.checked = true;
@@ -1108,4 +880,13 @@ function onPageLoad() {
   });
 
   loadPath(currentPath);
+}
+
+async function onLogoutClick() {
+  try {
+    await api("POST", "/api/user/logout");
+    window.location.href = "/";
+  } catch (error) {
+    alert("Error while logging out: " + error.message);
+  }
 }

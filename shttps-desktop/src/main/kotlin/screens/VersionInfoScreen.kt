@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Card
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
@@ -19,6 +20,7 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -35,7 +37,8 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun VersionInfoScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToAttributions: () -> Unit
 ) {
     val scrollState = rememberScrollState()
 
@@ -82,8 +85,8 @@ fun VersionInfoScreen(
                     Text(
                         text = stringResource(Res.string.application_information),
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colors.primary
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colors.secondaryVariant
                     )
 
                     InfoRow(stringResource(Res.string.label_application_name), BuildConfig.APPLICATION_NAME)
@@ -97,8 +100,8 @@ fun VersionInfoScreen(
                     Text(
                         text = stringResource(Res.string.system_information),
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colors.primary
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colors.secondaryVariant
                     )
                     
                     InfoRow(stringResource(Res.string.label_java_version), System.getProperty("java.version") ?: stringResource(Res.string.unknown))
@@ -120,8 +123,8 @@ fun VersionInfoScreen(
                     Text(
                         text = stringResource(Res.string.about),
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colors.primary
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colors.secondaryVariant
                     )
 
                     Text(
@@ -133,22 +136,35 @@ fun VersionInfoScreen(
                     Text(
                         text = stringResource(Res.string.for_more_information, stringResource(Res.string.project_website)),
                         style = MaterialTheme.typography.body2,
-                        color = MaterialTheme.colors.primary
+                        color = MaterialTheme.colors.secondaryVariant
                     )
 
                     TextButton(
-                        onClick = { openLicenseInBrowser() }
+                        onClick = { openLicenseInBrowser() },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colors.secondaryVariant
+                        )
                     ) {
                         Icon(
                             Icons.Default.Description,
                             contentDescription = null,
-                            modifier = Modifier.padding(end = 8.dp),
-                            tint = MaterialTheme.colors.primary
+                            modifier = Modifier.padding(end = 8.dp)
                         )
-                        Text(
-                            text = stringResource(Res.string.view_full_eula),
-                            color = MaterialTheme.colors.primary
+                        Text(text = stringResource(Res.string.view_full_eula))
+                    }
+
+                    TextButton(
+                        onClick = onNavigateToAttributions,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colors.secondaryVariant
                         )
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.List,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text(text = stringResource(Res.string.attributions))
                     }
                 }
             }
@@ -168,7 +184,7 @@ private fun InfoRow(
         Text(
             text = label,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colors.onSurface,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
             modifier = Modifier.weight(1f)
         )
         Text(
