@@ -89,6 +89,7 @@ var sawDesktopPlatform = false;
 var inputLayer = null;
 var textField = null;
 var captureButton = null;
+var keyboardToggle = null;
 /**
  * Whether this machine's keys are being forwarded instead of acted on locally. Off by default and
  * toggled deliberately: while it is on the page swallows Ctrl+C, F5 and the rest, which is the
@@ -910,6 +911,7 @@ function setupControlInput() {
   inputLayer = document.getElementById("screen-input");
   textField = document.getElementById("control-text");
   captureButton = document.getElementById("keyboard-capture");
+  keyboardToggle = document.getElementById("screen-keyboard-toggle");
 
   //a device that can not hover and points coarsely is a touch screen: no keys to forward, so the
   //text field is the only way to type. Anything else gets its real key presses sent instead
@@ -921,6 +923,12 @@ function setupControlInput() {
     //only a machine with real keys can forward them, and only a keyup can end a held modifier
     document.addEventListener("keyup", onDocumentKeyUp);
   }
+
+  //the button itself does nothing but raise the keyboard already wired to the field below - a
+  //user gesture is all focus() needs to work
+  keyboardToggle.addEventListener("click", function () {
+    textField.focus();
+  });
 
   inputLayer.addEventListener("pointerdown", onPointerDown);
   inputLayer.addEventListener("pointermove", onPointerMove);
@@ -970,6 +978,12 @@ function setupControlInput() {
   });
   textField.addEventListener("keydown", function (e) {
     if (e.key === "Enter") {
+      if (e.isComposing) {
+        //an Android on-screen keyboard can raise exactly this event as an artifact of
+        //committing a composed word rather than a real Enter press - preventDefault-ing it
+        //would swallow the very character it was committing, so let it go through instead
+        return;
+      }
       sendControl({ type: "edit", action: "enter" });
       e.preventDefault();
     } else if (e.key === "Backspace") {
@@ -986,7 +1000,12 @@ function flushTypedText() {
   if (!value) {
     return;
   }
-  textField.value = "";
+  //deferred rather than cleared right here: writing to .value from inside the very "input" event
+  //it is answering is enough to desync an Android on-screen keyboard's idea of the cursor, which
+  //then silently stops delivering anything typed after - letting this task finish first avoids it
+  setTimeout(function () {
+    textField.value = "";
+  }, 0);
   sendControl({ type: "text", text: value });
 }
 
@@ -1031,6 +1050,8 @@ function setControlAvailable(available) {
   document.getElementById("control-buttons")
     .classList.toggle("hidden", !(available && hasInput("key")));
   textField.classList.toggle("hidden",
+    !(available && usesOnScreenKeyboard && hasInput("text")));
+  keyboardToggle.classList.toggle("hidden",
     !(available && usesOnScreenKeyboard && hasInput("text")));
   //a phone has no keys of its own to forward, so it gets the text field above instead
   document.getElementById("desktop-controls").classList.toggle("hidden",

@@ -21,6 +21,23 @@
     <video id="screen-video" muted playsinline autoplay disablepictureinpicture></video>
     <!-- catches pointer events while control is on: over the video, but under the message box -->
     <div id="screen-input" class="screen-input hidden"></div>
+    <!-- the actual focus target, kept inside #screen-container (not the toolbar below) because
+         the Fullscreen API only renders the requested element's own subtree - anything outside
+         it, the toolbar included, is not part of the page while fullscreen is engaged and can't
+         be reached at all. Invisible on purpose and placed before the button below so the
+         button - not this - is what a tap actually lands on: layering a real text box over the
+         video had nowhere good to go that fullscreen wouldn't also hide -->
+    <input id="control-text" class="control-text hidden" type="text" autocomplete="off"
+           autocapitalize="off" autocorrect="off" spellcheck="false">
+    <!-- the only obvious way in to #control-text above: a touch device has no physical keyboard,
+         so without this button the on-screen one only ever appears if someone stumbles on the
+         invisible field itself -->
+    <button id="screen-keyboard-toggle" class="screen-keyboard-toggle hidden"
+            title="Type on the device">
+      <svg width="20" height="20" viewBox="0 -960 960 960" fill="currentColor">
+        <path d="M160-200q-33 0-56.5-23.5T80-280v-400q0-33 23.5-56.5T160-760h640q33 0 56.5 23.5T880-680v400q0 33-23.5 56.5T800-200H160Zm0-80h640v-400H160v400Zm120-40h400v-80H280v80ZM200-440h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80ZM200-560h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80ZM160-280v-400 400Z"/>
+      </svg>
+    </button>
     <div id="screen-message" class="screen-message">
       <div id="screen-message-title" class="screen-message-title">Connecting…</div>
       <div id="screen-message-text" class="screen-message-text"></div>
@@ -36,10 +53,6 @@
               title="Home — Ctrl+Alt+H">HOME</button>
       <button class="screen-button" onclick="onGlobalActionClick('recents');"
               title="Recent apps — Ctrl+Alt+R">RECENTS</button>
-      <!-- shown only where there is no physical keyboard; elsewhere keys are read directly -->
-      <input id="control-text" class="control-text hidden" type="text" autocomplete="off"
-             autocapitalize="off" autocorrect="off" spellcheck="false"
-             placeholder="Type into the focused field…">
     </div>
     <!-- shown instead of the buttons above when the far end is a desktop rather than a phone -->
     <div id="desktop-controls" class="desktop-controls hidden">

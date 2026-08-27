@@ -95,6 +95,21 @@ compose.desktop {
             vendor = "Fedir Tsapana"
             outputBaseDir.set(project.layout.buildDirectory.dir("../../builds"))
 
+            //jpackage's own warning for a deb without one ("some linux distributions will
+            //complain about the quality of the application") is the mild half of it: the LGPL
+            //text is what this application is distributed under, and a Linux package is the one
+            //format whose users expect to find it. With this, the deb carries
+            ///usr/share/doc/shttps/copyright and the rpm gets a %license entry.
+            //
+            //Host gated rather than set outright because --license-file is not a Linux only flag:
+            //on Windows it adds a licence acceptance page to the MSI, which this installer
+            //deliberately does not have, and the EULA is shown by the application itself on first
+            //run. jpackage cannot cross build - the OS packaging runs on is the OS being packaged
+            //for - so "is the host Linux" and "is the target Linux" are the same question here.
+            if (org.gradle.internal.os.OperatingSystem.current().isLinux()) {
+                licenseFile.set(rootProject.file("LICENSE"))
+            }
+
             windows {
                 iconFile.set(project.file("src/main/resources/icons/app_icon.ico"))
                 dirChooser = true
@@ -102,6 +117,52 @@ compose.desktop {
                 upgradeUuid = "53dae249-9e99-4475-89d4-c563c69eebe9"
                 menuGroup = "SHTTPS"
                 shortcut = true
+            }
+
+            linux {
+                //jpackage reads neither the .ico nor the .icns on this platform - it wants a PNG,
+                //and quietly falls back to the Compose plugin's own default icon when given none.
+                //Full bleed square like the Windows icon rather than the macOS rounded rectangle,
+                //because a Linux desktop applies its own shape. Checked in, like the other two:
+                //it is a plain 256x256 Lanczos downscale of the same master logo the .icns is
+                //made from (markets/logo_square_1024.png in the umbrella repository), with none
+                //of the shaping make_icns.sh has to do.
+                iconFile.set(project.file("src/main/resources/icons/app_icon.png"))
+
+                //The deb and rpm package name, which is what an upgrade keys on - as fixed as the
+                //upgradeUuid above, and too load bearing to leave to a default. jpackage would
+                //derive the same string from packageName on its own (lower cased, spaces and
+                //underscores turned into dashes), which is precisely why it is worth pinning:
+                //renaming the product later must not silently orphan every installed copy.
+                packageName = "shttps"
+
+                //Writes the freedesktop desktop entry into /usr/share/applications. Without it the
+                //package installs under /opt/shttps and nothing whatsoever appears in the
+                //application menu - the user is left to find the launcher by path.
+                shortcut = true
+
+                //--linux-menu-group, which despite its name is *not* the counterpart of the
+                //Windows menuGroup above: jpackage substitutes it verbatim into the `Categories=`
+                //line of the .desktop file (see its template.desktop), so this is a freedesktop
+                //category list. A Start-menu style folder name like "SHTTPS" would be an invalid
+                //category and put the app in "Other"; the default is the literal "Unknown". The
+                //trailing semicolon is the spec's list syntax, not a typo. FileTransfer is an
+                //additional category and only legal alongside a main one, which Network is.
+                menuGroup = "Network;FileTransfer;"
+
+                //--linux-app-category, and the confusing one: this is the deb control file's
+                //`Section` and the rpm spec's `Group`, not the menu category above. "net" is the
+                //Debian section name (rpm's Group is deprecated and merely tolerates it).
+                appCategory = "net"
+
+                //A deb control file has a mandatory Maintainer field, and jpackage writes the
+                //vendor with a literal "<Unknown>" address into it when this is unset. The same
+                //address the EULA and the About screen already publish.
+                debMaintainer = "truefedex@gmail.com"
+
+                //The rpm spec's `License:` tag, matching ../LICENSE. jpackage's default here is
+                //the literal string "Unknown", which distribution package checks flag.
+                rpmLicenseType = "LGPL-2.1-or-later"
             }
 
             macOS {

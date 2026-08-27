@@ -235,3 +235,78 @@ jobs:
       run: |
         rm -f "$HOME/.gradle/gradle.properties"
         security delete-keychain "$RUNNER_TEMP/shttps-signing.keychain-db" 2>/dev/null || true
+
+  linux:
+    # One job per architecture, for the same reason the macOS matrix has one: jpackage bundles a
+    # JRE of the runner's own architecture and cannot cross build. Both formats already carry the
+    # architecture in their file name (shttps_<version>-1_amd64.deb, shttps-<version>-1.x86_64.rpm),
+    # so unlike the DMGs there is nothing to rename before they become release assets.
+    #
+    # ubuntu-22.04 rather than ubuntu-latest, deliberately: jpackage fills the deb's Depends field
+    # by asking the *build machine's* dpkg which package owns each shared library the bundled
+    # runtime links against. Built on 24.04 that bakes in the time_t 64 bit renames - libasound2t64,
+    # libglib2.0-0t64 - which do not exist on 22.04, so the package becomes uninstallable on the
+    # older release; built on 22.04 it names libasound2 and libglib2.0-0, which the t64 packages
+    # still Provide, and installs on both. The oldest image available is the widest floor. Nothing
+    # here is compiled against the host's glibc - the natives all come out of the JDK and skiko
+    # jars - so the older image costs nothing in return.
+    #
+    # (The rpm has no such coupling: jpackage's spec sets Autoreq 0, and rpm on a Debian host finds
+    # no provider for anything anyway, so it ships with no Requires at all.)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - runner: ubuntu-22.04
+          arch: x64
+        - runner: ubuntu-22.04-arm
+          arch: arm64
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up JDK 21
+      uses: actions/setup-java@v5
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        # no architecture: setup-java defaults to the runner's own, as in the macOS job above
+        cache: gradle
+
+    # jpackage shells out to the distribution's own packaging tools. dpkg-deb and fakeroot are on
+    # the image already; rpmbuild is not, and packageRpm fails with "Can not find rpmbuild" without
+    # it. Building an rpm on a Debian host is fine - rpmbuild only assembles the archive from the
+    # spec jpackage writes.
+    - name: Install rpmbuild
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y rpm
+
+    - name: Build desktop DEB and RPM
+      run: ./gradlew :shttps-desktop:packageDeb :shttps-desktop:packageRpm --no-daemon
+
+    # Split for the reason the Windows job splits its two uploads: `if-no-files-found: error` only
+    # fires when *nothing* matched, so a single step covering both globs would stay green with one
+    # of the two packages missing.
+    - name: Upload desktop DEB
+      uses: actions/upload-artifact@v7
+      with:
+        name: desktop-deb-${{ matrix.arch }}
+        path: builds/main/deb/*.deb
+        if-no-files-found: error
+
+    - name: Upload desktop RPM
+      uses: actions/upload-artifact@v7
+      with:
+        name: desktop-rpm-${{ matrix.arch }}
+        path: builds/main/rpm/*.rpm
+        if-no-files-found: error
+
+    - name: Release
+      uses: softprops/action-gh-release@v3
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          builds/main/deb/*.deb
+          builds/main/rpm/*.rpm

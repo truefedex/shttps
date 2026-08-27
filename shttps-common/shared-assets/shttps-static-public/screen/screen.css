@@ -101,6 +101,33 @@
     cursor: none;
 }
 
+/* the one thing on the video itself: a phone has no other obvious way to reach #control-text,
+   so this floats over the picture rather than waiting to be found in the toolbar below it */
+.screen-keyboard-toggle {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(45, 45, 45, 0.85);
+    color: #e0e0e0;
+    border: 1px solid #3a3a3a;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.screen-keyboard-toggle:active {
+    background: rgba(48, 100, 119, 0.85);
+    border-color: #3a6b7f;
+}
+
+.screen-keyboard-toggle.hidden {
+    display: none;
+}
+
 .control-buttons {
     display: flex;
     flex-wrap: wrap;
@@ -131,19 +158,24 @@
     color: #ffffff;
 }
 
+/* directly behind .screen-keyboard-toggle, same spot and size - never seen or tapped itself
+   (the button sits on top and owns every tap; this only takes focus() to raise the on-screen
+   keyboard), but real enough in the layout - not display:none, a non-zero size - for a mobile
+   browser to treat a focus() call on it as genuine */
 .control-text {
-    background: #2d2d2d;
-    color: #e0e0e0;
-    border: 1px solid #3a3a3a;
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 0.9em;
-    min-width: 180px;
-}
-
-.control-text:focus {
-    outline: none;
-    border-color: #3a6b7f;
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    color: transparent;
+    caret-color: transparent;
+    opacity: 0.01;
+    pointer-events: none;
 }
 
 .control-text.hidden {
