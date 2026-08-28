@@ -55,6 +55,7 @@ import com.phlox.simpleserver.screens.handlers.CgiTypeDetailsScreen
 import com.phlox.simpleserver.screens.handlers.CgiTypeDetailsViewModel
 import com.phlox.simpleserver.exec.CgiType
 import io.github.vinceglb.autolaunch.AutoLaunch
+import androidx.compose.runtime.State
 import kotlinx.coroutines.flow.MutableSharedFlow
 import java.io.File
 
@@ -69,7 +70,9 @@ fun AppNavigationGraph(
     mainWindowEvents: MutableSharedFlow<MainWindowEvents>,
     serverRunning: MutableState<Boolean>,
     autoLaunch: AutoLaunch,
-    approvalController: ClientApprovalController
+    approvalController: ClientApprovalController,
+    //passed down only so the update prompt can wait for the window to actually be on screen
+    windowVisible: State<Boolean>
 ) {
     val homeViewModel: HomeViewModel = viewModel { HomeViewModel(
         appScope, config, appSettingsDir, mainWindowEvents, serverRunning, autoLaunch,
@@ -90,6 +93,7 @@ fun AppNavigationGraph(
                 viewModel = homeViewModel,
                 navController = navController,
                 window = window,
+                windowVisible = windowVisible,
                 onHideAppToTrayValueChange = onHideAppToTrayValueChange,
                 onNavigateToRedirectionsListScreen = {
                     navController.navigate(RedirectionsListScreenRoute)
@@ -300,6 +304,7 @@ fun AppNavigationGraph(
         
         composable<VersionInfoRoute> {
             VersionInfoScreen(
+                config = config,
                 onNavigateBack = {
                     navController.popBackStack()
                 },

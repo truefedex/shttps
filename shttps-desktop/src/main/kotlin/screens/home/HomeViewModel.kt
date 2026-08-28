@@ -33,6 +33,8 @@ import com.phlox.simpleserver.screenshare.ScreenCaptureProvider
 import com.phlox.simpleserver.screenshare.ScreenCaptureProviders
 import com.phlox.simpleserver.screenshare.ScreenStreamWebSocketHandler
 import com.phlox.simpleserver.security.ClientApprovalController
+import com.phlox.simpleserver.updates.GitHubUpdateChecker
+import com.phlox.simpleserver.updates.LatestRelease
 import com.phlox.simpleserver.shttps_desktop.generated.resources.Res
 import com.phlox.simpleserver.shttps_desktop.generated.resources.database_connected_status
 import com.phlox.simpleserver.shttps_desktop.generated.resources.error
@@ -131,6 +133,10 @@ data class HomeState(
     val showMessageDialog: Boolean = false,
     val messageDialogData: MessageDialogData = MessageDialogData(),
     val showRateLimitDialog: Boolean = false,
+
+    //set when the startup update check found a newer release than this build, and the user has
+    //neither skipped that version nor dismissed the prompt yet
+    val availableUpdate: LatestRelease? = null,
 )
 
 class HomeViewModel(
@@ -263,6 +269,50 @@ class HomeViewModel(
                 }
             }
         }
+
+        //Its own launch, deliberately: the block above ends on a collect that never returns, so
+        //anything appended to it would never run.
+        viewModelScope.launch(Dispatchers.IO) { checkForUpdatesIfNeeded() }
+    }
+
+    /**
+     * Asks GitHub about newer releases, at most once a day, and publishes the answer to the UI.
+     *
+     * Silent about everything except a version the user has not seen yet: this runs unasked at
+     * every launch, so a failure is a log line and nothing more.
+     */
+    private suspend fun checkForUpdatesIfNeeded() {
+        //a build delivered by an application store is updated by that store
+        if (!DesktopExtensions.updateChecksSupported) return
+        if (!config.updateCheckEnabled) return
+
+        val sinceLastCheck = System.currentTimeMillis() - config.lastUpdateCheckTime
+        //note the direction: this skips the check while the last one is still *fresh*. The Android
+        //app has it inverted, which makes it check on every launch and then stop forever the first
+        //time the app goes a day unopened
+        if (config.lastUpdateCheckTime > 0 && sinceLastCheck < GitHubUpdateChecker.UPDATE_CHECK_INTERVAL_MS) return
+
+        val release = GitHubUpdateChecker.fetchLatestRelease() ?: return
+        //only a successful check consumes the daily slot - otherwise one failed request would buy
+        //a day of silence, which is how a broken update check stays unnoticed
+        config.lastUpdateCheckTime = System.currentTimeMillis()
+
+        if (!GitHubUpdateChecker.isNewerThan(release.versionName, BuildConfig.VERSION_NAME)) return
+        if (release.versionName == config.skippedUpdateVersion) return
+
+        logger.i("Update available: ${release.versionName} (running ${BuildConfig.VERSION_NAME})")
+        _uiState.value = _uiState.value.copy(availableUpdate = release)
+    }
+
+    /** "Later" - say nothing more this run; the next check will offer it again. */
+    fun dismissUpdate() {
+        _uiState.value = _uiState.value.copy(availableUpdate = null)
+    }
+
+    /** "Skip this version" - stay quiet about this one release only, not about every future one. */
+    fun skipUpdateVersion(versionName: String) {
+        config.skippedUpdateVersion = versionName
+        dismissUpdate()
     }
 
     fun showMessageDialog(title: String, message: String, buttons: List<DialogButton>? = null) {

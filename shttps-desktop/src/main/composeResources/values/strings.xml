@@ -618,4 +618,20 @@
 When authorization is on, an account needs the "Control screen" permission on top of "View screen". When authorization is off, anyone who can reach this server can drive this computer.
 
 Only one viewer controls the machine at a time; the others are told it is busy until whoever is using it stops. Keyboard forwarding has to be switched on in the browser page and released with a button there, because while it is on the page sends shortcuts to this computer instead of acting on them itself.</string>
+
+    <!-- Update notifications (open source desktop build only; see GitHubUpdateChecker) -->
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_message">Version %1$s is available. You have %2$s.</string>
+    <string name="update_whats_new">What's new</string>
+    <string name="update_download">Download</string>
+    <string name="update_skip_this_version">Skip this version</string>
+    <string name="update_later">Later</string>
+    <string name="updates">Updates</string>
+    <string name="check_for_updates">Check for updates</string>
+    <string name="update_checking">Checking...</string>
+    <string name="update_up_to_date">You are running the latest version (%1$s).</string>
+    <string name="update_check_failed">Could not check for updates. Please try again later.</string>
+    <string name="update_check_enabled">Check for updates automatically</string>
+    <string name="update_last_checked">Last checked</string>
+    <string name="update_never_checked">Never</string>
 </resources>

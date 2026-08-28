@@ -47,6 +47,12 @@ jobs:
       # and the rest rewrite it identically. Not append_body - that would stamp the notes once per
       # job. The path is relative to the checkout root, which in the OSS repository is this
       # directory, not the shttps-oss folder it sits in inside the umbrella project.
+      #
+      # The body this writes has a second consumer: the desktop app's update check reads it back
+      # from releases/latest and shows it to the user verbatim as the "What's new" list (see
+      # GitHubUpdateChecker). That is why one request suffices there and why RELEASE_NOTES.md must
+      # stay plain, user-readable bullets - anything addressed to maintainers rather than to users,
+      # including a comment explaining this, would be shown inside the application.
     - name: Release
       uses: softprops/action-gh-release@v3
       if: startsWith(github.ref, 'refs/tags/')
