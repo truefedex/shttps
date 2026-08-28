@@ -67,6 +67,19 @@ interface DesktopExtension {
      * Typically an "ms-settings:" URI. Null keeps the default startup apps page.
      */
     val autostartSettingsUri: String? get() = null
+
+    /**
+     * Whether this build should ask GitHub about newer releases and offer them to the user - see
+     * [com.phlox.simpleserver.updates.GitHubUpdateChecker].
+     *
+     * False for any build delivered through an application store, which updates itself and whose
+     * users must not be pointed at this project's GitHub artifacts: those are a different product
+     * with a different installer identity, so "updating" across would install a second copy.
+     *
+     * Null (the default) means this build is installed by hand and has to check for itself, which
+     * is the situation of the open source build the user downloaded from the releases page.
+     */
+    val updateChecksSupported: Boolean? get() = null
 }
 
 /**
@@ -103,6 +116,11 @@ object DesktopExtensions {
 
     val autostartSettingsUri: String
         get() = extensions.firstNotNullOfOrNull { it.autostartSettingsUri } ?: DEFAULT_AUTOSTART_SETTINGS_URI
+
+    //defaults to true, unlike autostartManagedBySystem above: a plain download of the open build
+    //has nothing else that would ever tell its user a new version exists
+    val updateChecksSupported: Boolean
+        get() = extensions.firstNotNullOfOrNull { it.updateChecksSupported } ?: true
 
     /**
      * Every attributions resource on the classpath, ours first.

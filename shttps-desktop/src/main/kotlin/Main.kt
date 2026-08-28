@@ -265,7 +265,8 @@ fun ApplicationScope.AppContent(appScope: ApplicationScope, config: AppConfig, a
                     mainWindowEvents = events,
                     serverRunning = serverRunning,
                     autoLaunch = autoLaunch,
-                    approvalController = approvalController
+                    approvalController = approvalController,
+                    windowVisible = isVisible
                 )
             }
         }

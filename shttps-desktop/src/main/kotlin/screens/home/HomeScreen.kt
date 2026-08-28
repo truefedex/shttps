@@ -62,6 +62,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +87,7 @@ import com.phlox.simpleserver.SHTTPSConfig
 import com.phlox.simpleserver.components.ExpandableSection
 import com.phlox.simpleserver.dialogs.DialogButton
 import com.phlox.simpleserver.dialogs.MessageDialog
+import com.phlox.simpleserver.dialogs.UpdateAvailableDialog
 import com.phlox.simpleserver.screens.home.dialogs.ClientWhiteListDialog
 import com.phlox.simpleserver.screens.home.dialogs.ExportChoiceDialog
 import com.phlox.simpleserver.screens.home.dialogs.HostnameDialog
@@ -185,7 +187,10 @@ fun HomeScreen(
     onNavigateToCgiList: () -> Unit,
     onNavigateToChannelsList: () -> Unit,
     window: ComposeWindow,
-    onHideAppToTrayValueChange: () -> Unit
+    onHideAppToTrayValueChange: () -> Unit,
+    //whether the main window is actually on screen right now. The update prompt waits for it -
+    //see the comment where it is shown below
+    windowVisible: State<Boolean>
 ) {
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsState()
@@ -1825,6 +1830,26 @@ fun HomeScreen(
                     onDismiss = {
                         viewModel.hideRateLimitDialog()
                     }
+                )
+            }
+
+            //Gated on the window being visible, unlike every other dialog here. The update check
+            //runs at startup, and a server that starts with the system sits in the tray with this
+            //window hidden - which Compose still composes, so an ungated Dialog would pop up over
+            //the desktop with no window to belong to. The state survives the wait: HomeViewModel is
+            //hoisted above the NavHost, so the prompt appears the first time the user opens the
+            //window (NewClientPrompts solves the same problem the other way, with a window of its
+            //own, which an update notice does not warrant).
+            val update = uiState.availableUpdate
+            if (update != null && windowVisible.value) {
+                UpdateAvailableDialog(
+                    release = update,
+                    onDownload = {
+                        openUrlInBrowser(update.releaseUrl)
+                        viewModel.dismissUpdate()
+                    },
+                    onSkipVersion = { viewModel.skipUpdateVersion(update.versionName) },
+                    onDismiss = { viewModel.dismissUpdate() }
                 )
             }
         }
