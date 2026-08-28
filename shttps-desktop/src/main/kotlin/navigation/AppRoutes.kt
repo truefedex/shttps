@@ -37,6 +37,9 @@ data class CORSEditRoute(
 data object VersionInfoRoute
 
 @Serializable
+data object AttributionsRoute
+
+@Serializable
 data class RedirectEditRoute(
     val ruleIndex: Int = -1,
     val fromPattern: String = "",

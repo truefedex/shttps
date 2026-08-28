@@ -128,8 +128,8 @@ fun CgiTypeDetailsScreen(
                     Text(
                         text = stringResource(Res.string.cgi_type_details_subtitle),
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colors.primary
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colors.secondaryVariant
                     )
 
                     // Extension field

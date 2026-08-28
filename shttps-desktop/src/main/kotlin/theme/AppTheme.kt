@@ -7,6 +7,13 @@ import androidx.compose.material.lightColors
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
+/**
+ * Positive feedback, for which the Material palette has no slot: [MaterialTheme.colors.secondaryVariant]
+ * is the app's accent and would read as a warning wherever it sits beside [MaterialTheme.colors.error].
+ * Material green 500, the same value [com.phlox.simpleserver.screens.logs] paints a 2xx with.
+ */
+val SuccessGreen = Color(0xFF4CAF50)
+
 // Dark theme colors
 private val DarkColorPalette = darkColors(
     primary = Color(0xFF5a595b),

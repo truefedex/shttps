@@ -84,7 +84,11 @@ compose.desktop {
     application {
         mainClass = "com.phlox.simpleserver.MainKt"
         nativeDistributions {
-            modules("java.instrument", "java.sql", "jdk.security.auth", "jdk.unsupported")
+            modules("java.instrument", "java.sql", "jdk.security.auth", "jdk.unsupported",
+                    //jdk.management carries com.sun.management.OperatingSystemMXBean, the only
+                    //way to the machine's physical memory. Without it named here the jlinked
+                    //image simply has no such class and the status page loses the RAM row
+                    "java.management", "jdk.management")
 
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
 
@@ -95,6 +99,21 @@ compose.desktop {
             vendor = "Fedir Tsapana"
             outputBaseDir.set(project.layout.buildDirectory.dir("../../builds"))
 
+            //jpackage's own warning for a deb without one ("some linux distributions will
+            //complain about the quality of the application") is the mild half of it: the LGPL
+            //text is what this application is distributed under, and a Linux package is the one
+            //format whose users expect to find it. With this, the deb carries
+            ///usr/share/doc/shttps/copyright and the rpm gets a %license entry.
+            //
+            //Host gated rather than set outright because --license-file is not a Linux only flag:
+            //on Windows it adds a licence acceptance page to the MSI, which this installer
+            //deliberately does not have, and the EULA is shown by the application itself on first
+            //run. jpackage cannot cross build - the OS packaging runs on is the OS being packaged
+            //for - so "is the host Linux" and "is the target Linux" are the same question here.
+            if (org.gradle.internal.os.OperatingSystem.current().isLinux()) {
+                licenseFile.set(rootProject.file("LICENSE"))
+            }
+
             windows {
                 iconFile.set(project.file("src/main/resources/icons/app_icon.ico"))
                 dirChooser = true
@@ -102,6 +121,114 @@ compose.desktop {
                 upgradeUuid = "53dae249-9e99-4475-89d4-c563c69eebe9"
                 menuGroup = "SHTTPS"
                 shortcut = true
+            }
+
+            linux {
+                //jpackage reads neither the .ico nor the .icns on this platform - it wants a PNG,
+                //and quietly falls back to the Compose plugin's own default icon when given none.
+                //Full bleed square like the Windows icon rather than the macOS rounded rectangle,
+                //because a Linux desktop applies its own shape. Checked in, like the other two:
+                //it is a plain 256x256 Lanczos downscale of the same master logo the .icns is
+                //made from (markets/logo_square_1024.png in the umbrella repository), with none
+                //of the shaping make_icns.sh has to do.
+                iconFile.set(project.file("src/main/resources/icons/app_icon.png"))
+
+                //The deb and rpm package name, which is what an upgrade keys on - as fixed as the
+                //upgradeUuid above, and too load bearing to leave to a default. jpackage would
+                //derive the same string from packageName on its own (lower cased, spaces and
+                //underscores turned into dashes), which is precisely why it is worth pinning:
+                //renaming the product later must not silently orphan every installed copy.
+                packageName = "shttps"
+
+                //Writes the freedesktop desktop entry into /usr/share/applications. Without it the
+                //package installs under /opt/shttps and nothing whatsoever appears in the
+                //application menu - the user is left to find the launcher by path.
+                shortcut = true
+
+                //--linux-menu-group, which despite its name is *not* the counterpart of the
+                //Windows menuGroup above: jpackage substitutes it verbatim into the `Categories=`
+                //line of the .desktop file (see its template.desktop), so this is a freedesktop
+                //category list. A Start-menu style folder name like "SHTTPS" would be an invalid
+                //category and put the app in "Other"; the default is the literal "Unknown". The
+                //trailing semicolon is the spec's list syntax, not a typo. FileTransfer is an
+                //additional category and only legal alongside a main one, which Network is.
+                menuGroup = "Network;FileTransfer;"
+
+                //--linux-app-category, and the confusing one: this is the deb control file's
+                //`Section` and the rpm spec's `Group`, not the menu category above. "net" is the
+                //Debian section name (rpm's Group is deprecated and merely tolerates it).
+                appCategory = "net"
+
+                //A deb control file has a mandatory Maintainer field, and jpackage writes the
+                //vendor with a literal "<Unknown>" address into it when this is unset. The same
+                //address the EULA and the About screen already publish.
+                debMaintainer = "truefedex@gmail.com"
+
+                //The rpm spec's `License:` tag, matching ../LICENSE. jpackage's default here is
+                //the literal string "Unknown", which distribution package checks flag.
+                rpmLicenseType = "LGPL-2.1-or-later"
+            }
+
+            macOS {
+                //The application's identity on macOS. Launch Services, the keychain and every TCC
+                //permission grant are keyed on it, so changing it later makes the same app look
+                //like a different one to the system - it is as fixed as the Windows upgradeUuid
+                //above, and deliberately distinct from the PLUS build's so the two can coexist.
+                bundleID = "com.phlox.simpleserver.desktop"
+                dockName = "Simple HTTP Server"
+                //macOS wants its own icon rather than the .ico: rounded rectangle, transparent
+                //margin. Regenerated from markets/logo_square_1024.png by markets/macos/make_icns.sh
+                iconFile.set(project.file("src/main/resources/icons/app_icon.icns"))
+                appCategory = "public.app-category.developer-tools"
+                //the floor of the Compose runtime; nothing in this build needs more
+                minimumSystemVersion = "11.0"
+
+                //Signing and notarization are deliberately not spelled out here. The Compose plugin
+                //reads them from Gradle properties, so this same build produces an unsigned .dmg on
+                //a machine without a certificate and a signed, notarized one on a machine with a
+                //Developer ID - and no credential ever reaches the repository. Put them in
+                //~/.gradle/gradle.properties (chmod 600 - the last one is a real password):
+                //
+                //  compose.desktop.mac.sign=true
+                //  compose.desktop.mac.signing.identity=NAME (TEAMID)
+                //  compose.desktop.mac.notarization.appleID=<apple id>
+                //  compose.desktop.mac.notarization.password=<app specific password>
+                //  compose.desktop.mac.notarization.teamID=TEAMID
+                //
+                //With the first two set, `packageDmg` signs the .app and the runtime inside it.
+                //
+                //It does NOT sign the disk image itself - jpackage stops at the bundle - so the
+                //container signature, the notarization and the stapling are the last three steps
+                //of the macos job in .github/workflows/build_n_release.yml, which reads the
+                //notarization properties above and calls notarytool directly. They deliberately do
+                //not go through the plugin's own `notarizeDmg`: codesigning a .dmg makes
+                //packageDmg out of date, so that task would rebuild the image underneath and drop
+                //the signature it was given. `notarizeDmg` still works if all you want is a
+                //notarized image with an unsigned container.
+                //
+                //Two of those values are easy to get wrong and fail late:
+                //
+                //  * the identity is the *team or user portion only*, without the "Developer ID
+                //    Application: " prefix. The plugin's own codesign call tolerates the full
+                //    string, but it also passes the same property to jpackage as
+                //    --mac-signing-key-user-name, which is documented as "team name" and prepends
+                //    the certificate kind itself - so a full string there is searched for twice
+                //    over and matches nothing.
+                //  * the notarization password must be the literal app specific password. Both the
+                //    workflow and AbstractNotarizationTask feed it to `notarytool submit` on stdin
+                //    rather than as --password - keeping it out of the process list - so notarytool
+                //    never sees it as an argument and the @keychain:ITEM and --keychain-profile
+                //    forms it would otherwise accept are taken as the password itself.
+                //
+                //A Developer ID certificate also needs Apple's "Developer ID Certification
+                //Authority" G2 intermediate in the same keychain, or the chain cannot be built and
+                //`security find-identity -v -p codesigning` reports the identity as not valid.
+                //Xcode installs it; a machine with only the Command Line Tools may not have it.
+                //
+                //There is no entitlements file either: the plugin's own default already carries
+                //allow-jit, allow-unsigned-executable-memory and disable-library-validation, which
+                //is exactly what a JVM under the hardened runtime needs - the last one because JNA
+                //(composenativetray, filekit) unpacks its jnidispatch at runtime and dlopens it.
             }
         }
     }

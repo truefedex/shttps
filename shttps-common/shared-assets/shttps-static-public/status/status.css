@@ -106,6 +106,10 @@
     background: linear-gradient(90deg, #306477, #407487);
 }
 
+.progress-bar-good {
+    background: linear-gradient(90deg, #3f8f5f, #4fa070);
+}
+
 .progress-bar-warning {
     background: linear-gradient(90deg, #d4a574, #e5b685);
 }

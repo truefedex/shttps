@@ -40,34 +40,26 @@ function onPageLoad(e) {
     });
 }
 
-function onExecuteSQLClick(e) {
+async function onExecuteSQLClick(e) {
     loader.style.display = 'block';
-    fetch('/api/db/query?' + new URLSearchParams({
-        'include-names': true,
-        'limit': maxRows
-    }).toString(), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'text/plain'
-        },
-        body: sqlEditor.getValue()
-    }).then(async response => {
+    let data;
+    //only the request is guarded here: a rendering failure is a bug, not a query error
+    try {
+        data = await runSql(sqlEditor.getValue(), maxRows);
+    } catch (error) {
+        renderQueryError(error.message);
+        return;
+    } finally {
         loader.style.display = 'none';
-        if (response.ok) {
-            const data = await response.json();
-            if (!data.data) {
-                renderQuerySuccessButNoData(data);
-                return;
-            }
-            if (data.columns) {
-                columns = data.columns;
-            }
-            renderQueryResult(data);
-        } else {
-            const err = await response.text();
-            renderQueryError(err);
-        }
-    });
+    }
+    if (!data.data) {
+        renderQuerySuccessButNoData(data);
+        return;
+    }
+    if (data.columns) {
+        columns = data.columns;
+    }
+    renderQueryResult(data);
 }
 
 function onSettingsClick() {

@@ -1,15 +1,15 @@
-name: Make commandline and desktop Windows artifacts
+name: Make commandline jar and desktop installers
 
 on: workflow_dispatch
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Set up JDK 21
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         java-version: '21'
         distribution: 'temurin'
@@ -23,19 +23,298 @@ jobs:
     - name: Build commandline jar and desktop MSI
       run: .\gradlew.bat :shttps-commandline:shadowJar :shttps-desktop:packageMsi --no-daemon
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+    # Two artifacts rather than one, because `if-no-files-found: error` only fires when *nothing*
+    # matched: with both globs in a single step the MSI always matches, so a jar that failed to
+    # appear would be missing from the download and the job would still be green. Split, each glob
+    # has to find its own file. It also means the jar can be downloaded on its own rather than dug
+    # out of a 120 MB zip, under the path it was built at.
+    - name: Upload commandline jar
+      uses: actions/upload-artifact@v7
       with:
-        name: commandline-jar-and-desktop-msi
-        path: |
-          shttps-commandline/build/libs/shttps-commandline-*-all.jar
-          builds/main/msi/*.msi
+        name: commandline-jar
+        path: shttps-commandline/build/libs/shttps-commandline-*-all.jar
         if-no-files-found: error
 
+    - name: Upload desktop MSI
+      uses: actions/upload-artifact@v7
+      with:
+        name: desktop-msi
+        path: builds/main/msi/*.msi
+        if-no-files-found: error
+
+      # RELEASE_NOTES.md holds the notes for the latest version only, and every job in this
+      # workflow passes the same file, so whichever one reaches the release first writes the body
+      # and the rest rewrite it identically. Not append_body - that would stamp the notes once per
+      # job. The path is relative to the checkout root, which in the OSS repository is this
+      # directory, not the shttps-oss folder it sits in inside the umbrella project.
     - name: Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       if: startsWith(github.ref, 'refs/tags/')
       with:
+        body_path: RELEASE_NOTES.md
         files: |
           shttps-commandline/build/libs/shttps-commandline-*-all.jar
           builds/main/msi/*.msi
+
+  macos:
+    # jpackage cannot cross build, and it packages a JRE of the runner's own architecture, so an
+    # Apple Silicon DMG will not launch on an Intel Mac and vice versa - hence one job per
+    # architecture rather than one "macos-latest" build. macos-15-intel is the last x86_64 image
+    # Actions offers (available until August 2027); when it goes, drop that entry from the matrix.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - runner: macos-latest
+          arch: arm64
+        - runner: macos-15-intel
+          arch: x64
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up JDK 21
+      uses: actions/setup-java@v5
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        # no architecture: setup-java defaults to the runner's own, which is the whole point of
+        # running one job per runner. matrix.arch is only used to name the artifact below.
+        cache: gradle
+
+    # Signing is driven entirely by repository secrets, and every one of them is optional: with
+    # none set this job still produces the ad-hoc signed DMG it always did, so a fork can build it.
+    # The secrets are
+    #
+    #   MACOS_CERTIFICATE_P12       the Developer ID Application certificate *and its private key*,
+    #                               exported from Keychain Access as .p12 and then base64 encoded
+    #                               (`base64 -i cert.p12 | pbcopy`)
+    #   MACOS_CERTIFICATE_PASSWORD  the password given to that export
+    #   MACOS_NOTARY_APPLE_ID       Apple ID of the Developer Program account
+    #   MACOS_NOTARY_PASSWORD       an app specific password for it, NOT the account password
+    #                               (appleid.apple.com -> Sign-In and Security -> App-Specific
+    #                               Passwords). notarytool is fed this on stdin, so a
+    #                               @keychain:ITEM reference would be taken literally
+    #   MACOS_NOTARY_TEAM_ID        the ten character team id
+    #
+    # Set the first two and the DMG is signed; set all five and it is notarized and stapled too.
+    - name: Import the Developer ID certificate
+      id: signing
+      env:
+        CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+        CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+        NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+        NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+      run: |
+        if [ -z "$CERTIFICATE_P12" ]; then
+          echo "::notice::MACOS_CERTIFICATE_P12 is not set - building an unsigned DMG"
+          exit 0
+        fi
+
+        # A keychain of its own, in RUNNER_TEMP, deleted again by the last step of this job. The
+        # login keychain would work too and is the one thing not to touch: it is shared with
+        # whatever else the image does, and its password is not ours to know.
+        KEYCHAIN="$RUNNER_TEMP/shttps-signing.keychain-db"
+        KEYCHAIN_PASSWORD=$(uuidgen)
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+        # -lut without -l: no lock timeout short enough to expire mid-notarization
+        security set-keychain-settings -lut 21600 "$KEYCHAIN"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+        # codesign is given --keychain explicitly by the Compose plugin, but jpackage's own signing
+        # pass is not, so the keychain has to be in the search list as well. Unquoted on purpose -
+        # the existing entries have to word split back into separate arguments.
+        security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+        echo "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+        security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$CERTIFICATE_PASSWORD" \
+          -T /usr/bin/codesign -T /usr/bin/security
+        rm -f "$RUNNER_TEMP/certificate.p12"
+
+        # Without Apple's intermediate the chain cannot be built, the identity counts as invalid
+        # and codesign fails with an error that names nothing useful. A .p12 exported from Keychain
+        # Access usually carries it; this makes sure, and costs nothing when it is already there.
+        curl -fsSL -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" \
+          https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+        security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KEYCHAIN" || true
+
+        # Without this the first codesign blocks on a "wants to use your confidential information"
+        # dialog that nobody is there to answer, and the job hangs until it times out.
+        security set-key-partition-list -S apple-tool:,apple:,codesign: \
+          -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+
+        # The *team portion only*, which is what jpackage's --mac-signing-key-user-name wants; the
+        # Compose plugin prepends the certificate kind to it again for its own codesign calls.
+        IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+          | sed -n 's/.*"Developer ID Application: \(.*\)"[[:space:]]*$/\1/p' | head -1)
+        if [ -z "$IDENTITY" ]; then
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          echo "::error::the imported certificate holds no valid Developer ID Application identity"
+          exit 1
+        fi
+        echo "Signing as Developer ID Application: $IDENTITY"
+
+        # Written to gradle.properties rather than passed as -P arguments so that no password ever
+        # appears in a command line, where anything on the runner could read it out of ps.
+        mkdir -p "$HOME/.gradle"
+        {
+          echo "compose.desktop.mac.sign=true"
+          echo "compose.desktop.mac.signing.identity=$IDENTITY"
+          echo "compose.desktop.mac.signing.keychain=$KEYCHAIN"
+        } >> "$HOME/.gradle/gradle.properties"
+
+        # Both are read back by later steps' `if:`, which cannot see the secrets context itself.
+        echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+        if [ -n "$NOTARY_APPLE_ID" ]; then
+          echo "notarize=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::notice::MACOS_NOTARY_APPLE_ID is not set - signing without notarizing"
+        fi
+
+    - name: Build desktop DMG
+      run: ./gradlew :shttps-desktop:packageDmg --no-daemon
+
+    # jpackage signs the .app it puts inside the disk image and leaves the image itself unsigned,
+    # so the container signature, the notarization and the stapling are all done here rather than
+    # through the Compose plugin's notarizeDmg task: modifying a .dmg makes packageDmg out of date,
+    # and that task would rebuild the image underneath and throw the signature away. Kept
+    # deliberately identical to the tail of ../../buildMacDmg.command.
+    - name: Sign, notarize and staple the DMG
+      if: steps.signing.outputs.identity != ''
+      env:
+        IDENTITY: ${{ steps.signing.outputs.identity }}
+        NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+        NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+        NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+      run: |
+        for dmg in builds/main/dmg/*.dmg; do
+          codesign --force --timestamp --sign "Developer ID Application: $IDENTITY" "$dmg"
+          if [ -n "$NOTARY_APPLE_ID" ]; then
+            # On stdin, not as --password, so the password is never readable in ps on a runner
+            # this process does not own. This works *because* a workflow step has no controlling
+            # terminal: given no --password, notarytool reads one from the terminal in preference
+            # to stdin, which is why the local script has to pass --password instead. Do not
+            # "align" the two - a pipe here is right and a pipe there prompts the user twice.
+            printf '%s' "$NOTARY_PASSWORD" | xcrun notarytool submit --wait \
+              --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" "$dmg"
+            xcrun stapler staple "$dmg"
+          fi
+        done
+
+    # Cheap, and the only thing between a broken signature and a user's download page: --deep
+    # descends into the bundle, and stapler proves the notarization ticket actually landed.
+    - name: Verify the signature
+      if: steps.signing.outputs.notarize == 'true'
+      run: |
+        codesign --verify --deep --strict --verbose=2 builds/main/app/SHTTPS.app
+        for dmg in builds/main/dmg/*.dmg; do
+          codesign --verify --strict "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature -v "$dmg"
+        done
+
+    # Both architectures produce SHTTPS-<version>.dmg, which would collide as release assets.
+    - name: Name the DMG after its architecture
+      run: |
+        for dmg in builds/main/dmg/*.dmg; do
+          mv "$dmg" "${dmg%.dmg}-${{ matrix.arch }}.dmg"
+        done
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: desktop-dmg-${{ matrix.arch }}
+        path: builds/main/dmg/*.dmg
+        if-no-files-found: error
+
+    - name: Release
+      uses: softprops/action-gh-release@v3
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        body_path: RELEASE_NOTES.md
+        files: builds/main/dmg/*.dmg
+
+    # if: always() - a failed build must not leave the certificate and its private key sitting in
+    # a keychain on a runner. Deleting it also takes it back out of the search list.
+    - name: Remove the signing keychain
+      if: always()
+      run: |
+        rm -f "$HOME/.gradle/gradle.properties"
+        security delete-keychain "$RUNNER_TEMP/shttps-signing.keychain-db" 2>/dev/null || true
+
+  linux:
+    # One job per architecture, for the same reason the macOS matrix has one: jpackage bundles a
+    # JRE of the runner's own architecture and cannot cross build. Both formats already carry the
+    # architecture in their file name (shttps_<version>-1_amd64.deb, shttps-<version>-1.x86_64.rpm),
+    # so unlike the DMGs there is nothing to rename before they become release assets.
+    #
+    # ubuntu-22.04 rather than ubuntu-latest, deliberately: jpackage fills the deb's Depends field
+    # by asking the *build machine's* dpkg which package owns each shared library the bundled
+    # runtime links against. Built on 24.04 that bakes in the time_t 64 bit renames - libasound2t64,
+    # libglib2.0-0t64 - which do not exist on 22.04, so the package becomes uninstallable on the
+    # older release; built on 22.04 it names libasound2 and libglib2.0-0, which the t64 packages
+    # still Provide, and installs on both. The oldest image available is the widest floor. Nothing
+    # here is compiled against the host's glibc - the natives all come out of the JDK and skiko
+    # jars - so the older image costs nothing in return.
+    #
+    # (The rpm has no such coupling: jpackage's spec sets Autoreq 0, and rpm on a Debian host finds
+    # no provider for anything anyway, so it ships with no Requires at all.)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - runner: ubuntu-22.04
+          arch: x64
+        - runner: ubuntu-22.04-arm
+          arch: arm64
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up JDK 21
+      uses: actions/setup-java@v5
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        # no architecture: setup-java defaults to the runner's own, as in the macOS job above
+        cache: gradle
+
+    # jpackage shells out to the distribution's own packaging tools. dpkg-deb and fakeroot are on
+    # the image already; rpmbuild is not, and packageRpm fails with "Can not find rpmbuild" without
+    # it. Building an rpm on a Debian host is fine - rpmbuild only assembles the archive from the
+    # spec jpackage writes.
+    - name: Install rpmbuild
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y rpm
+
+    - name: Build desktop DEB and RPM
+      run: ./gradlew :shttps-desktop:packageDeb :shttps-desktop:packageRpm --no-daemon
+
+    # Split for the reason the Windows job splits its two uploads: `if-no-files-found: error` only
+    # fires when *nothing* matched, so a single step covering both globs would stay green with one
+    # of the two packages missing.
+    - name: Upload desktop DEB
+      uses: actions/upload-artifact@v7
+      with:
+        name: desktop-deb-${{ matrix.arch }}
+        path: builds/main/deb/*.deb
+        if-no-files-found: error
+
+    - name: Upload desktop RPM
+      uses: actions/upload-artifact@v7
+      with:
+        name: desktop-rpm-${{ matrix.arch }}
+        path: builds/main/rpm/*.rpm
+        if-no-files-found: error
+
+    - name: Release
+      uses: softprops/action-gh-release@v3
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        body_path: RELEASE_NOTES.md
+        files: |
+          builds/main/deb/*.deb
+          builds/main/rpm/*.rpm

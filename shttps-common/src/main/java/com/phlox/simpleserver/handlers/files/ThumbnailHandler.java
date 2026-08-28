@@ -53,7 +53,7 @@ public class ThumbnailHandler extends BaseFileRequestHandler {
             } catch (Exception e) { logger.stackTrace(e); }
 
             if (date != null && (destFile.lastModified() / 1000) <= (date.getTime() / 1000)) {//comparing skipping milliseconds
-                return StandardResponses.NOT_MODIFIED();
+                return StandardResponses.NOT_MODIFIED(destFile.lastModified());
             }
         }
 

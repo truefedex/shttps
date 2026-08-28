@@ -326,6 +326,12 @@ public class ScreenStreamControlDispatchTest {
         target.answer = RemoteInputTarget.InputResult.FAILED;
         handler.onTextMessage(session, "{\"type\":\"keyboard\",\"action\":\"down\",\"code\":\"KeyB\"}");
         assertTrue(nextText(session).contains("\"reason\":\"input-failed\""));
+
+        //and what a macOS machine that was never granted the Accessibility permission looks like.
+        //It has to be its own reason: the page sends the user to a different place for each.
+        target.answer = RemoteInputTarget.InputResult.NO_PERMISSION;
+        handler.onTextMessage(session, "{\"type\":\"keyboard\",\"action\":\"down\",\"code\":\"KeyC\"}");
+        assertTrue(nextText(session).contains("\"reason\":\"input-permission\""));
     }
 
     @Test

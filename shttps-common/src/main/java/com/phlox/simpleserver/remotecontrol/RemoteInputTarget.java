@@ -34,7 +34,14 @@ public interface RemoteInputTarget {
         /** The focused app refused the edit. */
         FAILED,
         /** The platform offers no way to perform this edit at all. */
-        UNSUPPORTED
+        UNSUPPORTED,
+        /**
+         * The operating system has not given this process permission to inject input at all.
+         * The twin of {@link InputResult#NO_PERMISSION}, and it matters on this path too: typing
+         * from a phone's on-screen keyboard is the one kind of remote control that never touches
+         * {@link InputResult}.
+         */
+        NO_PERMISSION
     }
 
     /** How an attempt to carry out a pointer, wheel or key event turned out. */
@@ -44,6 +51,16 @@ public interface RemoteInputTarget {
         BUSY,
         /** This target does not carry out that kind of event at all. */
         UNSUPPORTED,
+        /**
+         * The operating system has not given this process permission to inject input at all -
+         * on macOS the Accessibility privacy grant, which the user has to make in System Settings.
+         *
+         * Separate from {@link #FAILED} because the two need different things said to whoever is
+         * sitting in the browser: one is a window that could not be reached this time, the other
+         * is a switch nobody has turned on yet, and only the second is worth walking to the
+         * machine for.
+         */
+        NO_PERMISSION,
         /** The platform refused it - on Windows typically a window running elevated. */
         FAILED
     }

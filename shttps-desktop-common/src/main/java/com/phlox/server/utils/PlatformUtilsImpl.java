@@ -19,10 +19,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyStore;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 
 public class PlatformUtilsImpl implements SHTTPSPlatformUtils {
+    private static final boolean IS_LINUX =
+            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux");
+
     private final ThumbnailManager thumbnailManager = new ThumbnailManager(this);
     private KeyStore keyStore;
 
@@ -127,6 +131,85 @@ public class PlatformUtilsImpl implements SHTTPSPlatformUtils {
     @Override
     public ImageData generateCaptchaImage(String code, int width, int height) {
         return CaptchaImageGenerator.generateCaptchaImage(code, width, height);
+    }
+
+    @Override
+    public BatteryInfo getBatteryInfo() {
+        //Windows and macOS have no equivalent we can reach without a native library or a subprocess,
+        //so they report nothing and the status page leaves the battery card out entirely
+        if (!IS_LINUX) return null;
+        return new SysfsBatteryReader().read();
+    }
+
+    @Override
+    public DeviceInfo getDeviceInfo() {
+        try {
+            DeviceInfo info = new DeviceInfo();
+
+            readPhysicalMemory(info);
+            info.deviceName = envDeviceName();
+
+            if (IS_LINUX) {
+                //the kernel hands the rest out as plain files
+                LinuxDeviceInfoReader linux = new LinuxDeviceInfoReader();
+                info.systemUptimeMillis = linux.readUptimeMillis();
+                info.manufacturer = linux.readManufacturer();
+                info.model = linux.readModel();
+                if (info.deviceName == null) {
+                    info.deviceName = linux.readHostName();
+                }
+                //MemAvailable counts the page cache the kernel would hand back, which is the number a
+                //person means by "free memory"; the MXBean reports MemFree, which does not
+                Long total = linux.readTotalRamBytes();
+                Long available = linux.readAvailableRamBytes();
+                if (total != null) info.totalRamBytes = total;
+                if (available != null) info.availableRamBytes = available;
+            }
+
+            return info.hasAnyData() ? info : null;
+        } catch (Throwable e) {
+            //optional information on the status page - it must never fail the status response
+            return null;
+        }
+    }
+
+    /**
+     * Physical memory, through the one JDK API that reports it.
+     * <p>
+     * This lives behind its own catch because it is the single thing here that can vanish with the
+     * runtime rather than with the OS: the packaged app images are jlinked, so {@code jdk.management}
+     * is only present because the build asks for it by name.
+     */
+    private static void readPhysicalMemory(DeviceInfo info) {
+        try {
+            java.lang.management.OperatingSystemMXBean bean =
+                    java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            if (bean instanceof com.sun.management.OperatingSystemMXBean) {
+                com.sun.management.OperatingSystemMXBean sunBean = (com.sun.management.OperatingSystemMXBean) bean;
+                long total = sunBean.getTotalMemorySize();
+                long free = sunBean.getFreeMemorySize();
+                if (total > 0) info.totalRamBytes = total;
+                if (free > 0) info.availableRamBytes = free;
+            }
+        } catch (Throwable ignored) {
+            //a runtime image built without jdk.management
+        }
+    }
+
+    /**
+     * The machine name from the environment. Deliberately not InetAddress.getLocalHost(), which is a
+     * reverse DNS lookup that can block for seconds on a misconfigured network - and this runs on a
+     * request thread.
+     */
+    private static String envDeviceName() {
+        String name = System.getenv("COMPUTERNAME");
+        if (name == null) {
+            //usually a shell variable rather than an exported one, so expect this to be null on Linux
+            name = System.getenv("HOSTNAME");
+        }
+        if (name == null) return null;
+        name = name.trim();
+        return name.isEmpty() ? null : name;
     }
 
     @Override

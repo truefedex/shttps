@@ -90,28 +90,17 @@ function onPageResize() {
     fetchTableData();
 }
 
-function fetchTableSchema(onDone) {
-    // fetch the table schema /api/db/schema?table=tableName
-    fetch(`/api/db/schema?table=${tableName}`)
-        .then(async response => {
-            if (response.ok) {
-                return response.json();
-            } else {
-                const errorText = await response.text();
-                throw new Error(errorText);
-            }
-        })
-        .then(data => {
-            tableSchema = data;
-            rowCount = tableSchema.rowCount;
-            detectTypesHints();
-            onDone();
-        })
-        .catch(error => {
-            console.error('Error fetching table schema:', error);
-            alert(`Error loading table schema: ${error.message}`);
-            document.getElementById('loader').style.visibility = 'hidden';
-        });
+async function fetchTableSchema(onDone) {
+    try {
+        tableSchema = await api('GET', `/api/db/schema?table=${tableName}`);
+        rowCount = tableSchema.rowCount;
+        detectTypesHints();
+        onDone();
+    } catch (error) {
+        console.error('Error fetching table schema:', error);
+        alert(`Error loading table schema: ${error.message}`);
+        document.getElementById('loader').style.visibility = 'hidden';
+    }
 }
 
 function detectTypesHints() {
@@ -153,7 +142,7 @@ function detectTypesHints() {
     }
 }
 
-function fetchTableData() {
+async function fetchTableData() {
     if (rowsPerPage < 1) {
         return;
     }
@@ -192,34 +181,18 @@ function fetchTableData() {
         params.append('sort-order', sort.order);
     }
 
-    fetch("/api/db/table", {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: params
-        }
-    )
-        .then(async response => {
-            if (response.ok) {
-                return response.json();
-            } else {
-                const errorText = await response.text();
-                throw new Error(errorText);
-            }
-        })
-        .then(data => {
-            renderTableData(data);
-            renderPager();
-        })
-        .catch(error => {
-            console.error('Error fetching table data:', error);
-            alert(`Error loading table data: ${error.message}`);
-            document.getElementById('loader').style.visibility = 'hidden';
-        });
+    try {
+        let data = await api('POST', '/api/db/table', params);
+        renderTableData(data);
+        renderPager();
+    } catch (error) {
+        console.error('Error fetching table data:', error);
+        alert(`Error loading table data: ${error.message}`);
+        document.getElementById('loader').style.visibility = 'hidden';
+    }
 }
 
-function deleteSelectedRows() {
+async function deleteSelectedRows() {
     let params = new URLSearchParams();
     params.append('table', tableName);
 
@@ -252,30 +225,14 @@ function deleteSelectedRows() {
         params.append('filters', JSON.stringify(formattedFilters));
     }
 
-    fetch("/api/db/delete", {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: params
-        }
-    )
-        .then(async response => {
-            if (response.ok) {
-                return response.json();
-            } else {
-                const errorText = await response.text();
-                throw new Error(errorText);
-            }
-        })
-        .then(data => {
-            console.log(data);
-            fetchTableData();
-        })
-        .catch(error => {
-            console.error('Error deleting rows:', error);
-            alert(`Error deleting rows: ${error.message}`);
-        });
+    try {
+        let data = await api('DELETE', '/api/db/delete', params);
+        console.log(data);
+        fetchTableData();
+    } catch (error) {
+        console.error('Error deleting rows:', error);
+        alert(`Error deleting rows: ${error.message}`);
+    }
 }
 
 function renderTableData(data) {
@@ -900,65 +857,35 @@ function prepareColumnInput(column, container, editedRow, forNewRow, focusedColu
     container.appendChild(inputMenuButton);
 }
 
-function saveRow(tableName, valuesToUpdate, formattedFilters) {
+async function saveRow(tableName, valuesToUpdate, formattedFilters) {
     let params = new URLSearchParams();
     params.append('table', tableName);
     params.append('filters', JSON.stringify(formattedFilters));
     params.append('values', JSON.stringify(valuesToUpdate));
 
-    fetch("/api/db/update", {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: params
-        }
-    )
-        .then(async response => {
-            if (!response.ok) {
-                throw new Error(await response.text());
-            } else {
-                return response.json();
-            }
-        })
-        .then(data => {
-            console.log(data);
-            document.getElementById('editRowModal').style.display = 'none';
-            fetchTableData();
-        })
-        .catch(error => {
-            alert('An error occurred while updating the row:\n' + error);
-        });
+    try {
+        let data = await api('PUT', '/api/db/update', params);
+        console.log(data);
+        document.getElementById('editRowModal').style.display = 'none';
+        fetchTableData();
+    } catch (error) {
+        alert('An error occurred while updating the row:\n' + error);
+    }
 }
 
-function addRow(tableName, valuesToInsert) {
+async function addRow(tableName, valuesToInsert) {
     let params = new URLSearchParams();
     params.append('table', tableName);
     params.append('values', JSON.stringify(valuesToInsert));
 
-    fetch("/api/db/insert", {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: params
-        }
-    )
-        .then(async response => {
-            if (!response.ok) {
-                throw new Error(await response.text());
-            } else {
-                return response.json();
-            }
-        })
-        .then(data => {
-            console.log(data);
-            document.getElementById('editRowModal').style.display = 'none';
-            fetchTableData();            
-        })
-        .catch(error => {
-            alert('An error occurred while adding the row:\n' + error);
-        });
+    try {
+        let data = await api('POST', '/api/db/insert', params);
+        console.log(data);
+        document.getElementById('editRowModal').style.display = 'none';
+        fetchTableData();
+    } catch (error) {
+        alert('An error occurred while adding the row:\n' + error);
+    }
 }
 
 function saveColumnTypeHint(column) {

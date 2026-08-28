@@ -134,8 +134,8 @@ fun ChannelDetailsScreen(
                     Text(
                         text = stringResource(Res.string.channel_details_subtitle),
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colors.primary
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colors.secondaryVariant
                     )
 
                     // Channel id

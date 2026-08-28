@@ -13,6 +13,7 @@ import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.channels.ChannelManager;
 import com.phlox.simpleserver.database.Database;
+import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
 
 import org.json.JSONObject;
 import org.jetbrains.annotations.NotNull;
@@ -21,6 +22,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 
 public class StatusRequestHandler implements RequestHandler {
     private final SHTTPSApp app;
@@ -86,11 +88,50 @@ public class StatusRequestHandler implements RequestHandler {
                 channelsInfo.put("totalParticipants", channelManager.totalParticipants());
                 answer.put("channels", channelsInfo);
             }
+            if (scopes.isEmpty() || scopes.contains("device")) {
+                SHTTPSPlatformUtils.DeviceInfo device = app.platformUtils.getDeviceInfo();
+                if (device != null && device.hasAnyData()) {
+                    JSONObject deviceInfo = new JSONObject();
+                    //org.json drops keys with a null value, so unavailable fields simply do not appear
+                    deviceInfo.put("device_name", device.deviceName);
+                    deviceInfo.put("manufacturer", device.manufacturer);
+                    deviceInfo.put("model", device.model);
+                    deviceInfo.put("os_name", device.osName);
+                    deviceInfo.put("os_release", device.osRelease);
+                    deviceInfo.put("api_level", device.apiLevel);
+                    //physical memory, unlike the JVM heap reported in the system scope
+                    deviceInfo.put("ram_total_bytes", device.totalRamBytes);
+                    deviceInfo.put("ram_available_bytes", device.availableRamBytes);
+                    deviceInfo.put("system_uptime", device.systemUptimeMillis);
+                    answer.put("device", deviceInfo);
+                }
+            }
+            if (scopes.isEmpty() || scopes.contains("battery")) {
+                SHTTPSPlatformUtils.BatteryInfo battery = app.platformUtils.getBatteryInfo();
+                if (battery != null && battery.hasAnyData()) {
+                    JSONObject batteryInfo = new JSONObject();
+                    //org.json drops keys with a null value, so unavailable fields simply do not appear
+                    batteryInfo.put("level_percent", battery.levelPercent);
+                    batteryInfo.put("temperature_celsius", battery.temperatureCelsius);
+                    batteryInfo.put("status", battery.status);
+                    batteryInfo.put("health", battery.health);
+                    batteryInfo.put("capacity_mah", battery.capacityMah);
+                    batteryInfo.put("charge_counter_mah", battery.chargeCounterMah);
+                    batteryInfo.put("voltage_millivolts", battery.voltageMillivolts);
+                    batteryInfo.put("technology", battery.technology);
+                    batteryInfo.put("power_source", battery.powerSource);
+                    answer.put("battery", batteryInfo);
+                }
+            }
             if (scopes.isEmpty() || scopes.contains("system")) {
                 JSONObject systemInfo = new JSONObject();
                 systemInfo.put("server_name", app.serverVersionInfo.name);
                 systemInfo.put("server_version", app.serverVersionInfo.version);
                 systemInfo.put("server_uptime", System.currentTimeMillis() - app.serverStartTimeMillis);
+                //the absolute counterpart of the uptime, so a viewer can see the server's clock and
+                //how far it is from their own
+                systemInfo.put("server_time", System.currentTimeMillis());
+                systemInfo.put("server_timezone", TimeZone.getDefault().getID());
                 systemInfo.put("os_name", System.getProperty("os.name"));
                 systemInfo.put("os_version", System.getProperty("os.version"));
                 systemInfo.put("java_runtime_name", System.getProperty("java.runtime.name"));

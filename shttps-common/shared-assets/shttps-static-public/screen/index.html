@@ -9,10 +9,13 @@
   <link rel="icon" type="image/png" href="/shttps-static-public/icon.png">
   <script src="/shttps-static-public/common.js"></script>
   <script src="/shttps-static-public/screen/screen.js"></script>
+  <script src="/shttps-static-public/screen/screen-media.js"></script>
+  <script src="/shttps-static-public/screen/screen-recording.js"></script>
+  <script src="/shttps-static-public/screen/screen-control.js"></script>
 </head>
 <body id="root" onload="onPageLoad();">
   <div class="header">
-    <button id="menu-button" class="menu-button" onclick="onMenuClick(event);">☰</button>
+    <button id="menu-button" class="menu-button">☰</button>
     <div id="path">Remote screen</div>
     <div id="connection-state" class="connection-state">Connecting…</div>
   </div>
@@ -21,11 +24,23 @@
     <video id="screen-video" muted playsinline autoplay disablepictureinpicture></video>
     <!-- catches pointer events while control is on: over the video, but under the message box -->
     <div id="screen-input" class="screen-input hidden"></div>
-    <!-- while the keyboard is captured this page swallows Ctrl+W and F5, so the way out has to
-         stay on screen the whole time rather than be something to remember -->
-    <div id="capture-banner" class="capture-banner hidden">
-      Keyboard captured &mdash; press Ctrl+Alt+Shift+Esc or click RELEASE KEYBOARD to get it back
-    </div>
+    <!-- the actual focus target, kept inside #screen-container (not the toolbar below) because
+         the Fullscreen API only renders the requested element's own subtree - anything outside
+         it, the toolbar included, is not part of the page while fullscreen is engaged and can't
+         be reached at all. Invisible on purpose and placed before the button below so the
+         button - not this - is what a tap actually lands on: layering a real text box over the
+         video had nowhere good to go that fullscreen wouldn't also hide -->
+    <input id="control-text" class="control-text hidden" type="text" autocomplete="off"
+           autocapitalize="off" autocorrect="off" spellcheck="false">
+    <!-- the only obvious way in to #control-text above: a touch device has no physical keyboard,
+         so without this button the on-screen one only ever appears if someone stumbles on the
+         invisible field itself -->
+    <button id="screen-keyboard-toggle" class="screen-keyboard-toggle hidden"
+            title="Type on the device">
+      <svg width="20" height="20" viewBox="0 -960 960 960" fill="currentColor">
+        <path d="M160-200q-33 0-56.5-23.5T80-280v-400q0-33 23.5-56.5T160-760h640q33 0 56.5 23.5T880-680v400q0 33-23.5 56.5T800-200H160Zm0-80h640v-400H160v400Zm120-40h400v-80H280v80ZM200-440h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80ZM200-560h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80Zm120 0h80v-80h-80v80ZM160-280v-400 400Z"/>
+      </svg>
+    </button>
     <div id="screen-message" class="screen-message">
       <div id="screen-message-title" class="screen-message-title">Connecting…</div>
       <div id="screen-message-text" class="screen-message-text"></div>
@@ -41,16 +56,16 @@
               title="Home — Ctrl+Alt+H">HOME</button>
       <button class="screen-button" onclick="onGlobalActionClick('recents');"
               title="Recent apps — Ctrl+Alt+R">RECENTS</button>
-      <!-- shown only where there is no physical keyboard; elsewhere keys are read directly -->
-      <input id="control-text" class="control-text hidden" type="text" autocomplete="off"
-             autocapitalize="off" autocorrect="off" spellcheck="false"
-             placeholder="Type into the focused field…">
     </div>
     <!-- shown instead of the buttons above when the far end is a desktop rather than a phone -->
     <div id="desktop-controls" class="desktop-controls hidden">
+      <!-- the button is its own indicator: it turns red and reads RELEASE KEYBOARD while
+           capturing, and the release chord lives in the tooltip rather than in a banner over
+           the picture. There is always a way out - the browser reserves Escape for leaving
+           fullscreen, which brings this toolbar back. -->
       <button id="keyboard-capture" class="screen-button"
               onclick="onKeyboardCaptureClick();"
-              title="Send this keyboard&#39;s keys to the remote computer, shortcuts included">CAPTURE KEYBOARD</button>
+              title="Send this keyboard&#39;s keys to the remote computer, shortcuts included. Release it again with this button or Ctrl+Alt+Shift+Esc">CAPTURE KEYBOARD</button>
     </div>
     <button class="screen-button" onclick="onFullscreenClick();">
       <svg width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">

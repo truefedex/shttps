@@ -507,20 +507,25 @@ class HomeViewModel(
         _uiState.value = _uiState.value.copy(usableNetworkInterfaces = getUsableNetworkInterfaces())
     }
 
+    /**
+     * The interfaces worth offering in the "Show address for" picker and in the allowed-interfaces
+     * dialog: those that are up and carry at least one address a client could actually be pointed
+     * at, see [isDialableAddress].
+     */
     private fun getUsableNetworkInterfaces(): List<NetworkInterface> {
         val usableInterfaces = mutableListOf<NetworkInterface>()
-        
+
         try {
             val networkInterfaces = NetworkInterface.getNetworkInterfaces()
             while (networkInterfaces.hasMoreElements()) {
                 val networkInterface = networkInterfaces.nextElement()
-                
+
                 // Skip loopback interfaces
                 //if (networkInterface.isLoopback) continue
-                
+
                 // Skip interfaces that are down
                 if (!networkInterface.isUp) continue
-                
+
                 // Skip virtual interfaces (like Docker, VMware, etc.)
                 if (networkInterface.name.startsWith("docker") || 
                     networkInterface.name.startsWith("veth") ||
@@ -530,12 +535,11 @@ class HomeViewModel(
                     continue
                 }
 
-                // Check if interface has at least one IPv4 address
-                val hasIpAddress = networkInterface.inetAddresses.asSequence().any { address ->
-                    address is java.net.Inet4Address || address is java.net.Inet6Address
+                val hasDialableAddress = networkInterface.inetAddresses.asSequence().any {
+                    isDialableAddress(it)
                 }
 
-                if (hasIpAddress) {
+                if (hasDialableAddress) {
                     usableInterfaces.add(networkInterface)
                 }
             }
@@ -565,15 +569,8 @@ class HomeViewModel(
         val selectedInterface = _uiState.value.selectedNetworkInterface
         val ipVersion = _uiState.value.selectedIPVersion
         if (selectedInterface != null) {
-            val addresses = selectedInterface.inetAddresses.asSequence().filter { address ->
-                ((ipVersion == 4 && address is java.net.Inet4Address) ||
-                        (ipVersion == 6 && address is java.net.Inet6Address))
-            }.toList()
-            val displayAddress = if (addresses.isNotEmpty()) {
-                addresses[0].hostAddress
-            } else {
-                null
-            }
+            val displayAddress =
+                selectDisplayAddress(selectedInterface.inetAddresses.toList(), ipVersion)?.hostAddress
             val port = _uiState.value.port
             val useTlsEncryption = _uiState.value.useTlsEncryption
             val url = if (displayAddress != null) {
@@ -1101,4 +1098,47 @@ class HomeViewModel(
         //the channel routes read this per request, but the idle sweep is only scheduled at startup
         restartServerIfRunning()
     }
+}
+
+/**
+ * Whether [address] is one that a client could actually be pointed at, which is what decides
+ * whether the interface carrying it is offered in the UI at all.
+ *
+ * Everything except a link-local address qualifies - loopback included, since 127.0.0.1 is a
+ * legitimate choice for local-only testing and the picker has always offered it.
+ *
+ * The exclusion is what keeps the macOS list honest. A Mac is permanently full of interfaces the
+ * user never configured: awdl0 and llw0 (Apple Wireless Direct Link and its low-latency companion,
+ * the peer-to-peer radios behind AirDrop, Sidecar, AirPlay and Handoff) and the system's own utunN
+ * tunnels (iCloud Private Relay, Personal Hotspot, content filters). All of them are up, and all of
+ * them carry nothing but an IPv6 fe80:: address. Such an address cannot be handed to a browser: it
+ * is only meaningful together with the scope id of the *client's* own interface
+ * (`http://[fe80::1%en0]:8080/`), which no ordinary user will type and which is wrong the moment it
+ * is copied to another machine. Windows has the same thing in its Teredo/ISATAP pseudo-interfaces
+ * and Linux in a freshly-up NIC that has not got a lease yet (IPv4 169.254/16 is link-local too,
+ * and is caught by the same check).
+ *
+ * Filtering on the address rather than on a name blacklist is deliberate: a utunN brought up by a
+ * real VPN (WireGuard, IKEv2, Tailscale) carries a routable address and stays in the list, where a
+ * name-based rule would have hidden exactly the interface a VPN user wants to serve on.
+ */
+internal fun isDialableAddress(address: java.net.InetAddress): Boolean = !address.isLinkLocalAddress
+
+/**
+ * The address to put on the status screen for [ipVersion] (4 or 6), out of everything the selected
+ * interface carries, or null when that interface has none of that version a client could be pointed
+ * at - which the screen renders as "not available".
+ *
+ * Link-local addresses are skipped here for the same reason they keep an interface out of the
+ * picker entirely: everything on that screen - the URL, the QR code, "Open in browser", the copy
+ * buttons - derives from this one address, and en0 carrying an fe80:: address is not the same as
+ * this machine being reachable over IPv6. Saying so plainly beats offering a QR code that encodes
+ * an address whose scope id was stripped to make it fit in a URL.
+ */
+internal fun selectDisplayAddress(
+    addresses: List<java.net.InetAddress>,
+    ipVersion: Int,
+): java.net.InetAddress? = addresses.firstOrNull { address ->
+    ((ipVersion == 4 && address is java.net.Inet4Address) ||
+            (ipVersion == 6 && address is java.net.Inet6Address)) && isDialableAddress(address)
 }

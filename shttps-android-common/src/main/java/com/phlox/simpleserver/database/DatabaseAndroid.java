@@ -96,10 +96,16 @@ public class DatabaseAndroid implements Database {
     public Map<String, Object> getStatus() throws IOException {
         Map<String, Object> status = new HashMap<>();
         status.put("path", path);
-        status.put("size", new File(path).length());
+        //an in-memory database has no file, and nothing here is worth an NPE over a missing size
+        status.put("size", path == null || path.isEmpty() ? 0L : new File(path).length());
         Cursor cursor = database.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name!='android_metadata' AND name NOT LIKE 'sqlite_%'", null);
         status.put("tablesCount", cursor.getCount());
         cursor.close();
+        try (Cursor versionCursor = database.rawQuery("SELECT sqlite_version()", null)) {
+            if (versionCursor.moveToNext()) {
+                status.put("sqliteVersion", versionCursor.getString(0));
+            }
+        }
         return status;
     }
 

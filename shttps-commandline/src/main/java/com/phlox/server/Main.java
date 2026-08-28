@@ -19,9 +19,28 @@ import java.util.concurrent.Callable;
 import picocli.CommandLine;
 import sun.misc.Signal;
 
-@CommandLine.Command(name = "shttps", mixinStandardHelpOptions = true, version = "shttps 1.0",
+@CommandLine.Command(name = "shttps", mixinStandardHelpOptions = true,
+        versionProvider = Main.ManifestVersion.class,
         description = "Starts a Simple HTTP server")
 public class Main implements Callable<Integer> {
+    /**
+     * What {@code --version} prints. Taken from the jar manifest rather than written here: the
+     * number lives in shttps-oss/version.properties, reaches this module's build.gradle as a
+     * project property and the manifest from there, so there is one place to raise it. Hardcoding
+     * it in the annotation is what left this command reporting 1.0 while the jar said 3.0.0 and
+     * the rest of the project was on 3.4.
+     * <p>
+     * Run from a classpath rather than the packaged jar - {@code gradle run}, or an IDE - there is
+     * no manifest to read, which is what the fallback is for.
+     */
+    static class ManifestVersion implements CommandLine.IVersionProvider {
+        @Override
+        public String[] getVersion() {
+            String version = Main.class.getPackage().getImplementationVersion();
+            return new String[]{"shttps " + (version != null ? version : "(development build)")};
+        }
+    }
+
     @CommandLine.Option(names = {"-c", "--config"}, description = "Path to config file", required = false)
     private String configPath = System.getProperty("user.home") + File.separator + ".shttps" +
             File.separator + "config.json";

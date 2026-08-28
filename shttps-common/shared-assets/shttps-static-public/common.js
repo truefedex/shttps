@@ -292,3 +292,64 @@ function hideContextMenu() {
     contextMenu.style.visibility = "hidden";
   });
 }
+/**
+ * The single way every page talks to the server. Resolves with the parsed
+ * response - JSON when the server sends JSON, text when it does not, null for
+ * an empty body - and rejects with an Error whose message is the server's own
+ * response text, so a caller writes the success path plus one catch.
+ *
+ * The body picks its own encoding, by the type the platform already has for it:
+ * URLSearchParams for a form, FormData for multipart, a string for text/plain,
+ * anything else for JSON. Note the JSON header is sent without a charset: some
+ * handlers compare the content type for equality.
+ *
+ * Uploads still use XMLHttpRequest directly - they need upload progress, which
+ * fetch does not report.
+ */
+async function api(method, url, body) {
+  let options = { method: method };
+  if (body != null) {
+    if (body instanceof FormData || body instanceof URLSearchParams || body instanceof Blob) {
+      options.body = body;//browser sets the Content-Type itself
+    } else if (typeof body == "string") {
+      options.headers = { "Content-Type": "text/plain" };
+      options.body = body;
+    } else {
+      options.headers = { "Content-Type": "application/json" };
+      options.body = JSON.stringify(body);
+    }
+  }
+  let response = await fetch(url, options);
+  let text = await response.text();
+  if (!response.ok) {
+    let error = new Error(text ? text : response.statusText);
+    error.status = response.status;
+    throw error;
+  }
+  if (!text) return null;
+  let contentType = response.headers.get("Content-Type");
+  return contentType != null && contentType.includes("json") ? JSON.parse(text) : text;
+}
+
+/**
+ * Wires the ☰ button to this page's #main-menu. Entries are given as a map of
+ * menu item id to either a URL to go to or a click handler. Ids the page did
+ * not render are skipped, so a caller lists every entry it may have without
+ * checking which of them the server actually put in the markup.
+ */
+function setupMainMenu(entries) {
+  for (let id in entries) {
+    let item = document.getElementById(id);
+    if (item == null) continue;
+    let action = entries[id];
+    item.onclick = typeof action == "string" ? function () { window.location.href = action; } : action;
+  }
+  let menuButton = document.getElementById("menu-button");
+  let mainMenu = document.getElementById("main-menu");
+  if (menuButton == null || mainMenu == null) return;
+  menuButton.onclick = function (e) {
+    displayContextMenuWithAnchorRect(menuButton.getBoundingClientRect(), mainMenu);
+    e.stopPropagation();
+    e.preventDefault();
+  };
+}

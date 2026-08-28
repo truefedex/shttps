@@ -36,6 +36,20 @@ interface DesktopExtension {
     val editionName: String? get() = null
 
     /**
+     * Classpath resource holding this build's *additional* third-party attributions, as JSON in
+     * the shape of [com.phlox.simpleserver.screens.attributions.AttributionsFile].
+     *
+     * Unlike [eulaResource] this **adds to** the bundled list rather than replacing it - a build
+     * that wraps this one ships everything the open build does plus whatever it brought along, so
+     * every extension naming a resource is read. An entry may name the operating systems it
+     * applies to, which is what keeps a macOS installer from crediting libraries only the Windows
+     * and Linux ones carry.
+     *
+     * Null (the default) means this build adds nothing to the open source list.
+     */
+    val attributionsResource: String? get() = null
+
+    /**
      * True when starting with the operating system is something the user turns on outside this
      * application - the case for an MSIX package, where autostart is a manifest declared startup
      * task rather than a registry entry this process could write.
@@ -63,6 +77,9 @@ object DesktopExtensions {
     /** The EULA of the plain open source build. */
     const val DEFAULT_EULA_RESOURCE = "eula/license-oss.html"
 
+    /** Third-party components of the plain open source build. */
+    const val DEFAULT_ATTRIBUTIONS_RESOURCE = "attributions/attributions-oss.json"
+
     /** Windows "Startup apps" settings page. */
     const val DEFAULT_AUTOSTART_SETTINGS_URI = "ms-settings:startupapps"
 
@@ -86,6 +103,17 @@ object DesktopExtensions {
 
     val autostartSettingsUri: String
         get() = extensions.firstNotNullOfOrNull { it.autostartSettingsUri } ?: DEFAULT_AUTOSTART_SETTINGS_URI
+
+    /**
+     * Every attributions resource on the classpath, ours first.
+     *
+     * The one question here answered by *all* extensions rather than by the first one with an
+     * opinion, and deliberately so: the others pick between mutually exclusive answers (a build
+     * has one EULA, one edition name), while attributions accumulate - a wrapping build ships
+     * what we ship plus its own, so taking only the first answer would drop one list or the other.
+     */
+    val attributionResources: List<String>
+        get() = listOf(DEFAULT_ATTRIBUTIONS_RESOURCE) + extensions.mapNotNull { it.attributionsResource }
 
     /** Reads a resource named by an extension, using the loader that found the extension itself. */
     fun openResource(name: String): InputStream? = classLoader.getResourceAsStream(name)
