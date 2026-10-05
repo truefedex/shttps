@@ -124,6 +124,72 @@ public class DefaultRequestBodyReaderTest {
         assertEquals('N', request.input.read());
     }
 
+    private static FormDataPart part(Request request, String name) {
+        for (FormDataPart part : request.multipartData) {
+            if (name.equals(part.name)) return part;
+        }
+        return null;
+    }
+
+    private Request multipart(String boundary, String body) {
+        Request request = makeRequest(body, "NEXT");
+        request.contentType = Request.CONTENT_TYPE_MULTIPART_FORM;
+        request.boundary = boundary;
+        return request;
+    }
+
+    @Test
+    public void dispositionParametersInAnyOrder() throws Exception {
+        //"filename" before "name" used to lose the name entirely
+        Request request = multipart("B", "--B\r\n" +
+                "Content-Disposition: form-data; filename=\"report; final.txt\"; name=\"upload\"\r\n" +
+                "\r\n" +
+                "data\r\n" +
+                "--B--\r\n");
+        new DefaultRequestBodyReader().readRequestBody(request);
+        FormDataPart upload = part(request, "upload");
+        assertNotNull(upload);
+        assertEquals("report; final.txt", upload.fileName);
+        assertEquals("data", upload.getDataAsString());
+    }
+
+    @Test
+    public void backslashInAFileNameIsKept() throws Exception {
+        Request request = multipart("B", "--B\r\n" +
+                "Content-Disposition: form-data; name=\"f\"; filename=\"a\\b.txt\"\r\n" +
+                "\r\n" +
+                "x\r\n" +
+                "--B--\r\n");
+        new DefaultRequestBodyReader().readRequestBody(request);
+        assertEquals("a\\b.txt", part(request, "f").fileName);
+    }
+
+    @Test
+    public void nestedMultipartPartDoesNotHijackTheBoundary() throws Exception {
+        Request request = multipart("OUTER", "--OUTER\r\n" +
+                "Content-Disposition: form-data; name=\"files\"\r\n" +
+                "Content-Type: multipart/mixed; boundary=INNER\r\n" +
+                "\r\n" +
+                "--INNER\r\nContent-Disposition: file; filename=\"a.txt\"\r\n\r\nA\r\n--INNER--\r\n" +
+                "--OUTER\r\n" +
+                "Content-Disposition: form-data; name=\"after\"\r\n" +
+                "\r\n" +
+                "still parsed\r\n" +
+                "--OUTER--\r\n");
+        new DefaultRequestBodyReader().readRequestBody(request);
+        assertEquals("--INNER\r\nContent-Disposition: file; filename=\"a.txt\"\r\n\r\nA\r\n--INNER--",
+                part(request, "files").getDataAsString());
+        assertEquals("still parsed", part(request, "after").getDataAsString());
+        assertEquals('N', request.input.read());
+    }
+
+    @Test
+    public void multipartWithoutBoundaryIsABadRequest() {
+        Request request = multipart(null, "--null\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\ny\r\n--null--\r\n");
+        org.junit.jupiter.api.Assertions.assertThrows(BadRequestException.class,
+                () -> new DefaultRequestBodyReader().readRequestBody(request));
+    }
+
     @Test
     public void emptyBodyIsNoOp() throws Exception {
         Request request = makeRequest("", "GET / HTTP/1.1\r\n");

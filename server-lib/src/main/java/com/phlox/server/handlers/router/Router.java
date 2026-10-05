@@ -16,7 +16,8 @@ import java.util.Map;
 import java.util.Set;
 
 public class Router implements RequestHandler {
-    public static String ORIGINAL_PATH = "original_path";
+    /** Same key as {@link RequestContext#ORIGINAL_PATH}, kept for existing callers. */
+    public static final String ORIGINAL_PATH = RequestContext.ORIGINAL_PATH;
     private final Map<String, Map<String, HandlerExecutionChain>> routes = new HashMap<>();//method -> path -> route
     private final RadixTree<HandlerExecutionChain> prefixedRoutes = new RadixTree<>();
 

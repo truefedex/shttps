@@ -13,6 +13,8 @@ import java.io.OutputStream;
 import java.nio.charset.Charset;
 
 public final class Utils {
+    private static final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(Utils.class);
+
     private Utils() {}
 
     public static void copyStream(InputStream input, OutputStream output) throws IOException {
@@ -64,7 +66,7 @@ public final class Utils {
                  OutputStream output = new BufferedOutputStream(new FileOutputStream(dst))) {
                 com.phlox.server.utils.Utils.copyStream(input, output);
             } catch (Exception e) {
-                e.printStackTrace();
+                logger.e("Can not copy " + src + " to " + dst, e);
                 return false;
             }
             return true;
@@ -92,7 +94,7 @@ public final class Utils {
                  OutputStream output = new BufferedOutputStream(new FileOutputStream(dst))) {
                 com.phlox.server.utils.Utils.copyStream(input, output);
             } catch (Exception e) {
-                e.printStackTrace();
+                logger.e("Can not move " + src + " to " + dst, e);
                 return false;
             }
             return src.delete();

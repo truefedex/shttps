@@ -185,7 +185,7 @@ public class FileServerSmokeTest {
         request = HttpRequest.newBuilder()
                 .uri(URI.create(testConfig.getServerUrl() + "/api/file/delete"))
                 .header("Content-Type", "application/json")
-                .method("DELETE", HttpRequest.BodyPublishers.ofString("{\"path\":\"\",\"files\":[\"/"+newFileName+"\"]}"))
+                .method("DELETE", HttpRequest.BodyPublishers.ofString("{\"path\":\"\",\"files\":[\""+newFileName+"\"]}"))
                 .build();
         response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(204, response.statusCode());

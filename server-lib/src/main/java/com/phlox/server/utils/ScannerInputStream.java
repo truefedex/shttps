@@ -4,11 +4,24 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.SocketTimeoutException;
 
 public class ScannerInputStream extends InputStream {
+    /** Thrown when a line or a delimited section is longer than the caller allows. */
+    public static class LimitExceededException extends IOException {
+        public LimitExceededException(String message) {
+            super(message);
+        }
+    }
+
     InputStream base;
     byte[] backBuff = new byte[16];
     int backBuffPosition = -1;
+    //deadline for single-byte reads (all line parsing); armed by the first byte read after
+    //startDeadlineOnNextByte. System.nanoTime() may be negative, hence the separate flag
+    private boolean deadlineArmed = false;
+    private long deadlineNanos;
+    private long pendingDeadlineTimeoutNanos = 0;
 
     public ScannerInputStream(InputStream base) {
         this.base = base;
@@ -16,10 +29,43 @@ public class ScannerInputStream extends InputStream {
 
     @Override
     public int read() throws IOException {
+        int b;
         if (backBuffPosition == -1) {
-            return base.read();
+            b = base.read();
         } else {
-            return backBuff[backBuffPosition--] & 0xff;
+            b = backBuff[backBuffPosition--] & 0xff;
+        }
+        if (b != -1) {
+            checkDeadline();
+        }
+        return b;
+    }
+
+    /**
+     * Limits how long the next section read byte by byte (a request head) may take as a whole,
+     * counted from its first byte - so waiting for a request to start, which is what an idle
+     * keep-alive connection does, does not count. A per-read socket timeout alone does not stop
+     * a client that trickles one byte at a time. Once expired, single-byte reads throw
+     * {@link SocketTimeoutException}; bulk reads (request bodies) are not affected.
+     */
+    public void startDeadlineOnNextByte(long timeoutMillis) {
+        deadlineArmed = false;
+        pendingDeadlineTimeoutNanos = timeoutMillis > 0 ? timeoutMillis * 1_000_000L : 0;
+    }
+
+    public void clearDeadline() {
+        deadlineArmed = false;
+        pendingDeadlineTimeoutNanos = 0;
+    }
+
+    private void checkDeadline() throws SocketTimeoutException {
+        if (pendingDeadlineTimeoutNanos != 0) {
+            deadlineNanos = System.nanoTime() + pendingDeadlineTimeoutNanos;
+            pendingDeadlineTimeoutNanos = 0;
+            deadlineArmed = true;
+        } else if (deadlineArmed && System.nanoTime() - deadlineNanos > 0) {
+            deadlineArmed = false;
+            throw new SocketTimeoutException("Deadline for reading the request head exceeded");
         }
     }
 
@@ -70,6 +116,18 @@ public class ScannerInputStream extends InputStream {
     }
 
     public boolean readUntilDelimiter(byte[] delimiter, OutputStream output) throws IOException {
+        return readUntilDelimiter(delimiter, output, Long.MAX_VALUE);
+    }
+
+    /**
+     * Copies bytes to {@code output} until {@code delimiter}, which is consumed but not copied.
+     *
+     * @param maxLength how many bytes may be copied before the delimiter is found
+     * @return false if the stream ended before the delimiter
+     * @throws LimitExceededException when more than {@code maxLength} bytes precede the delimiter
+     */
+    public boolean readUntilDelimiter(byte[] delimiter, OutputStream output, long maxLength) throws IOException {
+        long copied = 0;
         byte[] collector = new byte[delimiter.length];
         int readenByte;
         int collectorPosition = 0;
@@ -86,10 +144,16 @@ public class ScannerInputStream extends InputStream {
                 //collected bytes are not boundary but the boundary may still start somewhere
                 //in the middle of the collector so we should return back and check
                 collector[collectorPosition] = (byte) readenByte;//add wrong byte also to collector just for convenience to copy all back
+                if (++copied > maxLength) {
+                    throw new LimitExceededException("No delimiter within " + maxLength + " bytes");
+                }
                 output.write(collector[0]);
                 writeBack(collector, 1, collectorPosition);
                 collectorPosition = 0;
             } else {
+                if (++copied > maxLength) {
+                    throw new LimitExceededException("No delimiter within " + maxLength + " bytes");
+                }
                 output.write(readenByte);
             }
         }
@@ -101,8 +165,17 @@ public class ScannerInputStream extends InputStream {
     }
 
     public String nextLine(String charset) throws IOException {
+        return nextLine(charset, Long.MAX_VALUE);
+    }
+
+    /**
+     * @param maxLength longest line accepted, CRLF not counted
+     * @return the line without its CRLF, or null if the stream ended before any byte of it
+     * @throws LimitExceededException for a longer line
+     */
+    public String nextLine(String charset, long maxLength) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        boolean boundaryFound = readUntilDelimiter(new byte[]{0x0D, 0x0A}, output);
+        boolean boundaryFound = readUntilDelimiter(new byte[]{0x0D, 0x0A}, output, maxLength);
         String result = output.toString(charset);
         return ("".equals(result) && !boundaryFound) ? null : result;
     }

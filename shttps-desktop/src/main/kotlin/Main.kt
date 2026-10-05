@@ -24,6 +24,7 @@ import com.phlox.simpleserver.ext.DesktopExtensions
 import com.phlox.simpleserver.navigation.AppNavigationGraph
 import com.phlox.simpleserver.security.ClientApprovalController
 import com.phlox.simpleserver.security.NewClientPrompts
+import com.phlox.simpleserver.security.ScreenAccessApprovalController
 import com.phlox.simpleserver.shttps_desktop.generated.resources.Res
 import com.phlox.simpleserver.shttps_desktop.generated.resources.exit
 import com.phlox.simpleserver.shttps_desktop.generated.resources.start_server
@@ -193,6 +194,7 @@ fun ApplicationScope.AppContent(appScope: ApplicationScope, config: AppConfig, a
     //lives here rather than in HomeViewModel so that the prompts it drives can be shown while the
     //main window is hidden in the tray - which is where a running server normally sits
     val approvalController = remember { ClientApprovalController(config) }
+    val screenAccessController = remember { ScreenAccessApprovalController() }
 
     //someone launched the app again while we were already running (typically from a shortcut, while
     //we sit hidden in the tray). The request arrives on the SingleInstanceManager watcher thread,
@@ -266,6 +268,7 @@ fun ApplicationScope.AppContent(appScope: ApplicationScope, config: AppConfig, a
                     serverRunning = serverRunning,
                     autoLaunch = autoLaunch,
                     approvalController = approvalController,
+                    screenAccessController = screenAccessController,
                     windowVisible = isVisible
                 )
             }
@@ -274,7 +277,7 @@ fun ApplicationScope.AppContent(appScope: ApplicationScope, config: AppConfig, a
 
     //deliberately outside the closeToTray check below: an unknown client has to be reported no
     //matter whether the app uses a tray icon
-    NewClientPrompts(approvalController)
+    NewClientPrompts(approvalController, screenAccessController)
 
     if (closeToTray.value) {
         Tray(

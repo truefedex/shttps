@@ -118,21 +118,29 @@ public class WebSocketSession {
         sendMessage(WebSocketFrame.OPCODE_BINARY, message, offset, length);
     }
 
+    //the open check and the write happen under the writer's lock: close() sets its flag before
+    //taking that lock to write the close frame, so nothing can be written after the close frame
     private void sendMessage(int opCode, byte[] payload, int offset, int length) throws IOException {
-        checkOpenForSending();
-        writer.writeMessage(opCode, payload, offset, length, options.outgoingFrameLength);
+        synchronized (writer) {
+            checkOpenForSending();
+            writer.writeMessage(opCode, payload, offset, length, options.outgoingFrameLength);
+        }
     }
 
     public void sendPing(byte[] payload) throws IOException {
-        checkOpenForSending();
         checkControlPayloadLength(payload);
-        writer.writeFrame(true, WebSocketFrame.OPCODE_PING, payload);
+        synchronized (writer) {
+            checkOpenForSending();
+            writer.writeFrame(true, WebSocketFrame.OPCODE_PING, payload);
+        }
     }
 
     public void sendPong(byte[] payload) throws IOException {
-        checkOpenForSending();
         checkControlPayloadLength(payload);
-        writer.writeFrame(true, WebSocketFrame.OPCODE_PONG, payload);
+        synchronized (writer) {
+            checkOpenForSending();
+            writer.writeFrame(true, WebSocketFrame.OPCODE_PONG, payload);
+        }
     }
 
     /**

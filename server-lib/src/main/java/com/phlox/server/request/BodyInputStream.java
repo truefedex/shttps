@@ -23,7 +23,18 @@ public abstract class BodyInputStream extends InputStream {
      *
      * @return true if the body is fully consumed afterwards
      */
-    public abstract boolean drainRemaining(long maxBytes) throws IOException;
+    public boolean drainRemaining(long maxBytes) throws IOException {
+        byte[] buffer = new byte[8192];
+        long drained = 0;
+        while (!isFullyConsumed() && drained < maxBytes) {
+            int count = read(buffer, 0, (int) Math.min(buffer.length, maxBytes - drained));
+            if (count == -1) {
+                break;
+            }
+            drained += count;
+        }
+        return isFullyConsumed();
+    }
 
     /**
      * Marks this body as handed off to another thread (e.g. a CGI stdin pump).

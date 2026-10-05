@@ -205,41 +205,21 @@ public class RadixTree<T> {
     }
 
     /**
-     * Zero-allocation prefix visitor. Walks all stored keys that are prefixes
-     * of {@code key} from shortest to longest, invoking {@code visitor} for
-     * each matched value.
+     * Walks all stored keys that are prefixes of {@code key} from shortest to longest, invoking
+     * {@code visitor} for each matched value.
      *
      * The visitor is a {@link Predicate}<T>: return {@code true} to continue
      * walking, {@code false} to stop early (useful for "find first", rate
      * limiting, short-circuit logic, etc.).
      *
-     * No collections, lambdas captures of mutable state, or boxing occur
-     * inside this method itself — allocations are entirely the caller's
-     * responsibility.
+     * Allocates no collections; the only allocation is the adapter around {@code visitor}
+     * (see {@link #visitPrefixes(String, PrefixVisitor)} for none at all).
      *
      * @param key     the string to match prefixes against
      * @param visitor called for each matching value; return false to stop
      */
     public void visitPrefixes(String key, Predicate<T> visitor) {
-        RadixNode<T> current = root;
-        int i = 0;
-        while (i < key.length()) {
-            char c = key.charAt(i);
-            RadixNode<T> child = current.children.get(c);
-            if (child == null) break;
-            String childPrefix = child.prefix;
-            int j = 0;
-            while (j < childPrefix.length() && i < key.length() && key.charAt(i) == childPrefix.charAt(j)) {
-                i++;
-                j++;
-            }
-            if (j == childPrefix.length()) {
-                if (child.value != null && !visitor.test(child.value)) return;
-                current = child;
-            } else {
-                break;
-            }
-        }
+        visitPrefixes(key, (PrefixVisitor<T>) (k, end, value) -> visitor.test(value));
     }
 
     /**
@@ -256,25 +236,7 @@ public class RadixTree<T> {
      * @param visitor (matchedPrefix, value) -> continueWalking
      */
     public void visitPrefixes(String key, BiPredicate<String, T> visitor) {
-        RadixNode<T> current = root;
-        int i = 0;
-        while (i < key.length()) {
-            char c = key.charAt(i);
-            RadixNode<T> child = current.children.get(c);
-            if (child == null) break;
-            String childPrefix = child.prefix;
-            int j = 0;
-            while (j < childPrefix.length() && i < key.length() && key.charAt(i) == childPrefix.charAt(j)) {
-                i++;
-                j++;
-            }
-            if (j == childPrefix.length()) {
-                if (child.value != null && !visitor.test(key.substring(0, i), child.value)) return;
-                current = child;
-            } else {
-                break;
-            }
-        }
+        visitPrefixes(key, (PrefixVisitor<T>) (k, end, value) -> visitor.test(k.substring(0, end), value));
     }
 
     /**
@@ -371,64 +333,5 @@ public class RadixTree<T> {
          * @return true to continue visiting, false to stop
          */
         boolean visit(String key, int prefixEndIndex, T value);
-    }
-
-    public static void main(String[] args) {
-        RadixTree<Integer> tree = new RadixTree<>();
-        tree.put("test", 1);
-        tree.put("te", 2);
-        tree.put("tester", 3);
-
-        System.out.println("--- findLongestPrefix ---");
-        System.out.println(tree.findLongestPrefix("tester_test"));   // 1 ("test" is longest)
-
-        System.out.println("--- findAllPrefixes (allocating) ---");
-        System.out.println(tree.findAllPrefixes("tester_test"));     // [2, 1, 3]
-
-        System.out.println("--- visitPrefixes: value-only, stop early ---");
-        tree.visitPrefixes("tester_test", value -> {
-            System.out.println("  matched value: " + value);
-            return value != 1; // stop after finding value==1
-        });
-        // matched value: 2
-        // matched value: 1
-
-        System.out.println("--- visitPrefixes: with prefix string ---");
-        tree.visitPrefixes("tester_test", (prefix, value) -> {
-            System.out.println("  prefix='" + prefix + "' value=" + value);
-            return true;
-        });
-        // prefix='te'     value=2
-        // prefix='test'   value=1
-        // prefix='tester' value=3
-
-        System.out.println("--- visitPrefixes: zero-alloc PrefixVisitor ---");
-        tree.visitPrefixes("tester_test", (key, end, value) -> {
-            // key.substring(0, end) only if you need it — or compare inline
-            System.out.println("  prefix='" + key.substring(0, end) + "' value=" + value);
-            return true;
-        });
-
-        System.out.println("--- visitPrefixesEqualOrLongerThan ---");
-        tree.visitPrefixesEqualOrLongerThan("te", (key, value) -> {
-            System.out.println("  key='" + key + "' value=" + value);
-            return true;
-        });
-        // key='te'     value=2
-        // key='test'   value=1
-        // key='tester' value=3
-
-        System.out.println("--- removeIf ---");
-        tree.removeIf((key, value) -> value == 2); // removes "te"
-        System.out.println(tree.findLongestPrefix("te"));      // null
-        System.out.println(tree.findLongestPrefix("test"));    // 1
-        System.out.println(tree.findLongestPrefix("tester"));  // 3
-
-        System.out.println("--- get / remove (exact) ---");
-        System.out.println(tree.get("test"));    // 1
-        System.out.println(tree.get("tes"));     // null (not a stored key)
-        System.out.println(tree.remove("test")); // 1
-        System.out.println(tree.get("test"));    // null
-        System.out.println(tree.get("tester"));  // 3 (unaffected)
     }
 }

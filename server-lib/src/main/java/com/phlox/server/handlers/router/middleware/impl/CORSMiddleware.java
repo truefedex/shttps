@@ -99,6 +99,15 @@ public class CORSMiddleware implements Middleware {
             CORSRule corsRule = corsRuleForOrigin(origin);
             if (corsRule != null) {
                 addAllowOriginHeader(corsRule, origin, response.headers);
+                //a browser checks these on the actual response, not only on the preflight: without
+                //Allow-Credentials it hides a credentialed response from the page, and
+                //Expose-Headers means nothing anywhere else
+                if (corsRule.allowCredentials != null) {
+                    response.headers.put(Response.HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, String.valueOf(corsRule.allowCredentials));
+                }
+                if (corsRule.exposeHeaders != null) {
+                    response.headers.put(Response.HEADER_ACCESS_CONTROL_EXPOSE_HEADERS, String.join(", ", corsRule.exposeHeaders));
+                }
             }
         }
         return response;

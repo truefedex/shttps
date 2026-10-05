@@ -1,6 +1,9 @@
 package com.phlox.server.utils;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.logging.Handler;
+import java.util.logging.Level;
 import java.util.logging.LogRecord;
 
 public final class SHTTPSLoggerProxy {
@@ -62,27 +65,47 @@ public final class SHTTPSLoggerProxy {
         private final java.util.logging.Logger logger;
         private final int levels;
 
+        /** Prints records to stdout: the message, then the stack trace of the throwable if any. */
+        static final class StdoutHandler extends Handler {
+            @Override
+            public void publish(LogRecord record) {
+                if (!isLoggable(record)) {
+                    return;
+                }
+                StringBuilder line = new StringBuilder("[").append(record.getLoggerName()).append("] ")
+                        .append(record.getMessage());
+                if (record.getThrown() != null) {
+                    StringWriter trace = new StringWriter();
+                    record.getThrown().printStackTrace(new PrintWriter(trace));
+                    line.append(System.lineSeparator()).append(trace.toString().trim());
+                }
+                System.out.println(line);
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        }
+
         public TaggedJavaLogger(String tag, int levels) {
             this.logger = java.util.logging.Logger.getLogger(tag);
-            this.logger.addHandler(new Handler() {
-                @Override
-                public void publish(LogRecord record) {
-                    if (isLoggable(record)) {
-                        if (record.getThrown() != null) {
-                            record.getThrown().printStackTrace();
-                        } else {
-                            System.out.println("[" + record.getLoggerName() + "] " + record.getMessage());
-                        }
-                    }
+            //the JUL logger is shared by every TaggedJavaLogger with this tag: one handler for all of
+            //them, or each line comes out once per instance ever created
+            synchronized (TaggedJavaLogger.class) {
+                boolean hasHandler = false;
+                for (Handler handler : this.logger.getHandlers()) {
+                    hasHandler |= handler instanceof StdoutHandler;
                 }
-
-                @Override
-                public void flush() {}
-
-                @Override
-                public void close() {}
-            });
+                if (!hasHandler) {
+                    this.logger.addHandler(new StdoutHandler());
+                }
+            }
             this.logger.setUseParentHandlers(false);
+            //which levels get through is decided by the mask below; JUL's default (INFO) would
+            //silently drop every debug line on top of that
+            this.logger.setLevel(Level.ALL);
             this.levels = levels;
         }
 
@@ -116,11 +139,10 @@ public final class SHTTPSLoggerProxy {
                 LogRecord record = new LogRecord(java.util.logging.Level.SEVERE, message);
                 record.setSourceClassName(logger.getName());
                 record.setLoggerName(logger.getName());
-                record.setThrown(t);
-                logger.log(record);
                 if ((levels & Logger.STACK_TRACE) != 0) {
-                    t.printStackTrace();
+                    record.setThrown(t);
                 }
+                logger.log(record);
             }
         }
 
@@ -150,11 +172,10 @@ public final class SHTTPSLoggerProxy {
                 LogRecord record = new LogRecord(java.util.logging.Level.WARNING, message);
                 record.setSourceClassName(logger.getName());
                 record.setLoggerName(logger.getName());
-                record.setThrown(t);
-                logger.log(record);
                 if ((levels & Logger.STACK_TRACE) != 0) {
-                    t.printStackTrace();
+                    record.setThrown(t);
                 }
+                logger.log(record);
             }
         }
 

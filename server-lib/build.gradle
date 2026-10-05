@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'jacoco'
 }
 
 java {
@@ -18,4 +19,13 @@ dependencies {
 
 test {
     useJUnitPlatform()
+}
+
+//coverage report: ./gradlew :server-lib:jacocoTestReport -> build/reports/jacoco/test/html/index.html
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
 }

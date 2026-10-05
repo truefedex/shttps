@@ -6,7 +6,7 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -117,9 +117,7 @@ public final class HTTPUtils {
                 switch (key) {
                     case "expires":
                         if (val instanceof Date) {
-                            SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US);
-                            sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
-                            sb.append("; Expires=").append(sdf.format((Date) val));
+                            sb.append("; Expires=").append(getHTTPDateFormat().format((Date) val));
                         }
                         break;
 
@@ -184,6 +182,84 @@ public final class HTTPUtils {
         return headers;
     }
 
+    /** A media type and its parameters, as parsed by {@link #parseContentType}. */
+    public static final class ContentType {
+        /** Lower-cased "type/subtype", without parameters. */
+        public final String mimeType;
+        /** Parameter values by lower-cased name, unquoted. */
+        public final Map<String, String> parameters;
+
+        ContentType(String mimeType, Map<String, String> parameters) {
+            this.mimeType = mimeType;
+            this.parameters = Collections.unmodifiableMap(parameters);
+        }
+    }
+
+    /**
+     * Parses a Content-Type value (RFC 9110 8.3.1): {@code type/subtype *( ";" name=value )}.
+     * Any number of parameters in any order, names case-insensitive, values token or
+     * quoted-string. Malformed parameters are skipped rather than failing the whole header.
+     */
+    public static ContentType parseContentType(String header) {
+        return parseValueWithParameters(header, true);
+    }
+
+    /**
+     * Parses a Content-Disposition value the same way: the disposition type ("form-data",
+     * "attachment") in {@link ContentType#mimeType}, then its parameters ("name", "filename").
+     * Unlike {@link #parseContentType}, a backslash inside a quoted value is kept: browsers do not
+     * escape with it in multipart file names (they percent-encode quotes), so "a\b.txt" is a name.
+     */
+    public static ContentType parseContentDisposition(String header) {
+        return parseValueWithParameters(header, false);
+    }
+
+    private static ContentType parseValueWithParameters(String header, boolean backslashEscapes) {
+        int length = header.length();
+        int semicolon = header.indexOf(';');
+        String mimeType = (semicolon < 0 ? header : header.substring(0, semicolon)).trim().toLowerCase(Locale.ROOT);
+        Map<String, String> parameters = new LinkedHashMap<>();
+        int i = semicolon < 0 ? length : semicolon + 1;
+        while (i < length) {
+            int nameEnd = i;
+            while (nameEnd < length && header.charAt(nameEnd) != '=' && header.charAt(nameEnd) != ';') {
+                nameEnd++;
+            }
+            String name = header.substring(i, nameEnd).trim().toLowerCase(Locale.ROOT);
+            if (nameEnd >= length || header.charAt(nameEnd) == ';') {
+                //a parameter without a value
+                i = nameEnd + 1;
+                continue;
+            }
+            int valueStart = nameEnd + 1;
+            while (valueStart < length && header.charAt(valueStart) == ' ') {
+                valueStart++;
+            }
+            StringBuilder value = new StringBuilder();
+            int next;
+            if (valueStart < length && header.charAt(valueStart) == '"') {
+                int j = valueStart + 1;
+                while (j < length && header.charAt(j) != '"') {
+                    char c = header.charAt(j);
+                    if (backslashEscapes && c == '\\' && j + 1 < length) {
+                        c = header.charAt(++j);
+                    }
+                    value.append(c);
+                    j++;
+                }
+                next = header.indexOf(';', j);
+            } else {
+                next = header.indexOf(';', valueStart);
+                value.append(header, valueStart, next < 0 ? length : next);
+            }
+            if (!name.isEmpty()) {
+                parameters.put(name, value.toString().trim());
+            }
+            i = next < 0 ? length : next + 1;
+        }
+        return new ContentType(mimeType, parameters);
+    }
+
     public static class Range {
         public long start;
         public long end;
@@ -196,23 +272,66 @@ public final class HTTPUtils {
         }
     }
 
+    /**
+     * Parses a Range header against a representation of {@code actualContentLength} bytes.
+     * Supports "bytes=first-last", "bytes=first-" and the suffix form "bytes=-count"; a last
+     * position past the end is clamped to it.
+     *
+     * @return the single range asked for, or null when the header should be ignored and the whole
+     * representation sent (RFC 9110 14.2 allows that): another unit, a malformed or unsatisfiable
+     * range, or several ranges - multipart/byteranges is not implemented
+     */
     public static List<Range> parseRangeHeader(String rangeHeader, long actualContentLength) {
-        String[] rangesStrs = rangeHeader.split("=")[1].split(",");
-        List<Range> ranges = new ArrayList<>();
-        for (String rangeStr: rangesStrs) {
-            String[] parts = rangeStr.split("-");
-            long start = 0;
-            long end = actualContentLength - 1;
-            try {
-                start = Long.parseLong(parts[0]);
-            } catch (Exception e){}
-            try {
-                end = Long.parseLong(parts[1]);
-            } catch (Exception e){}
-            ranges.add(new Range(start, end));
+        int equals = rangeHeader.indexOf('=');
+        if (equals < 0 || !rangeHeader.substring(0, equals).trim().equalsIgnoreCase("bytes")) {
+            return null;
         }
+        String spec = rangeHeader.substring(equals + 1);
+        if (spec.indexOf(',') >= 0) {
+            return null;
+        }
+        int dash = spec.indexOf('-');
+        if (dash < 0) {
+            return null;
+        }
+        String first = spec.substring(0, dash).trim();
+        String last = spec.substring(dash + 1).trim();
+        long start;
+        long end;
+        if (first.isEmpty()) {
+            //suffix range: the final "last" bytes
+            long count = parseNonNegative(last);
+            if (count <= 0) {
+                return null;
+            }
+            start = Math.max(0, actualContentLength - count);
+            end = actualContentLength - 1;
+        } else {
+            start = parseNonNegative(first);
+            end = last.isEmpty() ? actualContentLength - 1 : parseNonNegative(last);
+            if (start < 0 || end < 0 || end < start) {
+                return null;
+            }
+            end = Math.min(end, actualContentLength - 1);
+        }
+        if (start >= actualContentLength || end < start) {
+            return null;
+        }
+        return Collections.singletonList(new Range(start, end));
+    }
 
-        return ranges;
+    //digits only, at most 18 of them; -1 for anything else
+    private static long parseNonNegative(String s) {
+        if (s.isEmpty() || s.length() > 18) {
+            return -1;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < '0' || c > '9') {
+                return -1;
+            }
+        }
+        return Long.parseLong(s);
     }
 
     public static boolean isTextContentType(String contentType) {
@@ -234,7 +353,14 @@ public final class HTTPUtils {
             throw new SecurityException("Malicious path detected: path contains '..'");
         }
 
-        if (path.contains("\0")) throw new SecurityException("Null byte detected");
+        //the decoded path ends up in headers (redirect targets, Location of a folder) and log lines,
+        //where a CR/LF would let the request write headers of its own
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                throw new SecurityException("Control character in path");
+            }
+        }
 
         if (path.contains("//")) throw new SecurityException("Double slash prohibited for path");
 

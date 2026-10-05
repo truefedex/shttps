@@ -83,6 +83,7 @@ public interface SHTTPSConfig {
      * so that hoisting this setting up here left every stored value where it was.
      */
     String KEY_ALLOW_REMOTE_CONTROL = "allow_remote_control";
+    String KEY_SCREEN_SHARE_CONFIRM = "screen_share_confirm";
 
     /** {@link #getScreenMonitor()} value meaning "whichever display is primary right now". */
     int SCREEN_MONITOR_PRIMARY = -1;
@@ -923,6 +924,20 @@ public interface SHTTPSConfig {
         setBoolean(KEY_ALLOW_REMOTE_CONTROL, value);
     }
 
+    /**
+     * Whether every new screen viewer has to be let in by the person at the device, who is shown
+     * who is asking and whether they would also get control. On by default: an account with
+     * {@code VIEW_SCREEN} - or anyone at all, with authentication off - would otherwise be watching
+     * without the user ever knowing.
+     */
+    default boolean isScreenShareConfirmationEnabled() {
+        return getBoolean(KEY_SCREEN_SHARE_CONFIRM, true);
+    }
+
+    default void setScreenShareConfirmationEnabled(boolean value) {
+        setBoolean(KEY_SCREEN_SHARE_CONFIRM, value);
+    }
+
     int getInt(String key, int defaultValue);
 
     void setInt(String key, int value);
@@ -1117,6 +1132,7 @@ public interface SHTTPSConfig {
         result.put(KEY_SCREEN_SHARE, isScreenShareEnabled());
         result.put(KEY_SCREEN_MONITOR, getScreenMonitor());
         result.put(KEY_ALLOW_REMOTE_CONTROL, isRemoteControlEnabled());
+        result.put(KEY_SCREEN_SHARE_CONFIRM, isScreenShareConfirmationEnabled());
 
         return result;
     }
@@ -1315,6 +1331,9 @@ public interface SHTTPSConfig {
         }
         if (json.has(KEY_ALLOW_REMOTE_CONTROL)) {
             setRemoteControlEnabled(json.optBoolean(KEY_ALLOW_REMOTE_CONTROL, false));
+        }
+        if (json.has(KEY_SCREEN_SHARE_CONFIRM)) {
+            setScreenShareConfirmationEnabled(json.optBoolean(KEY_SCREEN_SHARE_CONFIRM, true));
         }
 
         // Apply config version last so any incompatible/old field shapes were already accepted with their

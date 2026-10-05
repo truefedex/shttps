@@ -18,6 +18,14 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -53,6 +61,16 @@ import java.util.function.Supplier;
  * user's role, which is not something to do per touch event. A change of rights therefore only
  * takes effect when the client reconnects, while the screen sharing and remote control options in
  * the app keep being obeyed the moment they are switched off.
+ * <p>
+ * With {@link SHTTPSConfig#isScreenShareConfirmationEnabled()} on and a {@link ScreenAccessApprover}
+ * given, a new viewer additionally has to be let in by the person at the device. The connection is
+ * held open meanwhile without blocking its thread - so pings are still answered and a client that
+ * gives up is noticed - and all the client gets is {@code {"type":"approval","state":"pending"}}.
+ * An answer of allow starts the stream as above, "view only" starts it with control withheld for
+ * this connection, and a refusal or no answer within {@link #ACCESS_REQUEST_TIMEOUT_SECONDS} closes
+ * it with {@link #CLOSE_CODE_ACCESS_DENIED} or {@link #CLOSE_CODE_ACCESS_TIMEOUT}. An approval is
+ * remembered for the same address and account for {@link #ACCESS_GRACE_MILLIS} after their last
+ * connection ends, which is what keeps the page's own reconnects from asking all over again.
  */
 public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
     public static final String PATH = "/api/screen/stream";
@@ -66,6 +84,22 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
      * "you are not allowed" apart from "nothing is being shared".
      */
     public static final int CLOSE_CODE_FORBIDDEN = 4403;
+    /** The person at the device refused this viewer. */
+    public static final int CLOSE_CODE_ACCESS_DENIED = 4401;
+    /** Nobody at the device answered the request in time. */
+    public static final int CLOSE_CODE_ACCESS_TIMEOUT = 4408;
+
+    /** How long a viewer waits for the person at the device to let them in. */
+    public static final int ACCESS_REQUEST_TIMEOUT_SECONDS = 60;
+    /**
+     * How long an approval outlives the last connection it let in. The page reconnects on its own
+     * after a dropped connection and whenever capture restarts, and the user who just let someone
+     * in should not be asked about each of those.
+     */
+    public static final long ACCESS_GRACE_MILLIS = 2 * 60 * 1000;
+
+    /** Runs the access request timeouts; one daemon thread for all of them, idle almost always. */
+    private static final ScheduledThreadPoolExecutor TIMEOUTS = createTimeoutExecutor();
 
     private static final String ATTRIBUTE_PUMP = "screenStreamPump";
     private static final String ATTRIBUTE_MAY_VIEW = "screenMayView";
@@ -76,6 +110,11 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
      * disconnect, and {@link #onClose} still has to let go of whatever was being held.
      */
     private static final String ATTRIBUTE_INPUT_TARGET = "screenInputTarget";
+    /** The name of the account the handshake was made with; absent with authentication off. */
+    private static final String ATTRIBUTE_USER_NAME = "screenUserName";
+    /** Set when the person at the device let this client watch but not control. */
+    private static final String ATTRIBUTE_VIEW_ONLY = "screenViewOnly";
+    private static final String ATTRIBUTE_STATE = "screenConnectionState";
     /**
      * Frames a client may fall behind before its backlog is thrown away. Everything queued here is
      * delay the viewer will see, and on a live view stale frames are worth less than catching up:
@@ -88,6 +127,8 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
     private static final String REASON_DISABLED = "disabled";
     /** The user may watch the screen, but not touch it. */
     private static final String REASON_FORBIDDEN = "forbidden";
+    /** The person at the device let this client watch, but not control. */
+    private static final String REASON_VIEW_ONLY = "view-only";
     /** Another client is holding the device right now. */
     private static final String REASON_BUSY = "busy";
     private static final String REASON_NO_TEXT_FIELD = "no-text-field";
@@ -103,6 +144,19 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
     private final AuthManager authManager;
     private final Supplier<ScreenCaptureSource> screenCaptureSourceSupplier;
     private final Supplier<RemoteInputTarget> remoteInputTargetSupplier;
+    private final @Nullable ScreenAccessApprover accessApprover;
+    private final AccessGrants accessGrants = new AccessGrants();
+
+    /** Where answers are carried out. Package-private so tests can run them inline. */
+    Executor decisionExecutor = task -> {
+        Thread thread = new Thread(task, "ScreenAccessDecision");
+        thread.setDaemon(true);
+        thread.start();
+    };
+    /** Package-private so tests need not wait a minute for a timeout. */
+    long accessRequestTimeoutMillis = ACCESS_REQUEST_TIMEOUT_SECONDS * 1000L;
+    /** Package-private so tests can move time past the grace period. */
+    LongSupplier clock = System::currentTimeMillis;
 
     /**
      * @param config                       consulted for the auth mode: with authentication switched
@@ -117,10 +171,23 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
     public ScreenStreamWebSocketHandler(SHTTPSConfig config, AuthManager authManager,
                                         Supplier<ScreenCaptureSource> screenCaptureSourceSupplier,
                                         Supplier<RemoteInputTarget> remoteInputTargetSupplier) {
+        this(config, authManager, screenCaptureSourceSupplier, remoteInputTargetSupplier, null);
+    }
+
+    /**
+     * @param accessApprover asks the person at the device about each new viewer while the
+     *                       confirmation option is on; null for a host that can not ask anyone,
+     *                       which then lets viewers in the way it always did
+     */
+    public ScreenStreamWebSocketHandler(SHTTPSConfig config, AuthManager authManager,
+                                        Supplier<ScreenCaptureSource> screenCaptureSourceSupplier,
+                                        Supplier<RemoteInputTarget> remoteInputTargetSupplier,
+                                        @Nullable ScreenAccessApprover accessApprover) {
         this.config = config;
         this.authManager = authManager;
         this.screenCaptureSourceSupplier = screenCaptureSourceSupplier;
         this.remoteInputTargetSupplier = remoteInputTargetSupplier;
+        this.accessApprover = accessApprover;
         //this endpoint only pushes; incoming traffic is the occasional short command
         options.maxFramePayloadLength = 4 * 1024;
         options.maxMessagePayloadLength = 4 * 1024;
@@ -153,7 +220,7 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
      */
     @Override
     protected void onSessionCreated(RequestContext context, WebSocketSession session) {
-        EnumSet<User.SystemRights> rights = resolveSystemRights(context);
+        EnumSet<User.SystemRights> rights = resolveSystemRights(context, session);
         session.getAttributes().put(ATTRIBUTE_MAY_VIEW,
                 rights.contains(User.SystemRights.VIEW_SCREEN));
         session.getAttributes().put(ATTRIBUTE_MAY_CONTROL,
@@ -166,13 +233,18 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
      * sharing option and the consent dialog on the device alone. An unauthenticated request under
      * any other auth mode gets nothing.
      */
-    private @NotNull EnumSet<User.SystemRights> resolveSystemRights(RequestContext context) {
+    private @NotNull EnumSet<User.SystemRights> resolveSystemRights(RequestContext context,
+                                                                    WebSocketSession session) {
         if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.NONE)) {
             return EnumSet.allOf(User.SystemRights.class);
         }
         User user = authManager == null ? null : authManager.getAuthenticatedUser(context);
         if (user == null) {
             return EnumSet.noneOf(User.SystemRights.class);
+        }
+        //for the access prompt, which has to say who is asking
+        if (user.identity != null) {
+            session.getAttributes().put(ATTRIBUTE_USER_NAME, user.identity);
         }
         try {
             //reading the rights of a user with a role means a database lookup, which can fail
@@ -199,17 +271,134 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
             session.close(WebSocketCloseCodes.POLICY_VIOLATION, "Screen sharing is not active");
             return;
         }
-        StreamPump pump = new StreamPump(session, source);
-        //publish and start before subscribing: an exception after the manager holds a reference
-        //would leave the encoder running for a connection nobody will ever close
-        session.getAttributes().put(ATTRIBUTE_PUMP, pump);
-        pump.start();
-        if (!source.addStreamListener(pump)) {
-            //the capture stopped between the check above and here
-            session.getAttributes().remove(ATTRIBUTE_PUMP);
-            pump.shutdown();
+        ConnectionState state = new ConnectionState();
+        session.getAttributes().put(ATTRIBUTE_STATE, state);
+        if (accessApprover == null || !config.isScreenShareConfirmationEnabled()) {
+            startStreaming(session, state, source);
+            return;
+        }
+
+        //what letting this client in would hand over, judged now, the way the first control
+        //status would judge it
+        boolean includesControl = isAllowed(session, ATTRIBUTE_MAY_CONTROL) &&
+                remoteInputTargetSupplier.get() != null;
+        String userName = (String) session.getAttributes().get(ATTRIBUTE_USER_NAME);
+        state.grantKey = AccessGrants.key(session.getRemoteAddress(), userName);
+        ScreenAccessRequest.Decision remembered =
+                accessGrants.lookup(state.grantKey, includesControl, clock.getAsLong());
+        if (remembered != null) {
+            logger.d("Screen viewer " + session.getRemoteAddress() + " let in again without asking");
+            admit(session, state, includesControl, remembered, source);
+            return;
+        }
+        requestAccess(session, state, userName, includesControl);
+    }
+
+    /**
+     * Puts the question to the person at the device and returns without waiting for the answer:
+     * the connection thread has to go on reading, or the client would neither get its pings
+     * answered nor be noticed leaving.
+     */
+    private void requestAccess(WebSocketSession session, ConnectionState state,
+                               @Nullable String userName, boolean includesControl) {
+        try {
+            //before anything can answer, so that nothing of the stream can overtake it
+            session.sendText("{\"type\":\"approval\",\"state\":\"pending\",\"timeout\":" +
+                    (accessRequestTimeoutMillis / 1000) + "}");
+        } catch (IOException e) {
+            //the read loop is about to find out as well, and nothing is pending yet to clean up
+            logger.d("Screen viewer " + session.getRemoteAddress() + " went away: " + e.getMessage());
+            return;
+        }
+        ScreenAccessRequest request = new ScreenAccessRequest(session.getRemoteAddress(), userName,
+                includesControl, (answered, decision) -> {
+            cancelTimeout(state);
+            finishRequest(answered);
+            //never on the answering thread: that is usually a UI thread, and both starting a
+            //capture subscription and closing a socket can take a while
+            decisionExecutor.execute(() -> onAnswered(session, state, includesControl, decision));
+        });
+        state.pendingRequest = request;
+        state.timeout = TIMEOUTS.schedule(() -> {
+            if (request.settle()) {
+                finishRequest(request);
+                logger.i("Nobody answered whether " + session.getRemoteAddress() +
+                        " may watch the screen");
+                decisionExecutor.execute(() -> session.close(CLOSE_CODE_ACCESS_TIMEOUT, "No answer"));
+            }
+        }, accessRequestTimeoutMillis, TimeUnit.MILLISECONDS);
+        try {
+            accessApprover.onAccessRequested(request);
+        } catch (Exception e) {
+            //nobody can be asked, and not asking is not the same as being told yes
+            logger.stackTrace(e);
+            if (request.settle()) {
+                cancelTimeout(state);
+                finishRequest(request);
+                session.close(CLOSE_CODE_ACCESS_DENIED, "Could not ask for access");
+            }
+        }
+    }
+
+    private void onAnswered(WebSocketSession session, ConnectionState state,
+                            boolean includesControl, ScreenAccessRequest.Decision decision) {
+        if (decision == ScreenAccessRequest.Decision.DENY) {
+            logger.i("Screen viewer " + session.getRemoteAddress() + " was refused");
+            session.close(CLOSE_CODE_ACCESS_DENIED, "Access denied");
+            return;
+        }
+        accessGrants.remember(state.grantKey, includesControl, decision, clock.getAsLong());
+        //the capture may have stopped while the question was on screen
+        ScreenCaptureSource source = screenCaptureSourceSupplier.get();
+        if (source == null || !source.isActive()) {
             session.close(WebSocketCloseCodes.POLICY_VIOLATION, "Screen sharing is not active");
             return;
+        }
+        logger.i("Screen viewer " + session.getRemoteAddress() + " was let in" +
+                (decision == ScreenAccessRequest.Decision.VIEW_ONLY && includesControl
+                        ? " to watch only" : ""));
+        admit(session, state, includesControl, decision, source);
+    }
+
+    private void admit(WebSocketSession session, ConnectionState state, boolean includesControl,
+                       ScreenAccessRequest.Decision decision, ScreenCaptureSource source) {
+        if (decision == ScreenAccessRequest.Decision.VIEW_ONLY && includesControl) {
+            session.getAttributes().put(ATTRIBUTE_MAY_CONTROL, false);
+            session.getAttributes().put(ATTRIBUTE_VIEW_ONLY, true);
+        }
+        startStreaming(session, state, source);
+    }
+
+    /**
+     * Subscribes the client to the stream. Done under the connection's lock: once the client is
+     * let in by the person at the device this runs on another thread than the connection's, and a
+     * pump subscribed after {@link #onClose} has run would never be unsubscribed - its own failure
+     * path closes the socket, but only onClose takes it off the source.
+     */
+    private void startStreaming(WebSocketSession session, ConnectionState state,
+                                ScreenCaptureSource source) {
+        StreamPump pump;
+        synchronized (state) {
+            if (state.closed) {
+                return;
+            }
+            pump = new StreamPump(session, source);
+            //publish and start before subscribing: an exception after the manager holds a reference
+            //would leave the encoder running for a connection nobody will ever close
+            session.getAttributes().put(ATTRIBUTE_PUMP, pump);
+            pump.start();
+            if (!source.addStreamListener(pump)) {
+                //the capture stopped between the check above and here
+                session.getAttributes().remove(ATTRIBUTE_PUMP);
+                pump.shutdown();
+                session.close(WebSocketCloseCodes.POLICY_VIOLATION, "Screen sharing is not active");
+                return;
+            }
+            if (state.grantKey != null) {
+                //an approval does not run out while a connection it let in is still open
+                accessGrants.connectionOpened(state.grantKey);
+                state.holdsGrant = true;
+            }
         }
         //queued after the init segment the subscription just produced, so the client learns whether
         //it may offer control as soon as it has a picture
@@ -217,7 +406,27 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
         RemoteInputTarget target = remoteInputTargetSupplier.get();
         boolean controlAvailable = mayControl && target != null;
         sendControlStatus(pump, controlAvailable, controlAvailable ? REASON_OK :
-                (mayControl ? REASON_DISABLED : REASON_FORBIDDEN), target);
+                (mayControl ? REASON_DISABLED : notAllowedReason(session)), target);
+    }
+
+    /** Why a client that may not control was told so: its account, or the person at the device. */
+    private static String notAllowedReason(WebSocketSession session) {
+        return isAllowed(session, ATTRIBUTE_VIEW_ONLY) ? REASON_VIEW_ONLY : REASON_FORBIDDEN;
+    }
+
+    private static void cancelTimeout(ConnectionState state) {
+        ScheduledFuture<?> timeout = state.timeout;
+        if (timeout != null) {
+            timeout.cancel(false);
+        }
+    }
+
+    private void finishRequest(ScreenAccessRequest request) {
+        try {
+            accessApprover.onAccessRequestFinished(request);
+        } catch (Exception e) {
+            logger.stackTrace(e);
+        }
     }
 
     @Override
@@ -239,7 +448,7 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
         }
         if (!isAllowed(session, ATTRIBUTE_MAY_CONTROL)) {
             //also the answer to the client's periodic "may I control now?" probe
-            sendControlStatus(pump, false, REASON_FORBIDDEN, null);
+            sendControlStatus(pump, false, notAllowedReason(session), null);
             return;
         }
         //re-read for every message: the option can be switched off and the accessibility service
@@ -412,10 +621,14 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
         appendInputFamilies(status, enabled ? target : null);
         status.append('}');
         String rendered = status.toString();
-        if (rendered.equals(pump.lastControlStatus)) {
-            return;
+        //the first status of a client let in by the person at the device is sent from the thread
+        //that carried out the answer, which may overlap with the connection thread's own
+        synchronized (pump) {
+            if (rendered.equals(pump.lastControlStatus)) {
+                return;
+            }
+            pump.lastControlStatus = rendered;
         }
-        pump.lastControlStatus = rendered;
         pump.enqueueText(rendered);
     }
 
@@ -454,12 +667,35 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
 
     /** After something worked, the next failure is worth reporting again. */
     private void clearControlStatus(StreamPump pump) {
-        pump.lastControlStatus = null;
+        synchronized (pump) {
+            pump.lastControlStatus = null;
+        }
     }
 
     @Override
     public void onClose(WebSocketSession session, int code, String reason) {
-        StreamPump pump = (StreamPump) session.getAttributes().remove(ATTRIBUTE_PUMP);
+        ConnectionState state = (ConnectionState) session.getAttributes().get(ATTRIBUTE_STATE);
+        StreamPump pump;
+        if (state != null) {
+            boolean heldGrant;
+            synchronized (state) {
+                state.closed = true;
+                pump = (StreamPump) session.getAttributes().remove(ATTRIBUTE_PUMP);
+                heldGrant = state.holdsGrant;
+                state.holdsGrant = false;
+            }
+            //a client that leaves while the question is still on screen takes the question along
+            ScreenAccessRequest pending = state.pendingRequest;
+            if (pending != null && pending.settle()) {
+                cancelTimeout(state);
+                finishRequest(pending);
+            }
+            if (heldGrant) {
+                accessGrants.connectionClosed(state.grantKey, clock.getAsLong());
+            }
+        } else {
+            pump = (StreamPump) session.getAttributes().remove(ATTRIBUTE_PUMP);
+        }
         if (pump != null) {
             pump.detach();
         }
@@ -488,6 +724,101 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
             target.releaseClient(session);
         } catch (Exception e) {
             logger.stackTrace(e);
+        }
+    }
+
+    private static ScheduledThreadPoolExecutor createTimeoutExecutor() {
+        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, task -> {
+            Thread thread = new Thread(task, "ScreenAccessTimeout");
+            thread.setDaemon(true);
+            return thread;
+        });
+        //answered requests are the rule, and their minute long timeouts should not pile up
+        executor.setRemoveOnCancelPolicy(true);
+        return executor;
+    }
+
+    /** What the threads of one connection share. Guarded by itself where it says so. */
+    private static final class ConnectionState {
+        /** Set by onClose; guarded. */
+        boolean closed;
+        /** Whether this connection counts towards keeping its approval alive; guarded. */
+        boolean holdsGrant;
+        /** Address and account this connection is approved under, null when nobody was asked. */
+        volatile String grantKey;
+        volatile ScreenAccessRequest pendingRequest;
+        volatile ScheduledFuture<?> timeout;
+    }
+
+    /**
+     * Approvals given recently, so a client that reconnects - which the page does by itself after
+     * any hiccup - is not asked about again. Kept for the life of the handler, which is one run of
+     * the server. Refusals are not remembered: the person at the device may well change their mind.
+     */
+    private static final class AccessGrants {
+        private static final class Grant {
+            /** Whether the request that was answered would have included control. */
+            boolean coversControl;
+            ScreenAccessRequest.Decision decision;
+            int openConnections;
+            long expiresAt;
+        }
+
+        private final Map<String, Grant> grants = new HashMap<>();
+
+        static String key(String address, @Nullable String userName) {
+            return address + '\n' + (userName == null ? "" : userName);
+        }
+
+        /**
+         * @return the remembered answer, or null if this client has to be asked. An approval to
+         * watch is never stretched into one to control: a client that was let in while control was
+         * not on offer is asked again once it is.
+         */
+        synchronized @Nullable ScreenAccessRequest.Decision lookup(String key, boolean includesControl,
+                                                                  long now) {
+            purge(now);
+            Grant grant = grants.get(key);
+            if (grant == null || (includesControl && !grant.coversControl)) {
+                return null;
+            }
+            return grant.decision;
+        }
+
+        synchronized void remember(String key, boolean includesControl,
+                                   ScreenAccessRequest.Decision decision, long now) {
+            Grant grant = grants.get(key);
+            if (grant == null) {
+                grant = new Grant();
+                grants.put(key, grant);
+            }
+            grant.coversControl = includesControl;
+            grant.decision = decision;
+            grant.expiresAt = now + ACCESS_GRACE_MILLIS;
+        }
+
+        synchronized void connectionOpened(String key) {
+            Grant grant = grants.get(key);
+            if (grant != null) {
+                grant.openConnections++;
+            }
+        }
+
+        synchronized void connectionClosed(String key, long now) {
+            Grant grant = grants.get(key);
+            if (grant != null) {
+                grant.openConnections = Math.max(0, grant.openConnections - 1);
+                grant.expiresAt = now + ACCESS_GRACE_MILLIS;
+            }
+        }
+
+        private void purge(long now) {
+            for (Iterator<Grant> it = grants.values().iterator(); it.hasNext(); ) {
+                Grant grant = it.next();
+                if (grant.openConnections == 0 && now >= grant.expiresAt) {
+                    it.remove();
+                }
+            }
         }
     }
 

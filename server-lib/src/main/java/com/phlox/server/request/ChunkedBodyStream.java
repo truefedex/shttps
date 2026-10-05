@@ -71,20 +71,6 @@ public class ChunkedBodyStream extends BodyInputStream {
     }
 
     @Override
-    public boolean drainRemaining(long maxBytes) throws IOException {
-        byte[] buffer = new byte[8192];
-        long drained = 0;
-        while (!finished && drained < maxBytes) {
-            int count = read(buffer, 0, (int) Math.min(buffer.length, maxBytes - drained));
-            if (count == -1) {
-                break;
-            }
-            drained += count;
-        }
-        return finished;
-    }
-
-    @Override
     public void close() {
         //intentionally does not close the underlying connection stream
     }
@@ -103,7 +89,7 @@ public class ChunkedBodyStream extends BodyInputStream {
                 //consume the CRLF that terminates the previous chunk's data
                 String crlf = readLine();
                 if (!crlf.isEmpty()) {
-                    throw new IOException("Malformed chunked body: expected CRLF after chunk data");
+                    throw malformed("expected CRLF after chunk data");
                 }
             }
             long size = parseChunkSize(readLine());
@@ -125,16 +111,21 @@ public class ChunkedBodyStream extends BodyInputStream {
         //chunk extensions (";name=value") are allowed and ignored
         int extensionStart = line.indexOf(';');
         String hex = (extensionStart >= 0 ? line.substring(0, extensionStart) : line).trim();
-        long size;
-        try {
-            size = Long.parseLong(hex, 16);
-        } catch (NumberFormatException e) {
-            throw new IOException("Malformed chunked body: invalid chunk size \"" + hex + "\"");
+        //hex digits only: Long.parseLong would also take a sign, and a size another parser reads
+        //differently is how a body gets smuggled past a proxy. 15 digits always fit in a long
+        if (hex.isEmpty() || hex.length() > 15) {
+            throw malformed("invalid chunk size \"" + hex + "\"");
         }
-        if (size < 0) {
-            throw new IOException("Malformed chunked body: negative chunk size");
+        for (int i = 0; i < hex.length(); i++) {
+            if (Character.digit(hex.charAt(i), 16) < 0) {
+                throw malformed("invalid chunk size \"" + hex + "\"");
+            }
         }
-        return size;
+        return Long.parseLong(hex, 16);
+    }
+
+    private static BadRequestException malformed(String detail) {
+        return new BadRequestException("Malformed chunked body: " + detail);
     }
 
     private String readLine() throws IOException {
@@ -142,21 +133,23 @@ public class ChunkedBodyStream extends BodyInputStream {
         while (true) {
             int b = base.read();
             if (b == -1) {
-                throw new IOException("Malformed chunked body: unexpected end of stream");
+                throw new java.io.EOFException("Malformed chunked body: unexpected end of stream");
             }
             if (b == '\n') {
                 break;
             }
             if (line.size() >= MAX_LINE_LENGTH) {
-                throw new IOException("Malformed chunked body: line too long");
+                throw malformed("line too long");
             }
             line.write(b);
         }
         byte[] bytes = line.toByteArray();
         int length = bytes.length;
-        if (length > 0 && bytes[length - 1] == '\r') {
-            length--;
+        //CRLF only: a bare LF is a line end to some parsers and not to others
+        if (length == 0 || bytes[length - 1] != '\r') {
+            throw malformed("line not terminated by CRLF");
         }
+        length--;
         return new String(bytes, 0, length, java.nio.charset.StandardCharsets.ISO_8859_1);
     }
 }

@@ -42,8 +42,6 @@ import java.util.Objects;
 public class FilesRequestHandler extends StaticFileRequestHandler {
     public static final String EDITING_NOT_ALLOWED = "Editing not allowed";
     final String template;
-    public boolean renderFolders = false;
-    public boolean allowEditing = false;
 
     private final SHTTPSPlatformUtils platformUtils = SHTTPSApp.getInstance().platformUtils;
     private final List<String> allowedMethods =
@@ -145,7 +143,9 @@ public class FilesRequestHandler extends StaticFileRequestHandler {
                 config.getRedirectToIndex() &&
                 file.isDirectory() &&
                 file.findFile("index.html") != null;
-        if (file.isDirectory() && renderFolders && !canRedirectToIndex) {
+        //read per request rather than cached at startup, so toggling these in a running
+        //server takes effect without a restart
+        if (file.isDirectory() && config.getRenderFolders() && !canRedirectToIndex) {
             if (checkIsForbidden(user,
                     destPath, FileListRequestHandler.LIST_CONTENTS_OPERATION, Map.of(
                             "sort", "default",
@@ -163,9 +163,10 @@ public class FilesRequestHandler extends StaticFileRequestHandler {
 
             boolean needAuthBlock = authManager instanceof WebAuthManager && user != null;
 
+            boolean allowEditing = config.getAllowEditing();
             HTMLTemplateResponse response = new HTMLTemplateResponse(template, new HashMap<String, Object>() {{
                 put("current_path", request.path);
-                put("allowEditing", allowEditing && (user == null || authManager.getUserRightsEvaluator().hasAnyFileEditingRights(user)));
+                put("allowEditing", allowEditing &&(user == null || authManager.getUserRightsEvaluator().hasAnyFileEditingRights(user)));
                 put("thumbnails_support", SHTTPSApp.getInstance().platformUtils.isThumbnailsSupported());
                 put("list_no_script", files);
                 put("mediastore", root.getUri().startsWith("mediastore://"));

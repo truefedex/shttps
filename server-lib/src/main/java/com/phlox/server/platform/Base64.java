@@ -2,12 +2,17 @@ package com.phlox.server.platform;
 
 public class Base64 {
 
+    /**
+     * @throws IllegalArgumentException if {@code s} is not valid Base64
+     */
     @SuppressWarnings("NewApi")
     static public byte[] decode(String s) {
-        //check if java.util.Base64 is available. If not, use android.util.Base64 by reflection
+        //check if java.util.Base64 is available. If not, use android.util.Base64 by reflection.
+        //Only a missing class means "not available": invalid input is the caller's problem and
+        //used to surface as RuntimeException(ClassNotFoundException) after a pointless fallback
         try {
             return java.util.Base64.getDecoder().decode(s);
-        } catch (Throwable e) {
+        } catch (LinkageError e) {
             try {
                 return (byte[]) Class.forName("android.util.Base64").getMethod("decode", String.class, int.class).invoke(null, s, 0);
             } catch (Throwable e1) {
@@ -25,7 +30,7 @@ public class Base64 {
         //check if java.util.Base64 is available. If not, use android.util.Base64 by reflection
         try {
             return (urlSafe ? java.util.Base64.getUrlEncoder() : java.util.Base64.getEncoder()).encodeToString(input);
-        } catch (Throwable e) {
+        } catch (LinkageError e) {
             try {
                 return (String) Class.forName("android.util.Base64")
                         .getMethod("encodeToString", byte[].class, int.class)
