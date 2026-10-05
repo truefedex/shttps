@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -112,6 +113,66 @@ public class CORSMiddlewareTest {
         assertEquals("true", response.headers.get(Response.HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS));
         assertEquals("600", response.headers.get(Response.HEADER_ACCESS_CONTROL_MAX_AGE));
         assertEquals(false, handlerRan[0], "a preflight must be answered by the middleware alone");
+    }
+
+    @Test
+    public void credentialsAndExposedHeadersReachTheActualResponse() throws Exception {
+        CORSMiddleware.CORSRule rule = rule("https://app.example");
+        rule.allowCredentials = true;
+        rule.exposeHeaders = new String[]{"X-Total", "X-Page"};
+        CORSMiddleware middleware = new CORSMiddleware(Collections.singletonList(rule));
+
+        Response response = handle(middleware, get("https://app.example"));
+
+        assertEquals("https://app.example", response.headers.get(Response.HEADER_ACCESS_CONTROL_ALLOW_ORIGIN));
+        assertEquals("true", response.headers.get(Response.HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS));
+        assertEquals("X-Total, X-Page", response.headers.get(Response.HEADER_ACCESS_CONTROL_EXPOSE_HEADERS));
+        assertEquals("Origin", response.headers.get(Response.HEADER_VARY));
+    }
+
+    @Test
+    public void noCorsHeadersForAnUnknownOrigin() throws Exception {
+        CORSMiddleware.CORSRule rule = rule("https://app.example");
+        rule.allowCredentials = true;
+        CORSMiddleware middleware = new CORSMiddleware(Collections.singletonList(rule));
+
+        Response response = handle(middleware, get("https://evil.example"));
+
+        assertNull(response.headers.get(Response.HEADER_ACCESS_CONTROL_ALLOW_ORIGIN));
+        assertNull(response.headers.get(Response.HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS));
+    }
+
+    @Test
+    public void preflightWithoutRuleAnswersWithAllow() throws Exception {
+        CORSMiddleware middleware = new CORSMiddleware(Collections.<CORSMiddleware.CORSRule>emptyList());
+        Request request = get("https://evil.example");
+        request.method = Request.METHOD_OPTIONS;
+        Response response = handle(middleware, request);
+        assertEquals(204, response.code);
+        assertNull(response.headers.get(Response.HEADER_ACCESS_CONTROL_ALLOW_ORIGIN));
+        assertNotNull(response.headers.get(Response.HEADER_ALLOW));
+    }
+
+    @Test
+    public void preflightReflectsRequestedHeadersWhenTheRuleNamesNone() throws Exception {
+        CORSMiddleware middleware = new CORSMiddleware(Collections.singletonList(rule("*")));
+        Request request = get("https://any.example");
+        request.method = Request.METHOD_OPTIONS;
+        request.headers.put(Request.HEADER_ACCESS_CONTROL_REQUEST_METHOD, "PROPFIND");
+        request.headers.put(Request.HEADER_ACCESS_CONTROL_REQUEST_HEADERS, "X-A,X-B");
+        Response response = handle(middleware, request);
+        assertEquals("*", response.headers.get(Response.HEADER_ACCESS_CONTROL_ALLOW_ORIGIN));
+        assertEquals("GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH, PROPFIND",
+                response.headers.get(Response.HEADER_ACCESS_CONTROL_ALLOW_METHODS));
+        assertEquals("X-A, X-B", response.headers.get(Response.HEADER_ACCESS_CONTROL_ALLOW_HEADERS));
+    }
+
+    @Test
+    public void plainOptionsWithoutOriginReachesTheHandler() throws Exception {
+        CORSMiddleware middleware = new CORSMiddleware(Collections.singletonList(rule("*")));
+        Request request = get(null);
+        request.method = Request.METHOD_OPTIONS;
+        assertEquals(200, handle(middleware, request).code);
     }
 
     private static CORSMiddleware.CORSRule rule(String origin) {

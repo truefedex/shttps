@@ -6,6 +6,9 @@ import com.phlox.server.utils.MultiMap;
 import java.util.HashMap;
 
 public class RequestContext {
+    /** Key in {@link #data}: the request path as it arrived, before anything rewrote it. */
+    public static final String ORIGINAL_PATH = "original_path";
+
     //Default request body reader and parser - use it if request should have a body
     public final RequestBodyReader requestBodyReader;
     //Middleware can use that to store data between request handlers/middlewares

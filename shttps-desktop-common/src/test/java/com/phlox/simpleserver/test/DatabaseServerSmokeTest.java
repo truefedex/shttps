@@ -338,8 +338,9 @@ public class DatabaseServerSmokeTest {
                 .uri(URI.create(testConfig.getServerUrl() + "/api/db/cell-data?table=" +
                         URLEncoder.encode(TEST_TABLE, StandardCharsets.UTF_8) +
                         "&column=" + URLEncoder.encode(TEST_COLUMN, StandardCharsets.UTF_8) +
-                        "&filters=" + URLEncoder.encode("{\"clauses\":[\"" + TEST_COLUMN + "=\"],\"args\":[\"" +
-                                largeValue + "\"]}", StandardCharsets.UTF_8)))
+                        //select the row by a prefix: the value itself would make a 200 KB URL
+                        "&filters=" + URLEncoder.encode("{\"clauses\":[\"" + TEST_COLUMN + "?\"],\"args\":[\"abcdefghij%\"]}",
+                                StandardCharsets.UTF_8)))
                 .GET()
                 .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());

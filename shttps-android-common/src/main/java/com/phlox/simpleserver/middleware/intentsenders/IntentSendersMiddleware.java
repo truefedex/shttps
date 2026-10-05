@@ -15,8 +15,8 @@ import com.phlox.server.utils.MultiMap;
 import com.phlox.simpleserver.SHTTPSConfigAndroid;
 
 import java.io.ByteArrayInputStream;
+import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -24,34 +24,58 @@ public class IntentSendersMiddleware implements Middleware {
     private final String urlPathPrefix;
     private final List<IntentSender> intentSenders;
     private final Context context;
+
     public IntentSendersMiddleware(SHTTPSConfigAndroid config, Context context) {
         this.urlPathPrefix = config.getIntentSendingHandlersUrlPathPrefix();
-        this.intentSenders = config.getIntentSenders();
+        List<IntentSender> senders = config.getIntentSenders();
+        this.intentSenders = senders != null ? senders : Collections.emptyList();
         this.context = context;
     }
 
     @Override
     public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
-        String path = request.path;
-        if (!path.startsWith(urlPathPrefix)) {
+        if (intentSenders.isEmpty()) {
             return chain.proceed(context, request);
         }
-        path = path.substring(urlPathPrefix.length());
+
+        String requestPath = request.path;
+        String prefix = urlPathPrefix;
+        if (prefix.endsWith("/") && prefix.length() > 1) {
+            prefix = prefix.substring(0, prefix.length() - 1);
+        }
+
+        String subPath = null;
+        if (requestPath.equalsIgnoreCase(prefix)) {
+            subPath = "/";
+        } else if (requestPath.startsWith(prefix + "/")) {
+            subPath = requestPath.substring(prefix.length());
+        }
+
+        IntentSender sender = null;
+        for (IntentSender is : intentSenders) {
+            String isPath = is.urlPath.trim();
+            String isPathWithSlash = isPath.startsWith("/") ? isPath : "/" + isPath;
+
+            if (subPath != null && subPath.equalsIgnoreCase(isPathWithSlash)) {
+                sender = is;
+                break;
+            }
+            if (requestPath.equalsIgnoreCase(isPathWithSlash)) {
+                sender = is;
+                break;
+            }
+        }
+
+        if (sender == null) {
+            return chain.proceed(context, request);
+        }
+
         MultiMap<String, String> params = request.queryParams;
         if (request.method.equals(Request.METHOD_POST)) {
             context.requestBodyReader.readRequestBody(request);
             params = request.urlEncodedPostParams;
         }
-        IntentSender sender = null;
-        for (IntentSender is : intentSenders) {
-            if (path.equals(is.urlPath)) {
-                sender = is;
-                break;
-            }
-        }
-        if (sender == null) {
-            return chain.proceed(context, request);
-        }
+
         if (sender.target.equals(IntentSender.IntentTarget.ORDERED_BROADCAST)) {
             CompletableFuture<Response> future = new CompletableFuture<>();
             sender.send(this.context, params, new BroadcastReceiver() {
@@ -65,8 +89,13 @@ public class IntentSendersMiddleware implements Middleware {
                         response = new Response(getResultCode(), "OK");
                     }
                     Bundle extras = getResultExtras(true);
-                    for (String key: extras.keySet()) {
-                        response.headers.add(key, Objects.requireNonNull(extras.get(key)).toString());
+                    if (extras != null) {
+                        for (String key : extras.keySet()) {
+                            Object value = extras.get(key);
+                            if (value != null) {
+                                response.headers.add(key, value.toString());
+                            }
+                        }
                     }
                     future.complete(response);
                 }

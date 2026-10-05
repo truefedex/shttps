@@ -36,7 +36,8 @@ public class Response {
     public String phrase = StandardResponses.PHRASE_OK;
     private long contentLength;
     protected final InputStream stream;
-    public MultiMap<String, String> headers = new MultiMap<>();
+    /** Header names are case-insensitive: "content-length" and "Content-Length" are one header. */
+    public MultiMap<String, String> headers = MultiMap.caseInsensitive();
     public Object customData;
 
     public Response(InputStream stream) {
@@ -55,7 +56,11 @@ public class Response {
 
     public Response(int code, String phrase) {
         this(code, phrase, null);
-        setContentLength(0);
+        //1xx and 204 must not carry a Content-Length (RFC 9110 8.6); on a 304 it would describe the
+        //representation the client already has, which a bare 304 knows nothing about
+        if (code / 100 != 1 && code != 204 && code != 304) {
+            setContentLength(0);
+        }
     }
 
     public Response(String contentType, long contentLength, InputStream stream) {
@@ -85,7 +90,51 @@ public class Response {
         return stream;
     }
 
+    /**
+     * Checks that the status line and the headers can go on the wire as they are: header names
+     * are tokens and no value or phrase contains a line break. Values often come from requests
+     * (a path captured by a redirect rule, a file name in Content-Disposition), and a CR/LF in
+     * one of them would let the client write headers - or a whole response - of its own.
+     *
+     * @throws IllegalArgumentException naming the first offending part
+     */
+    public void validateHead() {
+        if (phrase != null && containsLineBreak(phrase)) {
+            throw new IllegalArgumentException("Line break in the status phrase");
+        }
+        for (String key : headers.keys()) {
+            if (!isToken(key)) {
+                throw new IllegalArgumentException("Invalid header name: " + key);
+            }
+            for (String value : headers.getAll(key)) {
+                if (value != null && containsLineBreak(value)) {
+                    throw new IllegalArgumentException("Line break in the value of header " + key);
+                }
+            }
+        }
+    }
+
+    private static boolean containsLineBreak(String s) {
+        return s.indexOf('\r') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\0') >= 0;
+    }
+
+    //RFC 7230 3.2.6 token
+    private static boolean isToken(String s) {
+        if (s == null || s.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            boolean alphaNum = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+            if (!alphaNum && "!#$%&'*+-.^_`|~".indexOf(c) < 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     protected String makeResponseHeader() {
+        validateHead();
         StringBuilder headersStr = new StringBuilder(SimpleHttpServer.HTTP_PROTOCOL + " " + code +
                 " " + phrase + "\r\n");
         for (String key: headers.keys()) {
@@ -103,7 +152,7 @@ public class Response {
 
         try (InputStream responseStream = getStream()) {
             if (responseStream == null) return;
-            byte[] buffer = new byte[1024];
+            byte[] buffer = new byte[8192];
             int readed;
             while ((readed = responseStream.read(buffer)) > 0) {
                 output.write(buffer, 0, readed);

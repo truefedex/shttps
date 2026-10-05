@@ -27,6 +27,8 @@ public class ScreenShareConfigTest {
                 "with nothing chosen, the primary display is what gets shared");
         assertFalse(config.isRemoteControlEnabled(),
                 "handing over control of the machine must never be on until someone turns it on");
+        assertTrue(config.isScreenShareConfirmationEnabled(),
+                "nobody may start watching the screen unasked until someone turns the question off");
     }
 
     @Test
@@ -35,6 +37,8 @@ public class ScreenShareConfigTest {
         source.setScreenShareEnabled(true);
         source.setScreenMonitor(1);
         source.setRemoteControlEnabled(true);
+        //the one screen setting that defaults to on, so it is the off state that has to survive
+        source.setScreenShareConfirmationEnabled(false);
 
         JSONObject exported = source.serializeAll();
         SHTTPSConfig restored = new TestDBEnvironment.Config();
@@ -46,6 +50,8 @@ public class ScreenShareConfigTest {
                 "the chosen monitor was lost by a backup and restore");
         assertTrue(restored.isRemoteControlEnabled(),
                 "remote control was switched off by a backup and restore");
+        assertFalse(restored.isScreenShareConfirmationEnabled(),
+                "asking before a viewer gets in was switched back on by a backup and restore");
     }
 
     /**
@@ -59,11 +65,13 @@ public class ScreenShareConfigTest {
         config.setScreenShareEnabled(true);
         config.setScreenMonitor(2);
         config.setRemoteControlEnabled(true);
+        config.setScreenShareConfirmationEnabled(false);
 
         config.applyAll(new JSONObject().put(SHTTPSConfig.KEY_PORT, 9090));
 
         assertTrue(config.isScreenShareEnabled());
         assertEquals(2, config.getScreenMonitor());
         assertTrue(config.isRemoteControlEnabled());
+        assertFalse(config.isScreenShareConfirmationEnabled());
     }
 }

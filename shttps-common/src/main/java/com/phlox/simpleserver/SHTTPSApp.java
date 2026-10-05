@@ -368,20 +368,18 @@ public class SHTTPSApp {
             filesRequestHandlerMiddlewares.add(new CgiMiddleware(config, authManager));
         }
 
+        Callback callback = SHTTPSApp.this.callback;
+        if (callback != null) {
+            callback.onRouterPrepared(router, filesRequestHandlerMiddlewares);
+        }
+
         FilesRequestHandler filesRequestHandler = new FilesRequestHandler(config, authManager, userStore, lockManager);
-        filesRequestHandler.renderFolders = config.getRenderFolders();
-        filesRequestHandler.allowEditing = config.getAllowEditing();
         router.addRouteByPathPrefix("/", filesRequestHandler, filesRequestHandlerMiddlewares);
 
         //handle OPTIONS * HTTP/1.1 request
         RequestHandler optionsHandler = (context, request) ->
                 FilesRequestHandler.prepareOptionsResponse(null, config);
         router.addRoute("*", Set.of("OPTIONS"), optionsHandler, authMiddlewares);
-
-        Callback callback = SHTTPSApp.this.callback;
-        if (callback != null) {
-            callback.onRouterPrepared(router, filesRequestHandlerMiddlewares);
-        }
 
         SimpleHttpServer.Callback serverCallback = new SimpleHttpServer.Callback() {
             @Override

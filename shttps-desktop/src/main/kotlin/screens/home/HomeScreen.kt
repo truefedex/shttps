@@ -938,6 +938,40 @@ fun HomeScreen(
                             }
                         }
                     }
+
+                    // Who gets to see the screen is decided here, one viewer at a time - on by
+                    // default, so it only needs to be visible once there is a screen to see.
+                    AnimatedVisibility(visible = uiState.isScreenShareEnabled) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = uiState.isScreenShareConfirmationEnabled,
+                                onCheckedChange = { isChecked ->
+                                    viewModel.updateScreenShareConfirmationEnabled(isChecked)
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            val confirmTitle = stringResource(Res.string.confirm_screen_access)
+                            val confirmInfo = stringResource(Res.string.confirm_screen_access_info)
+                            Text(
+                                text = confirmTitle,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = {
+                                viewModel.showMessageDialog(confirmTitle, confirmInfo)
+                            }) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colors.onPrimary
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // Database Section

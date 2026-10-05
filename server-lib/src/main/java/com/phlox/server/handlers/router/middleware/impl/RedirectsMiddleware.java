@@ -14,13 +14,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class RedirectsMiddleware implements Middleware {
-    public static String ORIGINAL_PATH = "original_path";
+    /** Same key as {@link RequestContext#ORIGINAL_PATH}, kept for existing callers. */
+    public static final String ORIGINAL_PATH = RequestContext.ORIGINAL_PATH;
     private final List<RedirectRule> redirectRules = new ArrayList<>();
 
     @Override
     public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
-        String path = request.path;
-        context.data.put(ORIGINAL_PATH, path);
+        //the Router records it first; this covers the middleware being used without one
+        context.data.putIfAbsent(ORIGINAL_PATH, request.path);
         for (RedirectRule rule : redirectRules) {
             if (!rule.enabled) continue;
             Response response = rule.tryApply(context, request);
@@ -47,7 +48,10 @@ public class RedirectsMiddleware implements Middleware {
         public boolean enabled;
         public String comment;
 
-        private Pattern fromPattern;
+        //compiled from 'from' on first use and again whenever 'from' changes: the field is public
+        //and assigned directly (the Android rule editor does), which used to leave a stale pattern
+        private transient Pattern fromPattern;
+        private transient String fromPatternSource;
 
         public RedirectRule() {
             this.from = "";
@@ -68,8 +72,20 @@ public class RedirectsMiddleware implements Middleware {
             updatePattern();
         }
 
+        //compiles eagerly so that an invalid expression fails where the rule is created
         private void updatePattern() {
-            this.fromPattern = Pattern.compile(from);
+            pattern();
+        }
+
+        private Pattern pattern() {
+            String from = this.from;
+            Pattern pattern = fromPattern;
+            if (pattern == null || !from.equals(fromPatternSource)) {
+                pattern = Pattern.compile(from);
+                fromPattern = pattern;
+                fromPatternSource = from;
+            }
+            return pattern;
         }
 
         public void setFrom(String from) {
@@ -78,7 +94,7 @@ public class RedirectsMiddleware implements Middleware {
         }
 
         public Response tryApply(RequestContext context, Request request) {
-            Matcher m = fromPattern.matcher(request.path);
+            Matcher m = pattern().matcher(request.path);
             if (m.matches()) {
                 //loop named groups and replace them in the 'to' string
                 String to = this.to;

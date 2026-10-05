@@ -191,7 +191,8 @@ function flushTypedText() {
 }
 
 function onControlStatus(info) {
-  controlForbidden = info.reason === "forbidden";
+  //neither changes while this connection lasts, so there is nothing to keep asking about
+  controlForbidden = info.reason === "forbidden" || info.reason === "view-only";
   if (Array.isArray(info.input)) {
     //the authoritative answer, resent whenever it changes. Its presence alone says this server
     //knows about input families, so an empty list means "nothing right now", not "nothing ever".
@@ -720,6 +721,7 @@ function showControlHint(reason) {
   var texts = {
     "disabled": "Remote control is switched off on the device",
     "forbidden": "This account is only allowed to watch, not to control the device",
+    "view-only": "The owner of the device allowed you to watch, but not to control it",
     "busy": "Another client is controlling the device right now",
     "no-text-field": "No text field is focused on the device",
     "text-failed": "The app on the device refused the text",
@@ -750,4 +752,5 @@ function showHint(text) {
     }, 5000);
   }
 }
+
 

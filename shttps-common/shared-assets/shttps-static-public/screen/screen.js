@@ -39,6 +39,10 @@ var CLOSE_CODE_NOT_ACTIVE = 1008;
 var CLOSE_CODE_GOING_AWAY = 1001;
 /** Close code the server uses when this user may not watch the screen at all. */
 var CLOSE_CODE_FORBIDDEN = 4403;
+/** Close code the server uses when the person at the device refused to let us in. */
+var CLOSE_CODE_ACCESS_DENIED = 4401;
+/** Close code the server uses when nobody at the device answered our request in time. */
+var CLOSE_CODE_ACCESS_TIMEOUT = 4408;
 
 var video = null;
 var socket = null;
@@ -159,6 +163,14 @@ function onSocketMessage(event) {
       expectInitSegment = true;
     } else if (info.type === "control") {
       onControlStatus(info);
+    } else if (info.type === "approval" && info.state === "pending") {
+      //the connection stays open while the person at the device decides; the stream follows if
+      //they say yes, and the message goes away with its first frame
+      setConnectionState("", "Waiting for approval");
+      showMessage("Waiting for approval",
+        "The device asks its owner whether to let you see the screen. This page continues as " +
+        "soon as they allow it" + (info.timeout ? " - the question expires after " +
+        info.timeout + " s." : "."), false);
     }
     return;
   }
@@ -195,6 +207,22 @@ function onDisconnected(code, reason) {
     showMessage("Not allowed to watch this screen",
       "This account does not have the right to view the device screen. It can be granted in the " +
       "server app, in the permissions of this user or of its role.", false);
+    return;
+  }
+  if (code === CLOSE_CODE_ACCESS_DENIED) {
+    //reconnecting on our own would only ask again and again
+    stoppedByServer = true;
+    setConnectionState("state-error", "Denied");
+    showMessage("Access denied",
+      "The owner of the device declined to let you see its screen.", true);
+    return;
+  }
+  if (code === CLOSE_CODE_ACCESS_TIMEOUT) {
+    stoppedByServer = true;
+    setConnectionState("state-error", "No answer");
+    showMessage("No answer from the device",
+      "Nobody at the device answered the request to see its screen in time. Retry to ask again.",
+      true);
     return;
   }
   if (code === CLOSE_CODE_NOT_ACTIVE) {
@@ -310,4 +338,5 @@ function onFullscreenClick() {
     //iOS only allows the video element itself to go fullscreen
     video.webkitEnterFullscreen();
   }
-}
+}
+

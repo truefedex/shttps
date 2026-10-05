@@ -7,14 +7,15 @@ import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
 import com.phlox.server.responses.TextResponse;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.Set;
-import java.util.HashSet;
+import java.util.function.LongSupplier;
 
 public class RateLimitingMiddleware implements Middleware {
     
@@ -34,30 +35,27 @@ public class RateLimitingMiddleware implements Middleware {
     private volatile boolean enabled = true;
     
     // Trusted proxy configuration
-    private final Set<String> trustedProxies = new HashSet<String>();
+    private final Set<String> trustedProxies = ConcurrentHashMap.newKeySet();
     private volatile boolean trustToIPHeaders = true;
-    
-    // Rate limit entry for tracking requests
+
+    private volatile LongSupplier clock = System::currentTimeMillis;
+
+    //request headers are lower-cased by the request parser
+    static final String HEADER_X_FORWARDED_FOR = "x-forwarded-for";
+    static final String HEADER_X_REAL_IP = "x-real-ip";
+    static final String HEADER_X_CLIENT_IP = "x-client-ip";
+
+    // Rate limit entry for tracking requests; only touched inside ConcurrentHashMap.compute
     private static class RateLimitEntry {
-        private final AtomicInteger requestCount = new AtomicInteger(0);
-        private final AtomicLong windowStart = new AtomicLong(System.currentTimeMillis());
-        
-        
-        public long getWindowStart() {
-            return windowStart.get();
+        int requestCount = 0;
+        final long windowStart;
+
+        RateLimitEntry(long windowStart) {
+            this.windowStart = windowStart;
         }
-        
-        public int incrementAndGet() {
-            return requestCount.incrementAndGet();
-        }
-        
-        public void resetWindow() {
-            requestCount.set(0);
-            windowStart.set(System.currentTimeMillis());
-        }
-        
-        public boolean isWindowExpired(long currentTime, long windowMs) {
-            return currentTime - windowStart.get() > windowMs;
+
+        boolean isWindowExpired(long currentTime, long windowMs) {
+            return currentTime - windowStart > windowMs;
         }
     }
     
@@ -88,34 +86,29 @@ public class RateLimitingMiddleware implements Middleware {
         initializeCleanupExecutor();
         
         String clientId = getClientIdentifier(request);
-        long currentTime = System.currentTimeMillis();
-        
-        // Get or create rate limit entry for this client
-        RateLimitEntry entry = rateLimitMap.get(clientId);
-        if (entry == null) {
-            entry = new RateLimitEntry();
-            RateLimitEntry existing = rateLimitMap.putIfAbsent(clientId, entry);
-            if (existing != null) {
-                entry = existing;
-            }
-        }
-        
-        // Check if current window has expired
-        if (entry.isWindowExpired(currentTime, timeWindowMs)) {
-            entry.resetWindow();
-        }
-        
+        final long currentTime = clock.getAsLong();
+        final long windowMs = timeWindowMs;
+
+        //window check, reset and count happen atomically per client, and atomically with cleanup
+        final int[] count = new int[1];
+        RateLimitEntry entry = rateLimitMap.compute(clientId, (key, existing) -> {
+            RateLimitEntry e = (existing == null || existing.isWindowExpired(currentTime, windowMs)) ?
+                    new RateLimitEntry(currentTime) : existing;
+            count[0] = ++e.requestCount;
+            return e;
+        });
+        int currentCount = count[0];
+
         // Check if client has exceeded rate limit
-        int currentCount = entry.incrementAndGet();
         if (currentCount > maxRequests) {
-            return createRateLimitExceededResponse(currentCount, maxRequests, timeWindowMs);
+            return createRateLimitExceededResponse(currentCount, maxRequests, windowMs);
         }
 
         Response response = chain.proceed(context, request);
         if (response == null) return null;
         // Add rate limit headers to response
         response.headers.add("rate_limit_remaining", Integer.toString(maxRequests - currentCount));
-        response.headers.add("rate_limit_reset", Long.toString(entry.getWindowStart() + timeWindowMs));
+        response.headers.add("rate_limit_reset", Long.toString(entry.windowStart + windowMs));
         
         return response;
     }
@@ -135,101 +128,98 @@ public class RateLimitingMiddleware implements Middleware {
         }
     }
     
-    private String getClientIdentifier(Request request) {
-        String clientIp = null;
+    /**
+     * The address a request is counted against. Forwarding headers are client-controlled - any
+     * client can send "X-Forwarded-For: 1.2.3.4" and get a fresh bucket per request - so they
+     * are only believed when the connection itself comes from a trusted proxy: one added with
+     * {@link #addTrustedProxy}, or, while none is, a proxy on this very machine (loopback).
+     */
+    String getClientIdentifier(Request request) {
         String directConnectionIp = request.hostAddress;
-        
-        // Trust IP headers if enabled and either no trusted proxies configured or coming from trusted proxy
-        if (trustToIPHeaders && (trustedProxies.isEmpty() || isTrustedProxy(directConnectionIp))) {
-            // Try to get client IP from forwarded headers
+        String clientIp = null;
+
+        if (trustToIPHeaders && isTrustedProxy(directConnectionIp)) {
             clientIp = getClientIpFromForwardedHeaders(request);
         }
-        
-        // If no trusted proxy header found, or not using trusted proxies, use direct connection IP
+
         if (clientIp == null) {
             clientIp = directConnectionIp;
         }
-        
-        // Fallback to a default identifier if no IP is available
         return clientIp != null ? clientIp : "unknown";
     }
-    
-    private boolean isTrustedProxy(String proxyIp) {
-        if (proxyIp == null || trustedProxies.isEmpty()) {
+
+    private boolean isTrustedProxy(String ip) {
+        if (ip == null) {
             return false;
         }
-        return trustedProxies.contains(proxyIp);
+        if (trustedProxies.isEmpty()) {
+            return isLoopback(ip);
+        }
+        return trustedProxies.contains(ip);
     }
-    
+
+    private static boolean isLoopback(String ip) {
+        if (!isValidIpAddress(ip)) {
+            return false;
+        }
+        try {
+            //a literal address is parsed, never resolved
+            return InetAddress.getByName(ip).isLoopbackAddress();
+        } catch (UnknownHostException | SecurityException e) {
+            return false;
+        }
+    }
+
     private String getClientIpFromForwardedHeaders(Request request) {
-        // Try X-Forwarded-For first (most common)
-        String xForwardedFor = request.headers.get("X-Forwarded-For");
+        //each proxy appends the address it got the request from, so the list reads
+        //"client, proxy1, proxy2": walking it from the right, the first hop that is not one of
+        //our trusted proxies is the client as far as anything we trust can tell. Entries left of
+        //it were written by the client itself and prove nothing
+        String xForwardedFor = joinAll(request, HEADER_X_FORWARDED_FOR);
         if (xForwardedFor != null) {
-            String clientIp = extractFirstIpFromList(xForwardedFor);
-            if (clientIp != null) {
-                return clientIp;
+            String[] hops = xForwardedFor.split(",");
+            for (int i = hops.length - 1; i >= 0; i--) {
+                String hop = hops[i].trim();
+                if (!isValidIpAddress(hop)) {
+                    //garbage in the chain: nothing to the left of it can be attributed
+                    break;
+                }
+                if (i == 0 || !isTrustedProxy(hop)) {
+                    return hop;
+                }
             }
         }
-        
-        // Try X-Real-IP (single IP)
-        String xRealIp = request.headers.get("X-Real-IP");
-        if (xRealIp != null) {
-            String clientIp = extractFirstIpFromList(xRealIp);
-            if (clientIp != null) {
-                return clientIp;
+
+        //single-value headers a trusted proxy overwrites rather than appends to
+        for (String header : new String[]{HEADER_X_REAL_IP, HEADER_X_CLIENT_IP}) {
+            String value = request.headers.get(header);
+            if (value != null && isValidIpAddress(value.trim())) {
+                return value.trim();
             }
         }
-        
-        // Try X-Client-IP (single IP)
-        String xClientIp = request.headers.get("X-Client-IP");
-        if (xClientIp != null) {
-            String clientIp = extractFirstIpFromList(xClientIp);
-            if (clientIp != null) {
-                return clientIp;
-            }
-        }
-        
+
         return null;
     }
-    
-    private String extractFirstIpFromList(String ipList) {
-        if (ipList == null || ipList.trim().isEmpty()) {
-            return null;
-        }
-        
-        // Split by comma and get the first (original client) IP
-        String[] ips = ipList.split(",");
-        if (ips.length > 0) {
-            String firstIp = ips[0].trim();
-            // Basic IP validation (IPv4 or IPv6)
-            if (isValidIpAddress(firstIp)) {
-                return firstIp;
-            }
-        }
-        
-        return null;
+
+    private static String joinAll(Request request, String header) {
+        java.util.List<String> values = request.headers.getAll(header);
+        return values.isEmpty() ? null : String.join(",", values);
     }
-    
-    private boolean isValidIpAddress(String ip) {
-        if (ip == null || ip.trim().isEmpty()) {
+
+    private static boolean isValidIpAddress(String ip) {
+        if (ip == null || ip.isEmpty()) {
             return false;
         }
-        
-        String trimmedIp = ip.trim();
-        
+
         // Basic IPv4 validation (simple regex for performance)
-        if (trimmedIp.matches("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$")) {
+        if (ip.matches("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$")) {
             return true;
         }
-        
-        // Basic IPv6 validation (contains colons)
-        if (trimmedIp.contains(":") && !trimmedIp.contains(".")) {
-            return true;
-        }
-        
-        return false;
+
+        // Basic IPv6 validation: hex digits and colons only
+        return ip.indexOf(':') >= 0 && ip.matches("^[0-9a-fA-F:]+$");
     }
-    
+
     private Response createRateLimitExceededResponse(int currentCount, int maxRequests, long timeWindowMs) {
         long resetTime = System.currentTimeMillis() + timeWindowMs;
         long retryAfter = timeWindowMs / 1000; // Convert to seconds
@@ -248,15 +238,13 @@ public class RateLimitingMiddleware implements Middleware {
         return response;
     }
     
-    private void cleanupExpiredEntries() {
-        long currentTime = System.currentTimeMillis();
-        java.util.Iterator<java.util.Map.Entry<String, RateLimitEntry>> iterator = rateLimitMap.entrySet().iterator();
-        while (iterator.hasNext()) {
-            java.util.Map.Entry<String, RateLimitEntry> entry = iterator.next();
-            RateLimitEntry rateLimitEntry = entry.getValue();
-            if (rateLimitEntry.isWindowExpired(currentTime, timeWindowMs)) {
-                iterator.remove();
-            }
+    void cleanupExpiredEntries() {
+        final long currentTime = clock.getAsLong();
+        final long windowMs = timeWindowMs;
+        for (String clientId : rateLimitMap.keySet()) {
+            //atomic with the compute() in handle: a request counted right now is never lost
+            rateLimitMap.computeIfPresent(clientId, (key, entry) ->
+                    entry.isWindowExpired(currentTime, windowMs) ? null : entry);
         }
         
         // If no active rate limits remain, stop the cleanup executor to save battery
@@ -322,6 +310,11 @@ public class RateLimitingMiddleware implements Middleware {
         return new HashSet<String>(trustedProxies);
     }
     
+    /** For tests: the time source the windows are measured with. */
+    void setClock(LongSupplier clock) {
+        this.clock = clock;
+    }
+
     public void setTrustToIPHeaders(boolean trustToIPHeaders) {
         this.trustToIPHeaders = trustToIPHeaders;
     }

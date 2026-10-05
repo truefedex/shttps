@@ -217,7 +217,8 @@ public class HTMLTemplate {
                 linePosition = templatePosition - pos;
                 break;
             } else {
-                pos = newLine;
+                //past the newline: indexOf from the newline itself finds it again, forever
+                pos = newLine + 1;
                 line++;
             }
         } while (true);

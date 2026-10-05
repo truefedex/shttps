@@ -36,8 +36,10 @@ public class DBSchemaRequestHandler extends BaseDBRequestHandler {
                     new ReadSchemaOperation(config, authManager, new ReadSchemaOperation.Params(tableName)), user);
 
             //asking about one table answers with that table, asking about none with all of them
+            //(toJsonList() already returns the array - wrapping it would bind to the JSONArray copy
+            //constructor, which the org.json artifact has and Android platform org.json does not)
             String json = tableName != null ? tables[0].toJson().toString()
-                    : new JSONArray(toJsonList(tables)).toString();
+                    : toJsonList(tables).toString();
             return StandardResponses.OK(json, "application/json");
         } catch (Exception e) {
             return toResponse(e, "");

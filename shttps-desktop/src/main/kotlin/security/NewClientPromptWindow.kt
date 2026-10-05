@@ -2,6 +2,7 @@ package com.phlox.simpleserver.security
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,19 +25,25 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import com.kdroid.composetray.utils.getTrayWindowPosition
+import com.phlox.simpleserver.screenshare.ScreenAccessRequest
 import com.phlox.simpleserver.shttps_desktop.generated.resources.Res
 import com.phlox.simpleserver.shttps_desktop.generated.resources.add_to_whitelist
 import com.phlox.simpleserver.shttps_desktop.generated.resources.allow
 import com.phlox.simpleserver.shttps_desktop.generated.resources.deny
 import com.phlox.simpleserver.shttps_desktop.generated.resources.more_connections_waiting
 import com.phlox.simpleserver.shttps_desktop.generated.resources.new_connection
+import com.phlox.simpleserver.shttps_desktop.generated.resources.screen_access_request
+import com.phlox.simpleserver.shttps_desktop.generated.resources.screen_access_user
+import com.phlox.simpleserver.shttps_desktop.generated.resources.screen_access_view
+import com.phlox.simpleserver.shttps_desktop.generated.resources.screen_access_view_control
+import com.phlox.simpleserver.shttps_desktop.generated.resources.view_only
 import com.phlox.simpleserver.theme.AppTheme
 import org.jetbrains.compose.resources.stringResource
 import java.awt.Toolkit
 
 //in the AWT logical units that getTrayWindowPosition() expects, like the main window size in Main.kt
 private const val PROMPT_WIDTH = 340
-private const val PROMPT_HEIGHT = 200
+private const val PROMPT_HEIGHT = 230
 private const val PROMPT_GAP = 8
 private const val SCREEN_MARGIN = 16
 
@@ -48,27 +55,58 @@ private const val SCREEN_MARGIN = 16
  */
 private const val MAX_VISIBLE_PROMPTS = 3
 
+/** One question waiting for the user, of either kind. */
+private sealed class Prompt {
+    abstract val key: Any
+
+    data class NewClient(val ip: String) : Prompt() {
+        override val key: Any get() = "client:$ip"
+    }
+
+    data class ScreenAccess(val request: ScreenAccessRequest) : Prompt() {
+        override val key: Any get() = "screen:${request.id}"
+    }
+}
+
 /**
- * The "Ask at runtime" half of the client whitelist: one window per unknown client that the
- * server has just dropped, asking whether to let it in.
+ * Everything that asks the user whether to let someone in, as one stack of windows:
+ * - the "Ask at runtime" half of the client whitelist: one window per unknown client that the
+ *   server has just dropped, asking whether to let it in;
+ * - "Ask before anyone sees the screen": one window per viewer the screen stream is holding at
+ *   the door. These come first, because they expire and the client is sitting there waiting.
  *
  * Hosted in AppContent next to the tray, not inside the main window - it has to show up while
  * the app sits hidden in the tray, which is the normal state for a running server.
  */
 @Composable
-fun NewClientPrompts(controller: ClientApprovalController) {
-    val prompts = controller.prompts
+fun NewClientPrompts(
+    controller: ClientApprovalController,
+    screenAccessController: ScreenAccessApprovalController
+) {
+    val prompts = screenAccessController.prompts.map { Prompt.ScreenAccess(it) } +
+            controller.prompts.map { Prompt.NewClient(it) }
     val visible = prompts.take(MAX_VISIBLE_PROMPTS)
-    visible.forEachIndexed { index, ip ->
-        key(ip) {
-            NewClientPromptWindow(
-                ip = ip,
-                slot = index,
-                queued = if (index == visible.lastIndex) prompts.size - visible.size else 0,
-                onAllow = { controller.allow(ip) },
-                onDeny = { controller.deny(ip) },
-                onAllowAndSave = { controller.allowAndSave(ip) }
-            )
+    visible.forEachIndexed { index, prompt ->
+        key(prompt.key) {
+            val queued = if (index == visible.lastIndex) prompts.size - visible.size else 0
+            when (prompt) {
+                is Prompt.NewClient -> NewClientPromptWindow(
+                    ip = prompt.ip,
+                    slot = index,
+                    queued = queued,
+                    onAllow = { controller.allow(prompt.ip) },
+                    onDeny = { controller.deny(prompt.ip) },
+                    onAllowAndSave = { controller.allowAndSave(prompt.ip) }
+                )
+                is Prompt.ScreenAccess -> ScreenAccessPromptWindow(
+                    request = prompt.request,
+                    slot = index,
+                    queued = queued,
+                    onAllow = { screenAccessController.allow(prompt.request) },
+                    onViewOnly = { screenAccessController.allowViewOnly(prompt.request) },
+                    onDeny = { screenAccessController.deny(prompt.request) }
+                )
+            }
         }
     }
 }
@@ -81,6 +119,69 @@ private fun NewClientPromptWindow(
     onAllow: () -> Unit,
     onDeny: () -> Unit,
     onAllowAndSave: () -> Unit
+) {
+    PromptWindow(title = ip, slot = slot, onDeny = onDeny) {
+        PromptHeader(stringResource(Res.string.new_connection), ip)
+        QueuedNote(queued)
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        AllowDenyRow(onAllow = onAllow, onDeny = onDeny)
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onAllowAndSave
+        ) {
+            Text(stringResource(Res.string.add_to_whitelist))
+        }
+    }
+}
+
+@Composable
+private fun ScreenAccessPromptWindow(
+    request: ScreenAccessRequest,
+    slot: Int,
+    queued: Int,
+    onAllow: () -> Unit,
+    onViewOnly: () -> Unit,
+    onDeny: () -> Unit
+) {
+    PromptWindow(title = request.remoteAddress, slot = slot, onDeny = onDeny) {
+        PromptHeader(stringResource(Res.string.screen_access_request), request.remoteAddress)
+        request.userName?.let {
+            Text(text = stringResource(Res.string.screen_access_user, it), fontSize = 14.sp)
+        }
+        Text(
+            text = stringResource(
+                if (request.includesControl) Res.string.screen_access_view_control
+                else Res.string.screen_access_view
+            ),
+            fontSize = 14.sp
+        )
+        QueuedNote(queued)
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        AllowDenyRow(onAllow = onAllow, onDeny = onDeny)
+        //the only answer in between, and only when there is something to hold back
+        if (request.includesControl) {
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onViewOnly
+            ) {
+                Text(stringResource(Res.string.view_only))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PromptWindow(
+    title: String,
+    slot: Int,
+    onDeny: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
 ) {
     val windowState = rememberWindowState(
         width = PROMPT_WIDTH.dp,
@@ -98,7 +199,7 @@ private fun NewClientPromptWindow(
         //as a refusal, the way swiping the Android notification away does
         onCloseRequest = onDeny,
         state = windowState,
-        title = ip,
+        title = title,
         undecorated = true,
         resizable = false,
         alwaysOnTop = true,
@@ -112,53 +213,54 @@ private fun NewClientPromptWindow(
                 color = MaterialTheme.colors.background,
                 elevation = 8.dp
             ) {
-                Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                    Text(
-                        text = stringResource(Res.string.new_connection),
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = ip,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (queued > 0) {
-                        Text(
-                            text = stringResource(Res.string.more_connections_waiting, queued),
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(
-                            modifier = Modifier.weight(1f),
-                            onClick = onDeny
-                        ) {
-                            Text(stringResource(Res.string.deny))
-                        }
-                        Button(
-                            modifier = Modifier.weight(1f),
-                            onClick = onAllow
-                        ) {
-                            Text(stringResource(Res.string.allow))
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = onAllowAndSave
-                    ) {
-                        Text(stringResource(Res.string.add_to_whitelist))
-                    }
-                }
+                Column(modifier = Modifier.fillMaxSize().padding(16.dp), content = content)
             }
+        }
+    }
+}
+
+@Composable
+private fun PromptHeader(label: String, address: String) {
+    Text(
+        text = label,
+        fontSize = 14.sp,
+        color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+    )
+    Text(
+        text = address,
+        fontSize = 18.sp,
+        fontWeight = FontWeight.Bold
+    )
+}
+
+@Composable
+private fun QueuedNote(queued: Int) {
+    if (queued > 0) {
+        Text(
+            text = stringResource(Res.string.more_connections_waiting, queued),
+            fontSize = 12.sp,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+        )
+    }
+}
+
+@Composable
+private fun AllowDenyRow(onAllow: () -> Unit, onDeny: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TextButton(
+            modifier = Modifier.weight(1f),
+            onClick = onDeny
+        ) {
+            Text(stringResource(Res.string.deny))
+        }
+        Button(
+            modifier = Modifier.weight(1f),
+            onClick = onAllow
+        ) {
+            Text(stringResource(Res.string.allow))
         }
     }
 }

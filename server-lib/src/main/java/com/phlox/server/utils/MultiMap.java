@@ -12,6 +12,17 @@ public class MultiMap<K, V> {
         size = 0;
     }
 
+    /** Keys are compared with {@code comparator}; for keys it holds equal, the first spelling is kept. */
+    public MultiMap(Comparator<? super K> comparator) {
+        treeMap = new TreeMap<>(comparator);
+        size = 0;
+    }
+
+    /** A map of names that are compared case-insensitively, as HTTP header names are. */
+    public static <V> MultiMap<String, V> caseInsensitive() {
+        return new MultiMap<>(String.CASE_INSENSITIVE_ORDER);
+    }
+
     public void add(K key, V value) {
         List<V> list = treeMap.computeIfAbsent(key, k -> new ArrayList<>());
         list.add(value);
@@ -44,8 +55,10 @@ public class MultiMap<K, V> {
         }
     }
 
+    /** All values of {@code key} in insertion order, as a read-only view (empty if there are none). */
     public List<V> getAll(K key) {
-        return this.containsKey(key) ? treeMap.get(key) : new ArrayList<>();
+        List<V> list = treeMap.get(key);
+        return list != null ? Collections.unmodifiableList(list) : Collections.<V>emptyList();
     }
 
     /**
@@ -90,8 +103,9 @@ public class MultiMap<K, V> {
         return treeMap.containsKey(key);
     }
 
+    /** The keys in sort order, as a read-only view. */
     public Set<K> keys() {
-        return treeMap.keySet();
+        return Collections.unmodifiableSet(treeMap.keySet());
     }
 
     @Override
@@ -113,7 +127,7 @@ public class MultiMap<K, V> {
 
     public void forEach(BiConsumer<K, List<V>> consumer) {
         for (Map.Entry<K, List<V>> entry : treeMap.entrySet()) {
-            consumer.accept(entry.getKey(), entry.getValue());
+            consumer.accept(entry.getKey(), Collections.unmodifiableList(entry.getValue()));
         }
     }
 

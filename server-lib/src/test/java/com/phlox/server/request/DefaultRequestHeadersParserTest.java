@@ -1,6 +1,7 @@
 package com.phlox.server.request;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -62,21 +63,29 @@ public class DefaultRequestHeadersParserTest {
         assertEquals(0, request.queryParams.size());
     }
 
+    /** A rejected target is answered with 400; the cause says why. */
+    private static void assertBadTarget(Class<? extends Throwable> cause, String target) {
+        BadRequestException e = assertThrows(BadRequestException.class, () -> parse(target), target);
+        assertEquals(400, e.code);
+        assertInstanceOf(cause, e.getCause(), target);
+    }
+
     @Test
     public void percentEncodedTraversalIsRejected() {
-        assertThrows(SecurityException.class, () -> parse("/files/%2e%2e/secret.txt"));
-        assertThrows(SecurityException.class, () -> parse("/files/../secret.txt"));
+        assertBadTarget(SecurityException.class, "/files/%2e%2e/secret.txt");
+        assertBadTarget(SecurityException.class, "/files/../secret.txt");
     }
 
     @Test
     public void nullByteInPathIsRejected() {
-        assertThrows(SecurityException.class, () -> parse("/files/a%00.txt"));
+        assertBadTarget(SecurityException.class, "/files/a%00.txt");
     }
 
     @Test
     public void malformedPercentEncodingInPathIsRejected() {
-        assertThrows(IllegalArgumentException.class, () -> parse("/files/a%2"));
-        assertThrows(IllegalArgumentException.class, () -> parse("/files/a%zz.txt"));
+        assertBadTarget(IllegalArgumentException.class, "/files/a%2");
+        assertBadTarget(IllegalArgumentException.class, "/files/a%zz.txt");
+        assertBadTarget(IllegalArgumentException.class, "/search?q=%zz");
     }
 
     @Test
@@ -84,5 +93,33 @@ public class DefaultRequestHeadersParserTest {
         Request request = parse("/download?path=/files/../secret.txt");
         assertEquals("/download", request.path);
         assertNotNull(request.queryParams.get("path"));
+    }
+
+    private static Request parseWithContentType(String contentType) throws Exception {
+        String raw = "POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Type: " + contentType + "\r\n\r\n";
+        return new DefaultRequestHeadersParser().readRequestHeaders(
+                new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)), "127.0.0.1");
+    }
+
+    @Test
+    public void contentTypeWithSeveralParameters() throws Exception {
+        //the old single-parameter regex left contentType null here, so uploads were rejected
+        Request request = parseWithContentType("multipart/form-data; charset=UTF-8; boundary=----WebKitFormBoundary7MA4");
+        assertEquals(Request.CONTENT_TYPE_MULTIPART_FORM, request.contentType);
+        assertEquals("----WebKitFormBoundary7MA4", request.boundary);
+        assertEquals("UTF-8", request.charset);
+    }
+
+    @Test
+    public void contentTypeWithUnknownParameter() throws Exception {
+        assertEquals("application/json", parseWithContentType("application/json; foo=bar").contentType);
+    }
+
+    @Test
+    public void contentTypeIsCaseInsensitiveAndBoundaryUnquoted() throws Exception {
+        Request request = parseWithContentType("Multipart/Form-Data; Boundary=\"abc def\"");
+        assertEquals(Request.CONTENT_TYPE_MULTIPART_FORM, request.contentType);
+        assertEquals("abc def", request.boundary);
+        assertEquals(null, request.charset);
     }
 }

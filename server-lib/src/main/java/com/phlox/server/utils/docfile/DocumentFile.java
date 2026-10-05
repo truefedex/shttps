@@ -23,7 +23,29 @@ public abstract class DocumentFile {
     public static DocumentFile fromFile(File file) {
         return new RawDocumentFile(null, file);
     }
-    
+
+    /**
+     * Whether {@code name} can name a direct child of a directory. Names reach this from
+     * requests (file lists, rename targets, upload names), so anything that would resolve
+     * somewhere other than a child of the directory is refused: empty, "." and "..", names with
+     * a path separator, and on Windows also names with a ':' (drive letters, alternate data
+     * streams) or a trailing dot or space - Windows strips those, so ".. " or "..." would
+     * resolve to the directory itself rather than to a child of it.
+     */
+    public static boolean isValidChildName(String name) {
+        if (name == null || name.isEmpty() || ".".equals(name) || "..".equals(name)) {
+            return false;
+        }
+        if (name.indexOf('/') >= 0 || name.indexOf('\0') >= 0) {
+            return false;
+        }
+        if (File.separatorChar == '\\') {
+            char last = name.charAt(name.length() - 1);
+            return name.indexOf('\\') < 0 && name.indexOf(':') < 0 && last != '.' && last != ' ';
+        }
+        return true;
+    }
+
     public abstract DocumentFile createFile(String mimeType, String displayName);
     
     public abstract DocumentFile createDirectory(String displayName);

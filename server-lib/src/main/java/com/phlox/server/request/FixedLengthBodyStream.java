@@ -67,21 +67,6 @@ public class FixedLengthBodyStream extends BodyInputStream {
     }
 
     @Override
-    public boolean drainRemaining(long maxBytes) throws IOException {
-        byte[] buffer = new byte[8192];
-        long drained = 0;
-        while (remaining > 0 && drained < maxBytes) {
-            int toRead = (int) Math.min(buffer.length, Math.min(remaining, maxBytes - drained));
-            int count = read(buffer, 0, toRead);
-            if (count == -1) {
-                break;
-            }
-            drained += count;
-        }
-        return remaining <= 0;
-    }
-
-    @Override
     public void close() {
         //intentionally does not close the underlying connection stream
     }

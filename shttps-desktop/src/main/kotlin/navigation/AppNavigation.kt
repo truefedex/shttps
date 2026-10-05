@@ -34,6 +34,7 @@ import com.phlox.simpleserver.screens.logs.LogsScreen
 import com.phlox.simpleserver.screens.logs.LogsViewModel
 import com.phlox.simpleserver.screens.qr.QrScreen
 import com.phlox.simpleserver.security.ClientApprovalController
+import com.phlox.simpleserver.security.ScreenAccessApprovalController
 import com.phlox.simpleserver.screens.misc.redirections.RedirectEditScreen
 import java.util.EnumSet
 import com.phlox.simpleserver.screens.misc.redirections.RedirectionsListScreen
@@ -71,12 +72,13 @@ fun AppNavigationGraph(
     serverRunning: MutableState<Boolean>,
     autoLaunch: AutoLaunch,
     approvalController: ClientApprovalController,
+    screenAccessController: ScreenAccessApprovalController,
     //passed down only so the update prompt can wait for the window to actually be on screen
     windowVisible: State<Boolean>
 ) {
     val homeViewModel: HomeViewModel = viewModel { HomeViewModel(
         appScope, config, appSettingsDir, mainWindowEvents, serverRunning, autoLaunch,
-        approvalController
+        approvalController, screenAccessController
     ) }
     val redirectionsListViewModel: RedirectionsListViewModel = viewModel { RedirectionsListViewModel() }
     val corsRulesListViewModel: CORSRulesListViewModel = viewModel { CORSRulesListViewModel() }

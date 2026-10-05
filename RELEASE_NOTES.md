@@ -1,5 +1,3 @@
-* Screen record button visible during screen share in Web UI
-* New websocket channels UI and API (can be useful for web app tests and prototyping)
-* Slightly extended REST API for database access (backwards compatible)
-* First desktop version published (check project Github releases page)
-* Several bugs fixed
+* Remote screen: option to request permission upon each connection
+* Core security fixes: strict limitations on buffer sizes, the number of connections, etc.
+* Fix for crash during single file share dialog on Android 8-12

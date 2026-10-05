@@ -618,6 +618,17 @@
 When authorization is on, an account needs the "Control screen" permission on top of "View screen". When authorization is off, anyone who can reach this server can drive this computer.
 
 Only one viewer controls the machine at a time; the others are told it is busy until whoever is using it stops. Keyboard forwarding has to be switched on in the browser page and released with a button there, because while it is on the page sends shortcuts to this computer instead of acting on them itself.</string>
+    <string name="confirm_screen_access">Ask before anyone sees the screen</string>
+    <string name="confirm_screen_access_info">Every time somebody opens the remote screen, a window pops up here showing their IP address, their user name and whether they would also be able to control this computer. Nothing of the screen is sent until you allow it.
+
+When the viewer could also control the computer, "View only" lets them watch without giving them control.
+
+A request nobody answers is refused after a minute. Once you allow someone, the same user from the same address can reconnect within two minutes of their last connection without being asked again, so a dropped connection does not bring the question back.</string>
+    <string name="screen_access_request">Remote screen access request from:</string>
+    <string name="screen_access_user">User: %1$s</string>
+    <string name="screen_access_view">Wants to watch the screen</string>
+    <string name="screen_access_view_control">Wants to watch and control the screen</string>
+    <string name="view_only">View only</string>
 
     <!-- Update notifications (open source desktop build only; see GitHubUpdateChecker) -->
     <string name="update_available_title">Update available</string>

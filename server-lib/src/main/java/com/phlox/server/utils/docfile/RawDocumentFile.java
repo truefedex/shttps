@@ -1,6 +1,7 @@
 package com.phlox.server.utils.docfile;
 
 import com.phlox.server.platform.MimeTypeMap;
+import com.phlox.server.utils.SHTTPSLoggerProxy;
 import com.phlox.server.utils.Utils;
 
 import java.io.File;
@@ -19,6 +20,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 
 public class RawDocumentFile extends DocumentFile {
+    private static final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(RawDocumentFile.class);
     public static final String FILE_URI_PREFIX = "file:/";
     private File mFile;
     private FileAttributes mAttributes;
@@ -87,6 +89,9 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public DocumentFile createFile(String mimeType, String displayName) {
+        if (!isValidChildName(displayName)) {
+            return null;
+        }
         final File target = new File(mFile, displayName);
         try {
             if (!target.createNewFile()) {
@@ -95,13 +100,16 @@ public class RawDocumentFile extends DocumentFile {
             invalidateAttributes();
             return new RawDocumentFile(this, target);
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.e("Can not create file " + target, e);
             return null;
         }
     }
 
     @Override
     public DocumentFile createDirectory(String displayName) {
+        if (!isValidChildName(displayName)) {
+            return null;
+        }
         final File target = new File(mFile, displayName);
         if (target.exists() && target.isDirectory()) {
             return null;
@@ -211,6 +219,9 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public boolean renameTo(String displayName) {
+        if (!isValidChildName(displayName)) {
+            return false;
+        }
         final File target = new File(mFile.getParentFile(), displayName);
         if (mFile.renameTo(target)) {
             mFile = target;
@@ -262,6 +273,9 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public boolean copyTo(DocumentFile destDir, String destName) {
+        if (!isValidChildName(destName)) {
+            return false;
+        }
         boolean result = Utils.copyFileOrDir(mFile, new File(((RawDocumentFile)destDir).mFile, destName));
         ((RawDocumentFile)destDir).invalidateAttributes();
         return result;
@@ -269,6 +283,9 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public boolean moveTo(DocumentFile destDir, String destName) {
+        if (!isValidChildName(destName)) {
+            return false;
+        }
         boolean result = Utils.moveFileOrDir(mFile, new File(((RawDocumentFile)destDir).mFile, destName));
         invalidateAttributes();
         ((RawDocumentFile)destDir).invalidateAttributes();
@@ -277,6 +294,11 @@ public class RawDocumentFile extends DocumentFile {
 
     @Override
     public DocumentFile findFile(String displayName) {
+        //"" and "." name this directory itself - harmless, and callers that split a path on '/'
+        //rely on it - anything else must be a plain child name, never ".." or "a/b"
+        if (!displayName.isEmpty() && !".".equals(displayName) && !isValidChildName(displayName)) {
+            return null;
+        }
         File file = new File(mFile, displayName);
         if (file.exists()) {
             return new RawDocumentFile(this, file);

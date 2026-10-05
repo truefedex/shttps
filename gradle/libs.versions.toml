@@ -1,10 +1,10 @@
 [versions]
-agp = "9.3.2"
+agp = "9.4.1"
 shadow = "9.6.1"
 kotlin = "2.4.10"
 compose = "1.11.1"
 
-proguard-annotations = "7.9.1"
+proguard-annotations = "7.10.0"
 jetbrains-annotations = "26.1.0"
 
 junit5 = "5.9.2"
@@ -19,8 +19,8 @@ androidx-test-runner = "1.7.0"
 org-json = "20260814"
 kxml = "2.3.0"
 
-sqlite = "3.53.2.1"
-slf4j = "2.0.18"
+sqlite = "3.53.4.0"
+slf4j = "2.0.20"
 picocli = "4.7.7"
 qrcodegen = "1.8.0"
 

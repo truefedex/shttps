@@ -110,4 +110,37 @@ public class HTMLTemplateTest {
     public void missingValueRendersNothing() {
         assertEquals("<div></div>", process("<div>{{absent}}</div>", new HashMap<String, Object>()));
     }
+
+    @Test
+    @org.junit.jupiter.api.Timeout(10)
+    public void unclosedSectionPastTheFirstLineIsReportedNotLoopedOn() {
+        //formatting the error position used to loop forever once the section was past line one
+        IllegalStateException e = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> process("<html>\n<body>\n{{#items}}<li>{{name}}</li>\n</body>", new HashMap<String, Object>()));
+        assertEquals("Can not find enclosing tag for: {{#items at line: 2, pos:10", e.getMessage());
+    }
+
+    @Test
+    public void unclosedSectionOnTheFirstLine() {
+        IllegalStateException e = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> process("{{#a}}x", new HashMap<String, Object>()));
+        assertEquals("Can not find enclosing tag for: {{#a at line: 0, pos:6", e.getMessage());
+    }
+
+    @Test
+    public void invertedSectionAndNesting() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("show", false);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (String name : new String[]{"a", "b"}) {
+            Map<String, Object> row = new HashMap<>();
+            row.put("name", name);
+            row.put("bold", "b".equals(name));
+            rows.add(row);
+        }
+        data.put("rows", rows);
+        assertEquals("hidden|a,<b>b</b>",
+                process("{{^show}}hidden{{/show}}{{#show}}shown{{/show}}|" +
+                        "{{#rows}}{{#bold}}<b>{{/bold}}{{name}}{{#bold}}</b>{{/bold}}{{^@last}},{{/@last}}{{/rows}}", data));
+    }
 }

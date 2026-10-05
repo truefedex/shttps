@@ -33,6 +33,7 @@ import com.phlox.simpleserver.screenshare.ScreenCaptureProvider
 import com.phlox.simpleserver.screenshare.ScreenCaptureProviders
 import com.phlox.simpleserver.screenshare.ScreenStreamWebSocketHandler
 import com.phlox.simpleserver.security.ClientApprovalController
+import com.phlox.simpleserver.security.ScreenAccessApprovalController
 import com.phlox.simpleserver.updates.GitHubUpdateChecker
 import com.phlox.simpleserver.updates.LatestRelease
 import com.phlox.simpleserver.shttps_desktop.generated.resources.Res
@@ -97,6 +98,7 @@ data class HomeState(
     val isChannelsEnabled: Boolean = false,
     val isScreenShareEnabled: Boolean = false,
     val isRemoteControlEnabled: Boolean = false,
+    val isScreenShareConfirmationEnabled: Boolean = true,
     val redirectsDefined: Boolean = false,
     val corsRulesDefined: Boolean = false,
     val closeAppToTray: Boolean = false,
@@ -146,7 +148,8 @@ class HomeViewModel(
     val mainWindowEvents: MutableSharedFlow<MainWindowEvents>,
     val serverRunning: MutableState<Boolean>,
     val autoLaunch: AutoLaunch,
-    val approvalController: ClientApprovalController
+    val approvalController: ClientApprovalController,
+    val screenAccessController: ScreenAccessApprovalController
 ): ViewModel(), SHTTPSApp.Callback {
     private val logger = SHTTPSLoggerProxy.getLogger("HomeViewModel")
     private val _uiState = MutableStateFlow(HomeState())
@@ -209,6 +212,7 @@ class HomeViewModel(
             isChannelsEnabled = config.isChannelsEnabled(),
             isScreenShareEnabled = config.isScreenShareEnabled(),
             isRemoteControlEnabled = config.isRemoteControlEnabled(),
+            isScreenShareConfirmationEnabled = config.isScreenShareConfirmationEnabled(),
             screenShareSupported = screenCaptureProvider != null,
             remoteControlSupported = remoteInputProvider != null,
             autostartManagedBySystem = DesktopExtensions.autostartManagedBySystem,
@@ -408,6 +412,7 @@ class HomeViewModel(
         serverRunning.value = false
         //an open prompt would let a client onto a server that is not listening any more
         approvalController.onServerStopped()
+        screenAccessController.onServerStopped()
         //a stopped server must not still be holding the framebuffer open
         screenCaptureProvider?.shutdown()
         //nor a mouse button or a modifier that a client was pressing as it went away
@@ -535,6 +540,7 @@ class HomeViewModel(
             isChannelsEnabled = config.isChannelsEnabled(),
             isScreenShareEnabled = config.isScreenShareEnabled(),
             isRemoteControlEnabled = config.isRemoteControlEnabled(),
+            isScreenShareConfirmationEnabled = config.isScreenShareConfirmationEnabled(),
             redirectsDefined = config.redirectRules?.isNotEmpty() == true,
             corsRulesDefined = config.corsRules?.isNotEmpty() == true,
             customHeaders = config.customHeaders,
@@ -1113,6 +1119,12 @@ class HomeViewModel(
         }
     }
 
+    fun updateScreenShareConfirmationEnabled(checked: Boolean) {
+        config.setScreenShareConfirmationEnabled(checked)
+        _uiState.value = _uiState.value.copy(isScreenShareConfirmationEnabled = checked)
+        //no restart needed: the screen stream endpoint reads this for every new viewer
+    }
+
     /**
      * Adds the screen stream endpoint, if this build can capture the screen and the user has
      * asked for it. Everything else the server offers is registered by [SHTTPSApp] itself; this
@@ -1137,6 +1149,8 @@ class HomeViewModel(
                         null
                     }
                 },
+                //asks about each new viewer while "Ask before anyone sees the screen" is on
+                screenAccessController,
             ),
             filesRequestHandlerMiddlewares,
         )
