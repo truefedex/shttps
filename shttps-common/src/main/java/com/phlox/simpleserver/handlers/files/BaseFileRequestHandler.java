@@ -12,6 +12,7 @@ import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,30 @@ public abstract class BaseFileRequestHandler implements RequestHandler {
         try {
             return !authManager.getUserRightsEvaluator().checkIsFileOperationAllowed(user, config.isStoreUsersInDatabase(),
                     subject, operation, operationParams, requestedRights);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * {@link #checkIsForbidden} for an operation that acts on everything under {@code subject}:
+     * also forbidden when an access rule denies the operation on any folder inside it. See
+     * {@link com.phlox.simpleserver.auth.UserRightsEvaluator#findDeniedDescendants}.
+     */
+    public boolean checkIsSubtreeForbidden(@Nullable User user, @NotNull String subject,
+                                           @NotNull String operation, @Nullable Map<String, Object> operationParams,
+                                           User.FileSystemRights... requestedRights) {
+        if (checkIsForbidden(user, subject, operation, operationParams, requestedRights)) return true;
+        return !deniedDescendants(user, subject, operation, operationParams).isEmpty();
+    }
+
+    /** Folders inside {@code subject} where an access rule denies {@code operation}; normalized paths. */
+    public @NotNull List<String> deniedDescendants(@Nullable User user, @NotNull String subject,
+                                                   @NotNull String operation, @Nullable Map<String, Object> operationParams) {
+        if (config.getAuthMode().equals(SHTTPSConfig.AuthMode.NONE) || user == null) return new ArrayList<>();
+        try {
+            return authManager.getUserRightsEvaluator().findDeniedDescendants(user, config.isStoreUsersInDatabase(),
+                    subject, operation, operationParams);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

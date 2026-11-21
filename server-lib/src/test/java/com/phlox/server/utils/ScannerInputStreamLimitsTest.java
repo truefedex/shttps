@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 
@@ -63,9 +64,15 @@ public class ScannerInputStreamLimitsTest {
 
     @Test
     public void clearedDeadlineDoesNotFire() throws Exception {
-        //the line takes ~200 ms, inside the deadline; the reads after it would end past it
-        ScannerInputStream input = new ScannerInputStream(new SlowStream("a\r\nbody", 0, 100));
-        input.startDeadlineOnNextByte(250);
+        //the line arrives at once, the body only after the deadline has passed. Laid out this way
+        //rather than as an evenly trickling stream because Thread.sleep only ever overshoots, and
+        //on a loaded CI machine (macOS runners especially) by tens of milliseconds per call: the
+        //line must not depend on any sleep to stay inside the deadline, and the body read is past
+        //it however late the sleep returns
+        ScannerInputStream input = new ScannerInputStream(new SequenceInputStream(
+                new ByteArrayInputStream("a\r\n".getBytes(StandardCharsets.US_ASCII)),
+                new SlowStream("body", 400, 0)));
+        input.startDeadlineOnNextByte(200);
         assertEquals("a", input.nextLine("ASCII"));
         input.clearDeadline();
         assertEquals('b', input.read());

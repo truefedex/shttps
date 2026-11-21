@@ -10,11 +10,15 @@ import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
 import com.phlox.simpleserver.utils.ProgressOutputStream;
+import com.phlox.simpleserver.utils.StagedUpload;
 import com.phlox.simpleserver.utils.StorageQuota;
 import com.phlox.simpleserver.utils.Utils;
 
 import java.io.BufferedOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 public class DirectUploadRequestDataConsumer extends DefaultRequestBodyConsumer {
@@ -25,6 +29,7 @@ public class DirectUploadRequestDataConsumer extends DefaultRequestBodyConsumer 
     private final StorageQuota quota;
     private final LockManager locks;
     private final String lockToken;
+    private final List<StagedUpload> staged = new ArrayList<>();
 
     public DirectUploadRequestDataConsumer(SHTTPSConfig config, User user, StorageQuota quota, LockManager locks, String lockToken) {
         this.config = config;
@@ -89,9 +94,19 @@ public class DirectUploadRequestDataConsumer extends DefaultRequestBodyConsumer 
 
             DocumentFile file = uploadDir.findFile(fileName);
             long previousSize = file != null ? file.length() : 0;
-            if (!quota.hasSpaceFor(uploadDir, fileSize, previousSize)) {
+            boolean atomic = config.isAtomicUploadsEnabled();
+            //staged, the old file stays on disk next to the new one until the commit
+            if (!quota.hasSpaceFor(uploadDir, fileSize, atomic ? 0 : previousSize)) {
                 throw new UploadException(413, ERROR_MSG_NO_SPACE_LEFT);
             }
+            if (atomic) {
+                StagedUpload upload = StagedUpload.open(uploadDir, type, fileName, file, quota, fileSize,
+                        msg -> new UploadException(413, msg),
+                        tmp -> SHTTPSApp.getInstance().platformUtils.openOutputStream(tmp.getUri()));
+                staged.add(upload);
+                return upload.stream();
+            }
+
             if (file == null) {
                 file = uploadDir.createFile(type, fileName);
                 if (file == null) {
@@ -113,6 +128,31 @@ public class DirectUploadRequestDataConsumer extends DefaultRequestBodyConsumer 
             return super.prepareBinaryOutputForMultipartData(request, contentType, name, fileName, partHeaders);
         }
         return null;
+    }
+
+    /**
+     * Publishes every staged upload of this request. Call after the body was read without error.
+     * When one fails, the ones not yet published are thrown away.
+     */
+    public void commitStaged() throws UploadException {
+        try {
+            for (StagedUpload upload : staged) {
+                upload.commit();
+            }
+        } catch (StagedUpload.IncompleteUploadException e) {
+            discardStaged();
+            throw new UploadException(400, e.getMessage());
+        } catch (IOException e) {
+            discardStaged();
+            throw new UploadException(500, e.getMessage());
+        }
+    }
+
+    /** Throws away whatever was staged and not published. Safe to call more than once. */
+    public void discardStaged() {
+        for (StagedUpload upload : staged) {
+            upload.discard();
+        }
     }
 
     @Override

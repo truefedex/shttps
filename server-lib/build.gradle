@@ -3,18 +3,20 @@ plugins {
     id 'jacoco'
 }
 
+//Java 17 because Android compiles against this module and shttps-common, and 17 is as high as
+//that side goes (D8 desugars its language features, min-sdk 26 has the APIs) - the two move together
 java {
-    sourceCompatibility = JavaVersion.VERSION_1_9
-    targetCompatibility = JavaVersion.VERSION_1_9
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 dependencies {
     api libs.proguard.annotations
     api libs.jetbrains.annotations
 
-    testImplementation libs.junit5.jupiter.api
-    testRuntimeOnly libs.junit5.jupiter.engine
-    testRuntimeOnly libs.junit5.platform.launcher
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
 }
 
 test {

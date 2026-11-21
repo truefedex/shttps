@@ -49,7 +49,7 @@ function renderDatabaseSchema() {
         editStructureButton.title = 'Edit table structure';
         editStructureButton.onclick = (e) => {
             e.stopPropagation(); // Prevent table click event
-            window.open(`/shttps-static-public/db-browser/table-editor.html?table=${table.name}`, '_blank');
+            window.open(pageUrl(`/shttps-static-public/db-browser/table-editor.html?table=${table.name}`), '_blank');
         };
         headerElement.appendChild(editStructureButton);
         
@@ -77,7 +77,7 @@ function renderDatabaseSchema() {
         let columnsElement = document.createElement('div');
         columnsElement.className = 'db-columns';
         columnsElement.onclick = () => {
-            window.open(`/shttps-static-public/db-browser/table-data.html?table=${table.name}`, '_blank');
+            window.open(pageUrl(`/shttps-static-public/db-browser/table-data.html?table=${table.name}`), '_blank');
         };
         for (let column of table.columns) {
             let columnElement = document.createElement('div');
@@ -96,7 +96,7 @@ function renderDatabaseSchema() {
 }
 
 function onExecuteSQLClick() {
-    window.open('sql-editor.html', '_blank');
+    window.open(pageUrl('sql-editor.html'), '_blank');
 }
 
 async function duplicateTable(tableName) {
@@ -141,4 +141,4 @@ function toggleSHTTPSTables() {
     
     // Update icon: crossed eye when hidden, regular eye when visible
     toggleIcon.innerHTML = shttpsTablesVisible ? EYE_ICON_SVG : CROSSED_EYE_ICON_SVG;
-}
+}

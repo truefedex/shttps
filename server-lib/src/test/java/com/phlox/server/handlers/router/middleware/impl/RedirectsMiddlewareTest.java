@@ -1,6 +1,7 @@
 package com.phlox.server.handlers.router.middleware.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -85,6 +86,37 @@ public class RedirectsMiddlewareTest {
                 () -> new RedirectsMiddleware.RedirectRule("(", "/x", 302, true, ""));
         RedirectsMiddleware.RedirectRule rule = new RedirectsMiddleware.RedirectRule();
         assertThrows(PatternSyntaxException.class, () -> rule.setFrom("["));
+    }
+
+    @Test
+    public void assigningAnInvalidFromDoesNotFailTheRequest() throws Exception {
+        //the Android editor writes the public field, so a bad expression can exist on a live rule
+        RedirectsMiddleware.RedirectRule rule = new RedirectsMiddleware.RedirectRule();
+        rule.from = "(";
+        rule.to = "/x";
+        RedirectsMiddleware middleware = new RedirectsMiddleware();
+        middleware.addRedirectRule(rule);
+        assertEquals(200, handle(middleware, "/x").code);
+    }
+
+    @Test
+    public void restoredKeepsAnUncompilablePatternAndTheNextRuleStillMatches() throws Exception {
+        RedirectsMiddleware.RedirectRule broken =
+                RedirectsMiddleware.RedirectRule.restored("(", "/bad", 302, false, "note");
+        assertEquals("(", broken.from);
+        assertEquals("/bad", broken.to);
+        assertEquals(302, broken.code);
+        assertFalse(broken.enabled);
+        assertEquals("note", broken.comment);
+
+        RedirectsMiddleware middleware = new RedirectsMiddleware();
+        middleware.setRedirectRules(Arrays.asList(
+                RedirectsMiddleware.RedirectRule.restored("(", "/bad", 302, true, ""),
+                new RedirectsMiddleware.RedirectRule("^/ok$", "/good", 301, true, "")));
+        Response response = handle(middleware, "/ok");
+        assertEquals(301, response.code);
+        assertEquals("/good", response.headers.get("Location"));
+        assertEquals(200, handle(middleware, "/anything").code);
     }
 
     @Test

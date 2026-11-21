@@ -13,6 +13,7 @@ import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
+import com.phlox.simpleserver.utils.Utils;
 
 import java.util.Map;
 
@@ -48,7 +49,7 @@ public class NewFolderRequestHandler extends BaseFileRequestHandler {
             return StandardResponses.FORBIDDEN();
 
         String lockTokenProvided = extractLockTokenFromIf(request.headers.get("if"));
-        String newFolderPath = destPath + "/" + newFolderName;
+        String newFolderPath = Utils.joinPaths(destPath, newFolderName);
         if (!locks.mayWrite(newFolderPath, lockTokenProvided)) {
             return new Response(423, "Locked");
         }

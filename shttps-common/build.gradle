@@ -2,9 +2,12 @@ plugins {
     id 'java-library'
 }
 
+//Java 17, the highest the Android consumers can take: D8 desugars 17's language features, and
+//min-sdk 26 already has the java.time/stream APIs natively. Not 21 like the desktop-only modules,
+//because this is one of the two modules the Android app compiles against
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 dependencies {
@@ -16,9 +19,9 @@ dependencies {
     //API comes with the platform too, but tests need real implementations on their classpath
     testImplementation libs.json
     testImplementation libs.kxml
-    testImplementation libs.junit5.jupiter.api
-    testRuntimeOnly libs.junit5.jupiter.engine
-    testRuntimeOnly libs.junit5.platform.launcher
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
 }
 
 test {

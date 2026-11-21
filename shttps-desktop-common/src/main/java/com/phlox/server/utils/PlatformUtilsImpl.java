@@ -15,19 +15,24 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.NetworkInterface;
+import java.net.URL;
+import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyStore;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PlatformUtilsImpl implements SHTTPSPlatformUtils {
     private static final boolean IS_LINUX =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux");
 
     private final ThumbnailManager thumbnailManager = new ThumbnailManager(this);
+    private final Map<String, Long> assetLastModifiedCache = new ConcurrentHashMap<>();
     private KeyStore keyStore;
 
     @Override
@@ -80,14 +85,37 @@ public class PlatformUtilsImpl implements SHTTPSPlatformUtils {
         }
     }
 
+    /**
+     * Assets live on the classpath, which is a plain directory in a development run and a jar
+     * entry in every packaged build. {@code URL.getFile()} is only a path for the first of those -
+     * for a jar it hands back {@code file:/.../app.jar!/asset}, which names nothing on disk, so
+     * the old {@code new File(...).lastModified()} answered 0 for every asset an installed app
+     * ever served. A URL connection knows both forms and reports the jar entry's own time.
+     */
     @Override
     public long getAssetLastModified(String fileName) {
+        //asked once per asset per request, and answering it means opening the jar, so keep it:
+        //nothing on the classpath changes while the process runs
+        Long known = assetLastModifiedCache.get(fileName);
+        if (known != null) {
+            return known;
+        }
+        long lastModified = -1;
         try {
-            return new File(Objects.requireNonNull(getClass().getClassLoader().getResource(fileName)).getFile()).lastModified();
+            URL url = Objects.requireNonNull(getClass().getClassLoader().getResource(fileName));
+            URLConnection connection = url.openConnection();
+            connection.setUseCaches(false);
+            try (InputStream ignored = connection.getInputStream()) {
+                lastModified = connection.getLastModified();
+            }
+            if (lastModified <= 0) {
+                lastModified = -1;
+            }
         } catch (Exception e) {
             e.printStackTrace();
-            return -1;
         }
+        assetLastModifiedCache.put(fileName, lastModified);
+        return lastModified;
     }
 
     @Override
