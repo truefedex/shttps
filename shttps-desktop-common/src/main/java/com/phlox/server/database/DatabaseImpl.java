@@ -442,7 +442,6 @@ public class DatabaseImpl implements Database {
                     statement.execute(query);
                 } catch (Exception e) {
                     connection.close();
-                    throw e;
                 }
             }
         }

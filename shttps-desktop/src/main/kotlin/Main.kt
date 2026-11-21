@@ -15,6 +15,9 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import androidx.navigation.compose.rememberNavController
+import com.kdroid.composetray.tray.api.Tray
+import com.kdroid.composetray.utils.SingleInstanceManager
+import com.kdroid.composetray.utils.getTrayWindowPosition
 import com.phlox.server.utils.SHTTPSLoggerProxy
 import com.phlox.server.utils.SHTTPSLoggerProxy.TaggedJavaLogger
 import com.phlox.simpleserver.ext.DesktopExtensions
@@ -29,9 +32,6 @@ import com.phlox.simpleserver.shttps_desktop.generated.resources.stop_server
 import com.phlox.simpleserver.shttps_desktop.generated.resources.tray
 import com.phlox.simpleserver.shttps_desktop.generated.resources.window_icon
 import com.phlox.simpleserver.theme.AppTheme
-import dev.nucleusframework.composenativetray.tray.api.Tray
-import dev.nucleusframework.composenativetray.trayapp.getTrayWindowPosition
-import dev.nucleusframework.core.runtime.SingleInstanceManager
 import io.github.vinceglb.autolaunch.AutoLaunch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch

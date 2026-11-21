@@ -54,14 +54,7 @@ public class SHTTPSConfigAndroid implements SHTTPSConfig {
                 String name = relativePath.substring(relativePath.lastIndexOf('/') + 1);
                 return new MediaStoreFileCollectionFile(context, null, Uri.parse(rootDirStr), name, relativePath);
             } else if (rootDirStr.startsWith("content:")) {
-                DocumentFile root = TreeDocumentFile.fromTreeUri(context, Uri.parse(rootDirStr));
-                if (root == null) {
-                    // A non-tree content URI used to crash here, and it was persisted before the
-                    // crash, so the next launch died the same way. Returning null lets startup
-                    // fall back to the app folder instead of looping.
-                    logger.e("Root directory URI is not a document tree: " + rootDirStr);
-                }
-                return root;
+                return TreeDocumentFile.fromTreeUri(context, Uri.parse(rootDirStr));
             } else {
                 return DocumentFile.fromFile(new File(rootDirStr));
             }

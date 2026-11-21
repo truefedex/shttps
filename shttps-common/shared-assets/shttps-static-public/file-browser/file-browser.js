@@ -784,7 +784,7 @@ function showContextMenu(x, y, href, isFolder) {
   let nonEditableAsTextForSure = ["jpg", "jpeg", "png", "raw", "webp", "gif", "bmp", "tga", "avi", "mp4", "3gp", "zip", "apk", "exe", "pdf", "doc", "xls", "ppt", "rtf"].includes(extension);
   moEditAsText.style.display = (isFolder || nonEditableAsTextForSure) ? "none" : "block";
   moEditAsText.onclick = function () {
-    window.open(pageUrl("/shttps-static-public/text-editor/index.html?path=" + href), "_blank");
+    window.open("/shttps-static-public/text-editor/index.html?path=" + href, "_blank");
   }
   //rename
   let moRename = document.getElementById("mo-rename");
@@ -850,9 +850,7 @@ function onPageLoad() {
     "mm-status": "/shttps-static-public/status/index.html",
     "mm-database": "/shttps-static-public/db-browser/index.html",
     "mm-screen": "/shttps-static-public/screen/index.html",
-    //the page the web-auth middleware itself redirects an anonymous visitor to; the old
-    ///shttps-pages/login/ is a route no build has ever registered and answered 404
-    "mm-login": "/shttps-static-public/auth/",
+    "mm-login": "/shttps-pages/login/",
     "mm-logout": onLogoutClick
   });
 

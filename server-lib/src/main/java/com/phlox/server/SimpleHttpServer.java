@@ -163,9 +163,6 @@ public class SimpleHttpServer {
             logger.e("Cannot set socket timeout", e);
         }
         listenThread = new Thread(this::listenLoop, "SHTTPS listener");
-        //set before the thread starts, not from inside it: a caller that has just returned from
-        //startListen must already see the server as running, or a second start slips through
-        listenThreadRunning = true;
         listenThread.start();
     }
 
@@ -192,16 +189,6 @@ public class SimpleHttpServer {
     }
 
     public void stopListen() {
-        signalStop();
-        joinListenThread();
-    }
-
-    /**
-     * Asks the accept loop to leave and closes the listening socket and every tracked client.
-     * Does not wait for the accept thread: {@link Callback#onServerStopped()} runs on that thread,
-     * and the caller may be holding a lock the callback needs.
-     */
-    public void signalStop() {
         shouldStopListen = true;
         ServerSocket ss = serverSocket;
         if (ss != null) {
@@ -221,25 +208,16 @@ public class SimpleHttpServer {
             }
             trackedSockets.clear();
         }
-    }
-
-    /**
-     * Waits until the accept thread has left {@link #listenLoop()}, including
-     * {@link Callback#onServerStopped()}. A call from that thread itself returns immediately:
-     * the callback is how a restart re-enters, and joining yourself would wait forever.
-     */
-    public void joinListenThread() {
         Thread lthr = listenThread;
-        if (lthr == null || !lthr.isAlive() || lthr == Thread.currentThread()) {
-            return;
+        if (lthr != null && lthr.isAlive()) {
+            try {
+                lthr.join();
+            } catch (InterruptedException e) {
+                logger.e("Error while waiting for listen thread to finish", e);
+                Thread.currentThread().interrupt();
+            }
+            listenThread = null;
         }
-        try {
-            lthr.join();
-        } catch (InterruptedException e) {
-            logger.e("Error while waiting for listen thread to finish", e);
-            Thread.currentThread().interrupt();
-        }
-        listenThread = null;
         listenThreadRunning = false;
     }
 

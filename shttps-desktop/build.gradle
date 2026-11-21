@@ -38,17 +38,6 @@ dependencies {
 
     implementation libs.json
     implementation libs.composenativetray
-    //taken for getTrayWindowPosition() alone. Its other half, TrayApp, drags in the whole Nucleus
-    //application framework (decorated windows, spellcheck, SF Symbols, the GraalVM/AOT runtimes -
-    //about 11 MB in the installer) and we never call it, so those are cut. The position helper
-    //itself only touches the tray core and nucleus.core-runtime, both of which stay
-    implementation(libs.composenativetray.app) {
-        exclude group: 'dev.nucleusframework', module: 'nucleus.nucleus-application'
-        exclude group: 'dev.nucleusframework', module: 'nucleus.decorated-window-tao'
-    }
-    //SingleInstanceManager lives here since the tray library split; it is a "runtime" dependency
-    //of the artifacts above, so without this line it is not on our compile classpath
-    implementation libs.nucleus.core.runtime
     implementation libs.auto.launch
 
     testImplementation libs.kotlin.test

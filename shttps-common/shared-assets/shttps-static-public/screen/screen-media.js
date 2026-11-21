@@ -59,8 +59,6 @@ function releaseMediaSource() {
   latestInitSegment = null;
   updateRecordUi();
 
-  //a new stream is a new timeline, and possibly a new link
-  resetTargetLatency();
   pendingOperations = [];
   expectInitSegment = false;
   sourceBuffer = null;
@@ -225,123 +223,18 @@ function syncPlayback() {
   }
 
   var behind = ranges.end(last) - time;
-  //on a link uneven enough to need a large reserve, that reserve must not itself count as lag
-  if (behind > Math.max(MAX_LATENCY_SECONDS, targetLatency * 3)) {
+  if (behind > MAX_LATENCY_SECONDS) {
     jumpToLiveEdge(ranges, last);
-  } else if (behind > targetLatency + CATCH_UP_SLACK_SECONDS) {
+  } else if (behind > TARGET_LATENCY_SECONDS * 2) {
     setPlaybackRate(CATCH_UP_PLAYBACK_RATE);
-  } else if (behind <= targetLatency) {
+  } else if (behind <= TARGET_LATENCY_SECONDS) {
     setPlaybackRate(1);
   }
 }
 
 function jumpToLiveEdge(ranges, last) {
-  video.currentTime = Math.max(ranges.start(last), ranges.end(last) - targetLatency);
+  video.currentTime = Math.max(ranges.start(last), ranges.end(last) - TARGET_LATENCY_SECONDS);
   setPlaybackRate(1);
-}
-
-// --- target latency --------------------------------------------------------------------------
-
-/**
- * Records how punctual a media segment was.
- * <p>
- * Every segment says where it belongs on the media timeline, and that timeline runs at the pace of
- * the capture. So the time of arrival minus the decode time is the same number for every segment
- * of a perfectly even stream, and how far it wanders is exactly how much video has to be in hand
- * for playback not to run dry. Measuring it this way, rather than from the gaps between arrivals,
- * is what keeps a stream that legitimately slows down - a still screen - from looking like a bad
- * link.
- */
-function noteSegmentArrival(data) {
-  var decodeTime = readDecodeTime(data);
-  if (decodeTime < 0) {
-    return;
-  }
-  var offset = performance.now() / 1000 - decodeTime;
-  if (arrivalOffsets.length &&
-      Math.abs(offset - arrivalOffsets[arrivalOffsets.length - 1]) > ARRIVAL_DISCONTINUITY_SECONDS) {
-    //the stream paused or a backlog was dropped: what came before no longer compares
-    arrivalOffsets = [];
-  }
-  arrivalOffsets.push(offset);
-  if (arrivalOffsets.length > ARRIVAL_WINDOW) {
-    arrivalOffsets.shift();
-  }
-  if (++arrivalsSinceUpdate >= 30) {
-    arrivalsSinceUpdate = 0;
-    updateTargetLatency();
-  }
-}
-
-/**
- * Sets the target to what the last few seconds of arrivals needed: the lateness that 95% of the
- * segments stayed within, plus a frame of margin. Raised at once and lowered slowly - being caught
- * short is a visible freeze, while a reserve kept a little too long is only a few milliseconds.
- */
-function updateTargetLatency() {
-  if (arrivalOffsets.length < 30) {
-    return;
-  }
-  var sorted = arrivalOffsets.slice().sort(function (a, b) { return a - b; });
-  //the earliest arrival is the one that was not held up at all
-  var spread = sorted[Math.floor((sorted.length - 1) * 0.95)] - sorted[0];
-  var wanted = Math.min(MAX_TARGET_LATENCY_SECONDS,
-    Math.max(MIN_TARGET_LATENCY_SECONDS, spread * 1.25 + TARGET_LATENCY_MARGIN_SECONDS));
-  targetLatency = wanted > targetLatency ? wanted : targetLatency + (wanted - targetLatency) * 0.1;
-}
-
-function resetTargetLatency() {
-  targetLatency = INITIAL_TARGET_LATENCY_SECONDS;
-  arrivalOffsets = [];
-  arrivalsSinceUpdate = 0;
-}
-
-/**
- * @return the decode time of a media segment in seconds - moof/traf/tfdt - or -1 if this is not
- * one. Walks the boxes rather than reading a fixed offset, so a muxer that grows a box does not
- * silently turn this into noise.
- */
-function readDecodeTime(data) {
-  var moof = findBox(data, 0, data.length, "moof");
-  var traf = moof && findBox(data, moof.start, moof.end, "traf");
-  var tfdt = traf && findBox(data, traf.start, traf.end, "tfdt");
-  if (!tfdt || tfdt.end - tfdt.start < 8) {
-    return -1;
-  }
-  var version = data[tfdt.start];
-  var at = tfdt.start + 4;
-  var value;
-  if (version === 1) {
-    if (tfdt.end - at < 8) {
-      return -1;
-    }
-    value = readU32(data, at) * 4294967296 + readU32(data, at + 4);
-  } else {
-    value = readU32(data, at);
-  }
-  return value / MEDIA_TIMESCALE;
-}
-
-/** @return the payload range of the first box of that type within [start, end), or null */
-function findBox(data, start, end, type) {
-  var offset = start;
-  while (offset + 8 <= end) {
-    var size = readU32(data, offset);
-    if (size < 8 || offset + size > end) {
-      return null;
-    }
-    if (String.fromCharCode(data[offset + 4], data[offset + 5], data[offset + 6],
-        data[offset + 7]) === type) {
-      return { start: offset + 8, end: offset + size };
-    }
-    offset += size;
-  }
-  return null;
-}
-
-function readU32(data, offset) {
-  return ((data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) |
-    data[offset + 3]) >>> 0;
 }
 
 function setPlaybackRate(rate) {

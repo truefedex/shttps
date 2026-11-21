@@ -228,9 +228,6 @@ class AuthDetailsViewModel(
                         dest.create(user)
                     }
                 }
-                //the running auth manager still holds `source`. Restart it onto `dest` before the
-                //old store is emptied, or a request in between authenticates against nobody.
-                shttpsApp.restartServerIfRunning()
                 source.deleteAll()
                 
                 if (database != null && source is com.phlox.simpleserver.auth.DBBasedUserStore) {

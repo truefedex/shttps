@@ -33,22 +33,4 @@ public interface ScreenStreamListener {
      * failed). No further callbacks will follow and the listener is already unsubscribed.
      */
     void onStreamStopped();
-
-    /**
-     * Where the mouse pointer is and what it looks like, for a stream whose profile keeps it out of
-     * the picture ({@link ScreenStreamProfile#cursorInPicture} false). Called when either changes,
-     * and now and then regardless, so that a listener that joined late learns it too.
-     * <p>
-     * {@code default} because most streams never call it: Android has no pointer, and a pipeline
-     * that draws the pointer into its frames has nothing to report.
-     *
-     * @param x       across the captured picture, 0 at the left edge and 1 at the right; outside
-     *                that range while the pointer is on another display
-     * @param y       down the captured picture, 0 at the top and 1 at the bottom
-     * @param shape   a CSS cursor keyword - {@code default}, {@code text}, {@code pointer}... -
-     *                since a browser is what ends up drawing it
-     * @param visible false while the machine itself is hiding its pointer
-     */
-    default void onCursor(float x, float y, String shape, boolean visible) {
-    }
 }

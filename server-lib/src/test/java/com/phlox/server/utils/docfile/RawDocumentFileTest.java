@@ -96,17 +96,15 @@ public class RawDocumentFileTest {
     }
 
     @Test
-    public void symlinkedDirectoryIsNotServed() throws IOException {
+    public void symlinkedDirectoryIsNotADirectory() throws IOException {
         File link = new File(tempDir, "link");
         try {
             Files.createSymbolicLink(link.toPath(), new File(tempDir, "dir").toPath());
         } catch (IOException | UnsupportedOperationException | SecurityException e) {
             assumeTrue(false, "symbolic links are not available here: " + e);
         }
-        //a link is never resolved (a loop, or a way out of the root); and an instance made for
-        //one some other way still does not report itself as a directory to descend into
-        assertThrows(SecurityException.class, () -> root.findFile("link"));
-        assertFalse(new RawDocumentFile(root, link).isDirectory());
+        //listing never descends into a link (a loop, or a way out of the root)
+        assertFalse(root.findFile("link").isDirectory());
     }
 
     @Test

@@ -66,8 +66,8 @@ public class FilesRequestHandler extends StaticFileRequestHandler {
         propPatchHelper = new WebDavPropPatchHelper(platformUtils, userStore, locks);
         mkColHelper = new WebDavMkColHelper(platformUtils, userStore, locks);
         deleteHelper = new WebDavDeleteHelper(platformUtils, userStore, locks);
-        copyMoveHelper = new WebDavCopyMoveHelper(platformUtils, userStore, locks, config.isAtomicUploadsEnabled());
-        putHelper = new WebDavPutHelper(platformUtils, userStore, locks, config.isAtomicUploadsEnabled());
+        copyMoveHelper = new WebDavCopyMoveHelper(platformUtils, userStore, locks);
+        putHelper = new WebDavPutHelper(platformUtils, userStore, locks);
         lockHelper = new WebDavLockHelper(platformUtils, userStore, locks);
 
         try (InputStream is = platformUtils.openAssetStream("file-browser.html")) {
@@ -166,8 +166,6 @@ public class FilesRequestHandler extends StaticFileRequestHandler {
             boolean allowEditing = config.getAllowEditing();
             HTMLTemplateResponse response = new HTMLTemplateResponse(template, new HashMap<String, Object>() {{
                 put("current_path", request.path);
-                //the build token the bundled pages carry too, see SHTTPSApp.getWebAssetsVersion
-                put("v", SHTTPSApp.getInstance().getWebAssetsVersion());
                 put("allowEditing", allowEditing &&(user == null || authManager.getUserRightsEvaluator().hasAnyFileEditingRights(user)));
                 put("thumbnails_support", SHTTPSApp.getInstance().platformUtils.isThumbnailsSupported());
                 put("list_no_script", files);

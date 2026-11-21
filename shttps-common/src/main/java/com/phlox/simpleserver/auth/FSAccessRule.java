@@ -38,10 +38,7 @@ public class FSAccessRule {
         String subject = jsonObject.optString(FIELD_SUBJECT, null);
         String operation = jsonObject.optString(FIELD_OPERATION, null);
         if (roleName == null || subject == null || operation == null) return null;
-        //SQLite hands the INTEGER column back as a Long. optBoolean only accepts a Boolean or
-        //the strings "true"/"false", so an allow=1 row used to deserialize as deny and then
-        //override the role bitmask. optInt is what DBAccessRule already uses for the same column.
-        boolean allow = jsonObject.optInt(FIELD_ALLOW, 0) > 0;
+        boolean allow = jsonObject.optBoolean(FIELD_ALLOW, false);
         String expression = (jsonObject.has(FIELD_EXPRESSION) && !jsonObject.isNull(FIELD_EXPRESSION)) ? jsonObject.optString(FIELD_EXPRESSION, null) : null;
         return new FSAccessRule(roleName, subject, operation, allow, expression);
     }

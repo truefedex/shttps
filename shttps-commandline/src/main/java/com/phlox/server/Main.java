@@ -67,13 +67,6 @@ public class Main implements Callable<Integer> {
     private void startServer(SHTTPSConfig config, SHTTPSPlatformUtils platformUtils, DatabaseFabricImpl databaseFabric) {
         System.out.println("Starting server");
         SHTTPSApp app = SHTTPSApp.init(config, platformUtils, databaseFabric);
-        //the same number --version prints: the status page reports it, and the web UI stamps it
-        //onto the URL of every file it loads so that an update is not answered out of a browser
-        //cache. Run from a classpath there is no manifest and no number, as above.
-        String version = Main.class.getPackage().getImplementationVersion();
-        if (version != null) {
-            app.serverVersionInfo = new SHTTPSApp.ServerVersionInfo("SHTTPS", version);
-        }
         app.initIO();
         try {
             app.startServer();

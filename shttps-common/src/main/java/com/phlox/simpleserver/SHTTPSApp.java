@@ -128,11 +128,6 @@ public class SHTTPSApp {
     private volatile ScheduledFuture<?> channelIdleSweepFuture = null;
     public ServerVersionInfo serverVersionInfo = new ServerVersionInfo("SHTTPS", "unknown");
     public long serverStartTimeMillis;
-    /** @see #getWebAssetsVersion() */
-    private volatile String webAssetsVersion = null;
-
-    /** Where the bundled web UI lives, both on the classpath and in the URLs that reach it. */
-    public static final String WEB_ASSETS_PATH = "shttps-static-public";
 
     public static SHTTPSApp init(SHTTPSConfig config, SHTTPSPlatformUtils platformUtils, SHTTPSDatabaseFabric databaseFabric) {
         if (instance != null) {
@@ -141,50 +136,6 @@ public class SHTTPSApp {
         instance = new SHTTPSApp(config, platformUtils, databaseFabric);
         config.runMigrations();
         return instance;
-    }
-
-    /**
-     * The token every URL of the bundled web UI carries as {@code ?v=...}, and with it the one
-     * thing a browser goes by when deciding whether it may answer a request out of its own cache:
-     * the URL. Validators tell a browser how to check a file it already has; they do nothing for
-     * one it was told it need not check, and anyone upgrading from a build that shipped before
-     * those validators existed has exactly that - the old scripts, kept against the new markup,
-     * which looks like a UI that has quietly died rather than a stale file. A new token moves the
-     * whole web UI to URLs that browser has never seen.
-     * <p>
-     * It is the application's own version, which is what changes when the assets do. A build that
-     * never says what version it is - the default {@code unknown} - falls back to the date of the
-     * assets themselves, so that such a build is not pinned to one token forever.
-     */
-    public String getWebAssetsVersion() {
-        String known = webAssetsVersion;
-        if (known != null) {
-            return known;
-        }
-        ServerVersionInfo info = serverVersionInfo;
-        String computed = sanitizeVersionToken(info == null ? null : info.version);
-        if (computed.isEmpty() || computed.equals("unknown")) {
-            long assetsDate = platformUtils.getAssetLastModified(WEB_ASSETS_PATH + "/common.js");
-            computed = assetsDate > 0 ? Long.toHexString(assetsDate) : "0";
-        }
-        webAssetsVersion = computed;
-        return computed;
-    }
-
-    /** Keeps the token to what goes into a URL query untouched, whatever a host app reports. */
-    private static String sanitizeVersionToken(String version) {
-        if (version == null) {
-            return "";
-        }
-        StringBuilder result = new StringBuilder(version.length());
-        for (int i = 0; i < version.length() && result.length() < 32; i++) {
-            char c = version.charAt(i);
-            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-                    || c == '.' || c == '-' || c == '_') {
-                result.append(c);
-            }
-        }
-        return result.toString();
     }
 
     public static SHTTPSApp getInstance() {
@@ -271,19 +222,6 @@ public class SHTTPSApp {
     }
 
     public synchronized void startServer() throws UnrecoverableKeyException, CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
-        //a bind that fails, or anything else before the accept thread is up, has already created
-        //the limiters, the idle sweep and the auth manager. Those have to go with the exception,
-        //the same way a server that later dies on its own is cleaned up from onServerStopped.
-        SimpleHttpServer running = this.server;
-        if (running != null && running.isListenThreadRunning()) {
-            //two restarts racing each other both end in a start. The second one must not build a
-            //server that fails to bind and then tear down the resources of the one that did
-            logger.w("startServer: the server is already running");
-            return;
-        }
-        boolean listening = false;
-        SimpleHttpServer created = null;
-        try {
         List<Middleware> globalMiddlewares = new ArrayList<>();
         //Setup middlewares
         List<Middleware> authMiddlewares = new ArrayList<>();
@@ -418,8 +356,8 @@ public class SHTTPSApp {
 
 
         //build-in pages
-        router.addRouteByPathPrefix("/" + WEB_ASSETS_PATH,
-                new StaticAssetsRequestHandler(WEB_ASSETS_PATH, "/" + WEB_ASSETS_PATH, config), authMiddlewares);
+        router.addRouteByPathPrefix("/shttps-static-public",
+                new StaticAssetsRequestHandler("shttps-static-public", "/shttps-static-public", config), authMiddlewares);
 
 
         List<Middleware> filesRequestHandlerMiddlewares = new ArrayList<>(authMiddlewares);
@@ -443,8 +381,6 @@ public class SHTTPSApp {
                 FilesRequestHandler.prepareOptionsResponse(null, config);
         router.addRoute("*", Set.of("OPTIONS"), optionsHandler, authMiddlewares);
 
-        //filled in once the server object exists; the accept thread reads it from onServerStopped
-        final SimpleHttpServer[] listenServer = new SimpleHttpServer[1];
         SimpleHttpServer.Callback serverCallback = new SimpleHttpServer.Callback() {
             @Override
             public void onServerStarted() {
@@ -457,15 +393,6 @@ public class SHTTPSApp {
             @Override
             public void onServerStopped() {
                 logger.i("Server stopped");
-                //the accept thread is the one calling this. Take the app lock only for the bookkeeping
-                //and let go of it before the host callback: that callback is allowed to start or stop
-                //the server, and stop joins this thread.
-                synchronized (SHTTPSApp.this) {
-                    if (server == listenServer[0]) {
-                        server = null;
-                        releaseServerResources();
-                    }
-                }
                 Callback callback = SHTTPSApp.this.callback;
                 if (callback != null) {
                     callback.onServerStopped();
@@ -526,8 +453,6 @@ public class SHTTPSApp {
         };
 
         SimpleHttpServer srv = new SimpleHttpServer(router, serverCallback);
-        listenServer[0] = srv;
-        created = srv;
         if (config.getVerifyHost()) {
             srv.hostName = config.getHost();
         }
@@ -579,24 +504,13 @@ public class SHTTPSApp {
             } else if (certPassword == null) {
                 throw new IllegalStateException("Certificate password not set!");
             }
-            this.server = srv;
             srv.startListen(config.getPort(), cert, keyPassword);
         } else {
-            this.server = srv;
             srv.startListen(config.getPort());
         }
-        listening = true;
         this.serverStartTimeMillis = System.currentTimeMillis();
+        this.server = srv;
         setupShutdownTimeout();
-        } finally {
-            if (!listening) {
-                //only the server this call created; anything else in the field is not ours to drop
-                if (created != null && this.server == created) {
-                    this.server = null;
-                }
-                releaseServerResources();
-            }
-        }
     }
 
     /**
@@ -626,20 +540,12 @@ public class SHTTPSApp {
         }, period, period, TimeUnit.MILLISECONDS);
     }
 
-    /**
-     * Drops everything {@link #startServer()} created besides the accept thread itself: limiters,
-     * the channel sweep, the channels, the inactivity timer and the auth manager. Idempotent.
-     * The sweep goes first so it cannot be inside {@link ChannelManager#collectIdleChannels} while
-     * {@link ChannelManager#closeAll} takes the channels out.
-     */
-    private void releaseServerResources() {
-        ScheduledFuture<?> sweep = this.channelIdleSweepFuture;
-        if (sweep != null) {
-            sweep.cancel(false);
-            this.channelIdleSweepFuture = null;
+    public synchronized void stopServer() {
+        SimpleHttpServer srv = this.server;
+        if (srv != null && srv.isListenThreadRunning()) {
+            srv.stopListen();
+            server = null;
         }
-
-        channelManager.closeAll(WebSocketCloseCodes.GOING_AWAY, "Server stopped");
 
         RateLimitingMiddleware rateLimitingMiddleware = this.rateLimitingMiddleware;
         if (rateLimitingMiddleware != null) {
@@ -649,8 +555,19 @@ public class SHTTPSApp {
 
         RateLimitingMiddleware dbTransactionRateLimiter = this.dbTransactionRateLimitingMiddleware;
         if (dbTransactionRateLimiter != null) {
+            //it owns a cleanup executor of its own, like the global one
             dbTransactionRateLimiter.shutdown();
             this.dbTransactionRateLimitingMiddleware = null;
+        }
+
+        //the sockets are already going away with the server; this tells the participants why, and
+        //leaves no channel behind holding a closed session
+        channelManager.closeAll(WebSocketCloseCodes.GOING_AWAY, "Server stopped");
+
+        ScheduledFuture<?> sweep = this.channelIdleSweepFuture;
+        if (sweep != null) {
+            sweep.cancel(false);
+            this.channelIdleSweepFuture = null;
         }
 
         ScheduledFuture<?> future = this.shutdownFuture;
@@ -662,23 +579,6 @@ public class SHTTPSApp {
         //belongs to the server that just stopped: the next start builds one for whatever auth mode
         //is configured then
         this.authManager = null;
-    }
-
-    public void stopServer() {
-        SimpleHttpServer srv;
-        synchronized (this) {
-            srv = this.server;
-            this.server = null;
-            releaseServerResources();
-        }
-        //join outside the app monitor. The accept thread calls onServerStopped, and that callback
-        //is allowed to start or stop the server again; holding the monitor across the join is what
-        //deadlocks that re-entry. Resources were already released above, so the callback's start
-        //builds its own and this method does not touch them after the join.
-        if (srv != null) {
-            srv.signalStop();
-            srv.joinListenThread();
-        }
     }
 
     public UserStore provideUserStore() {
@@ -710,15 +610,14 @@ public class SHTTPSApp {
         return srv != null && srv.isListenThreadRunning();
     }
 
-    public void restartServerIfRunning() {
-        if (!isServerRunning()) return;
-        stopServer();
-        //onServerStopped may have started the server again while stopServer was joining
-        if (isServerRunning()) return;
-        try {
-            startServer();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+    public synchronized void restartServerIfRunning() {
+        if (isServerRunning()) {
+            stopServer();
+            try {
+                startServer();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 
@@ -730,36 +629,16 @@ public class SHTTPSApp {
         instance = new SHTTPSApp(config, platformUtils, databaseFabric);
     }
 
-    /**
-     * Replaces the database the handlers read. A running server is stopped first and started again
-     * afterwards: its request threads and an open transaction still hold the previous instance, and
-     * closing that instance under them fails the transaction and the file.
-     */
     public void setDatabase(Database db) {
-        boolean restart = isServerRunning();
-        if (restart) {
-            stopServer();
-        }
-        synchronized (this) {
-            Database oldDb = this.database.get();
-            if (oldDb != db) {
-                this.database.set(db);
-                if (oldDb != null) {
-                    try {
-                        oldDb.close();
-                    } catch (Exception e) {
-                        logger.e("Failed to close old database", e);
-                    }
-                }
-            }
-        }
-        if (restart && !isServerRunning()) {
+        Database oldDb = this.database.get();
+        if (oldDb != null) {
             try {
-                startServer();
+                oldDb.close();
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                logger.e("Failed to close old database", e);
             }
         }
+        this.database.set(db);
     }
 
     public Database getDatabase() {

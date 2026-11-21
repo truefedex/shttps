@@ -1,6 +1,5 @@
 package com.phlox.simpleserver.auth.web;
 
-import com.phlox.simpleserver.auth.basic.AuthenticationException;
 import com.phlox.server.handlers.RequestHandler;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
@@ -27,12 +26,7 @@ public class LoginRequestHandler implements RequestHandler {
             return StandardResponses.BAD_REQUEST();
         }
         context.requestBodyReader.readRequestBody(request);
-        User user;
-        try {
-            user = authManager.login(context, request);
-        } catch (AuthenticationException e) {
-            return e.toResponse();
-        }
+        User user = authManager.login(context, request);
         if (user != null) {
             String sessionId = authManager.sessionManager.createSession(user.identity);
             Response response = new Response();

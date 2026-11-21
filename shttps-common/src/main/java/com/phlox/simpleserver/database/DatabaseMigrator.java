@@ -39,8 +39,8 @@ public final class DatabaseMigrator {
                         } catch (Exception ignored) {
                         }
 
-                        database.insert("shttps_version", new JSONObject("{\"version\": " + guessVersion + "}"));
-                        return guessVersion;
+                        database.insert("shttps_version", new JSONObject("{\"version\": 1}"));
+                        return 1;
                     }
                 }
             });

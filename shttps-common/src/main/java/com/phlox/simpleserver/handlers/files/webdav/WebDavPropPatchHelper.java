@@ -26,8 +26,6 @@ import javax.xml.namespace.QName;
  * Dummy PROPPATCH handler - for now for simplicity we just return ok for all prop change requests
  */
 public class WebDavPropPatchHelper extends WebDavHelpersBase {
-    public static final String PROPPATCH_OPERATION = "PROPPATCH";
-
     public WebDavPropPatchHelper(SHTTPSPlatformUtils platform, UserStore userStore, LockManager locks) {
         super(platform, userStore, locks);
     }
@@ -38,12 +36,6 @@ public class WebDavPropPatchHelper extends WebDavHelpersBase {
 
         if (target == null || !target.exists()) {
             return StandardResponses.NOT_FOUND();
-        }
-
-        //PROPPATCH claims it stored the properties, so it is a write even while the values are discarded
-        if (filesRequestHandler.checkIsForbidden(user, request.path, PROPPATCH_OPERATION, null,
-                User.FileSystemRights.UPDATE)) {
-            return StandardResponses.FORBIDDEN();
         }
 
         String provided = extractLockTokenFromIf(request.headers.get("if"));

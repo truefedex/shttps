@@ -11,7 +11,6 @@ import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.handlers.files.MoveFileRequestHandler;
 import com.phlox.simpleserver.handlers.main.FilesRequestHandler;
 import com.phlox.simpleserver.utils.SHTTPSPlatformUtils;
-import com.phlox.simpleserver.utils.StagedUpload;
 import com.phlox.simpleserver.utils.StorageQuota;
 import com.phlox.simpleserver.utils.Utils;
 
@@ -27,7 +26,7 @@ import java.util.Map;
 
 public class WebDavCopyMoveHelper extends WebDavHelpersBase {
 
-    static final class DestInfo {
+    private static final class DestInfo {
         final @Nullable DocumentFile destFile;
         final @NotNull DocumentFile destParent;
         final @NotNull String destPath;
@@ -38,20 +37,8 @@ public class WebDavCopyMoveHelper extends WebDavHelpersBase {
         }
     }
 
-    private final boolean atomicOverwrite;
-
     public WebDavCopyMoveHelper(SHTTPSPlatformUtils platform, UserStore userStore, LockManager locks) {
-        this(platform, userStore, locks, false);
-    }
-
-    /**
-     * @param atomicOverwrite {@code SHTTPSConfig.isAtomicUploadsEnabled()}: an existing destination
-     *                        is replaced only after the new tree was written next to it
-     */
-    public WebDavCopyMoveHelper(SHTTPSPlatformUtils platform, UserStore userStore, LockManager locks,
-                                boolean atomicOverwrite) {
         super(platform, userStore, locks);
-        this.atomicOverwrite = atomicOverwrite;
     }
 
     public Response handleCopyMoveRequest(FilesRequestHandler filesRequestHandler, Request request,
@@ -63,163 +50,110 @@ public class WebDavCopyMoveHelper extends WebDavHelpersBase {
         JSONArray jArr = new JSONArray();
         jArr.put(request.path);
         operationParams.put("files[]", jArr.toString());
-
-        DestInfo destination;
-        try {
-            destination = parseDestination(request, root);
-        } catch (DavException e) {
-            return new Response(e.code, e.reason);
-        }
-        Response denied = forbidUnlessCopyMoveAllowed(filesRequestHandler, user, copy, request.path,
-                destination, operationParams);
-        if (denied != null) return denied;
+        if (filesRequestHandler.checkIsForbidden(user, request.path,
+                MoveFileRequestHandler.COPY_MOVE_OPERATION, operationParams,
+                User.FileSystemRights.CREATE,
+                User.FileSystemRights.DELETE,
+                User.FileSystemRights.READ,
+                User.FileSystemRights.UPDATE))
+            return StandardResponses.FORBIDDEN();
 
         StorageQuota quota = new StorageQuota(user, userStore);
         if (copy) {
-            return handleCopy(request, file, root, quota, destination);
+            return handleCopy(request, file, root, quota);
         } else {// MOVE
-            return handleMove(request, file, root, quota, destination);
+            return handleMove(request, file, root, quota);
         }
     }
 
-    /**
-     * READ on the source, plus DELETE when the source will be removed. CREATE on the destination's
-     * parent. A copy does not delete the source, so it does not require DELETE there. An existing
-     * destination that Overwrite: T is about to replace is also deleted and rewritten, so it needs
-     * UPDATE and DELETE of its own - otherwise CREATE alone would be enough to destroy a file.
-     */
-    private static Response forbidUnlessCopyMoveAllowed(FilesRequestHandler filesRequestHandler, User user,
-                                                         boolean copy, String srcPath, DestInfo destination,
-                                                         Map<String, Object> operationParams) {
-        String destPath = destination.destPath;
-        User.FileSystemRights[] sourceRights = copy
-                ? new User.FileSystemRights[]{User.FileSystemRights.READ}
-                : new User.FileSystemRights[]{User.FileSystemRights.READ, User.FileSystemRights.DELETE};
-        if (filesRequestHandler.checkIsSubtreeForbidden(user, srcPath, MoveFileRequestHandler.COPY_MOVE_OPERATION,
-                operationParams, sourceRights)) {
-            return StandardResponses.FORBIDDEN();
-        }
-        String parentPath = Utils.getParentPath(destPath);
-        if (parentPath == null) parentPath = "/";
-        if (filesRequestHandler.checkIsForbidden(user, parentPath, MoveFileRequestHandler.COPY_MOVE_OPERATION,
-                operationParams, User.FileSystemRights.CREATE)) {
-            return StandardResponses.FORBIDDEN();
-        }
-        if (destination.overwrite && destination.destFile != null && destination.destFile.exists()
-                && filesRequestHandler.checkIsSubtreeForbidden(user, destPath, MoveFileRequestHandler.COPY_MOVE_OPERATION,
-                operationParams, User.FileSystemRights.UPDATE, User.FileSystemRights.DELETE)) {
-            return StandardResponses.FORBIDDEN();
-        }
-        return null;
-    }
-
-    Response handleMove(Request req, DocumentFile src, DocumentFile root, StorageQuota quota, DestInfo d) throws Exception {
+    Response handleMove(Request req, DocumentFile src, DocumentFile root, StorageQuota quota) throws Exception {
         String srcPath = req.path;
 
+        DestInfo d;
+        try { d = parseDestination(req, root); }
+        catch (DavException e) { return new Response(e.code, e.reason); }
+
         String provided = extractLockTokenFromIf(req.headers.get("if"));
-        if (!locks.mayRemove(srcPath, provided)) {
+        if (!locks.mayWrite(srcPath, provided)) {
             return simpleStatus(423, "Locked");
-        } else if (!locks.mayRemove(d.destPath, provided)) {
+        } else if (!locks.mayWrite(d.destPath, provided)) {
             return simpleStatus(423, "Locked");
         }
 
         if (root.equals(src)) return StandardResponses.FORBIDDEN();
 
-        Response err = validateCopyMove(src, d);
+        boolean destExisted = d.destFile != null && d.destFile.exists();
+
+        Response err = validateCopyMove(src, srcPath, d, quota);
         if (err != null) return err;
-        return commitCopyOrMove(src, srcPath, d, quota, true, false);
+
+        // Fast way: atomic rename (works within a single file system)
+        if (src.moveTo(d.destParent, d.destName)) {
+            return new Response(destExisted ? 204 : 201,
+                    destExisted ? "No Content" : "Created");
+        }
+
+        // Slow way: rename didn't work (different FS/volumes) - copy, then delete the source
+        // Only the volume free space is checked here, not the user quota:
+        // a move is quota-neutral (the source is removed afterwards)
+        long srcSize = StorageQuota.sizeOf(src);
+        if (d.destParent.getStorageFreeSpace() < srcSize) {
+            return new Response(507, "Insufficient Storage");
+        }
+        List<String> failures = new ArrayList<>();
+        long copied = copyTree(src, d.destFile, d.destParent, d.destName, srcPath, failures);
+        quota.addUsed(copied);
+        if (!failures.isEmpty()) {
+            return multiStatusFailures(failures);
+        }
+        long freed = deleteTree(src, srcPath, failures);   // remove source after successful copying
+        quota.addUsed(-freed);
+        if (!failures.isEmpty()) {
+            return multiStatusFailures(failures);
+        }
+        return new Response(destExisted ? 204 : 201,
+                destExisted ? "No Content" : "Created");
     }
 
-    Response handleCopy(Request req, DocumentFile src, DocumentFile root, StorageQuota quota, DestInfo d) throws Exception {
+    Response handleCopy(Request req, DocumentFile src, DocumentFile root, StorageQuota quota) throws Exception {
         String srcPath = req.path;
 
+        DestInfo d;
+        try { d = parseDestination(req,root); }
+        catch (DavException e) { return new Response(e.code, e.reason); }
+
         String provided = extractLockTokenFromIf(req.headers.get("if"));
-        if (!locks.mayRemove(d.destPath, provided)) {
+        if (!locks.mayWrite(d.destPath, provided)) {
             return simpleStatus(423, "Locked");
         }
 
-        Response err = validateCopyMove(src, d);
+        boolean destExisted = d.destFile != null && d.destFile.exists();
+
+        Response err = validateCopyMove(src, srcPath, d, quota);
         if (err != null) return err;
 
         // Depth for COPY: infinity (default) or 0 (only the collection itself)
-        boolean shallow = "0".equals(req.headers.get("depth"));
-        return commitCopyOrMove(src, srcPath, d, quota, false, shallow);
-    }
+        String depth = req.headers.get("depth");
+        boolean shallow = "0".equals(depth);   // a rare case
 
-    /**
-     * With {@link #atomicOverwrite}, an existing destination stays in place while the new tree is
-     * written under a temporary name, and is deleted only after that succeeded, so a failure leaves
-     * it as it was. That needs room for both trees at once, which is why it is optional. Without
-     * it the destination is deleted first, as RFC 4918 describes for Overwrite: T, after checking
-     * that the new tree fits into the space the old one gives back.
-     */
-    private Response commitCopyOrMove(DocumentFile src, String srcPath, DestInfo d, StorageQuota quota,
-                                      boolean move, boolean shallow) throws Exception {
-        boolean destExisted = d.destFile != null && d.destFile.exists();
-        boolean stage = destExisted && atomicOverwrite;
-        if (destExisted && !stage) {
-            if (!move && !(src.isDirectory() && shallow)
-                    && !quota.hasSpaceFor(d.destParent, StorageQuota.sizeOf(src), StorageQuota.sizeOf(d.destFile))) {
+        List<String> failures = new ArrayList<>();
+        if (src.isDirectory() && shallow) {
+            if (d.destParent.createDirectory(src.getName()) == null) // only empty folder
+                failures.add(d.destPath);
+        } else {
+            long srcSize = StorageQuota.sizeOf(src);
+            if (!quota.hasSpaceFor(d.destParent, srcSize, 0)) {
                 return new Response(507, "Insufficient Storage");
             }
-            List<String> deleteFailures = new ArrayList<>();
-            long freed = deleteTree(d.destFile, d.destPath, deleteFailures);
-            quota.addUsed(-freed);
-            if (!deleteFailures.isEmpty()) {
-                return StandardResponses.FORBIDDEN();
-            }
+            long copied = copyTree(src, d.destFile, d.destParent, d.destName,  srcPath, failures);
+            quota.addUsed(copied);
         }
-        String writeName = stage ? StagedUpload.stagingName(d.destName) : d.destName;
-        List<String> failures = new ArrayList<>();
-        boolean movedAside = false;
-        if (move && !(src.isDirectory() && shallow)) {
-            movedAside = src.moveTo(d.destParent, writeName);
-        }
-        if (!movedAside) {
-            if (src.isDirectory() && shallow) {
-                if (d.destParent.createDirectory(writeName) == null) {
-                    failures.add(d.destPath);
-                }
-            } else {
-                long srcSize = StorageQuota.sizeOf(src);
-                if (move) {
-                    if (d.destParent.getStorageFreeSpace() < srcSize) {
-                        return new Response(507, "Insufficient Storage");
-                    }
-                } else if (!quota.hasSpaceFor(d.destParent, srcSize, 0)) {
-                    return new Response(507, "Insufficient Storage");
-                }
-                long copied = copyTree(src, null, d.destParent, writeName, srcPath, failures);
-                quota.addUsed(copied);
-                if (failures.isEmpty() && move) {
-                    long freed = deleteTree(src, srcPath, failures);
-                    quota.addUsed(-freed);
-                }
-            }
-        }
+
         if (!failures.isEmpty()) {
-            discardStaging(d.destParent, writeName, stage, quota);
             return multiStatusFailures(failures);
         }
-        if (stage) {
-            DocumentFile staged = d.destParent.findFile(writeName);
-            List<String> deleteFailures = new ArrayList<>();
-            long freed = deleteTree(d.destFile, d.destPath, deleteFailures);
-            quota.addUsed(-freed);
-            if (!deleteFailures.isEmpty() || staged == null || !staged.renameTo(d.destName)) {
-                return StandardResponses.INTERNAL_SERVER_ERROR();
-            }
-        }
-        return new Response(destExisted ? 204 : 201, destExisted ? "No Content" : "Created");
-    }
-
-    private void discardStaging(DocumentFile parent, String writeName, boolean staged, StorageQuota quota) {
-        if (!staged) return;
-        DocumentFile partial = parent.findFile(writeName);
-        if (partial == null) return;
-        List<String> ignored = new ArrayList<>();
-        long junk = deleteTree(partial, writeName, ignored);
-        quota.addUsedQuietly(-junk);
+        return new Response(destExisted ? 204 : 201,
+                destExisted ? "No Content" : "Created");
     }
 
     /** Copies the file/tree, returns the total size of successfully copied files
@@ -306,7 +240,7 @@ public class WebDavCopyMoveHelper extends WebDavHelpersBase {
         return new DestInfo(destFile, parent, destPath, destName, overwrite);
     }
 
-    private Response validateCopyMove(DocumentFile src, DestInfo d) {
+    private Response validateCopyMove(DocumentFile src, String srcPath, DestInfo d, StorageQuota quota) throws Exception {
         if (src == null || !src.exists()) {
             return StandardResponses.NOT_FOUND();
         }
@@ -322,8 +256,17 @@ public class WebDavCopyMoveHelper extends WebDavHelpersBase {
         if (!destParent.isDirectory()) {
             return StandardResponses.CONFLICT();
         }
-        if (d.destFile != null && d.destFile.exists() && !d.overwrite) {
-            return new Response(412, "Precondition Failed");
+        if (d.destFile != null && d.destFile.exists()) {
+            if (!d.overwrite) {
+                return new Response(412, "Precondition Failed");
+            }
+            // Overwrite
+            List<String> failures = new ArrayList<>();
+            long freed = deleteTree(d.destFile, d.destPath, failures);
+            quota.addUsed(-freed);
+            if (!failures.isEmpty()) {
+                return StandardResponses.FORBIDDEN();
+            }
         }
         return null;
     }

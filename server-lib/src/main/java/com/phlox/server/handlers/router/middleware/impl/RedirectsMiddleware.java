@@ -10,10 +10,8 @@ import com.phlox.server.responses.StandardResponses;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 public class RedirectsMiddleware implements Middleware {
     /** Same key as {@link RequestContext#ORIGINAL_PATH}, kept for existing callers. */
@@ -54,9 +52,6 @@ public class RedirectsMiddleware implements Middleware {
         //and assigned directly (the Android rule editor does), which used to leave a stale pattern
         private transient Pattern fromPattern;
         private transient String fromPatternSource;
-        //an expression this runtime cannot compile. remembered so a stored bad rule does not
-        //throw on every request, and does not take the redirects screen down while it is loaded
-        private transient boolean patternBroken;
 
         public RedirectRule() {
             this.from = "";
@@ -77,59 +72,20 @@ public class RedirectsMiddleware implements Middleware {
             updatePattern();
         }
 
-        /**
-         * A rule read back from config. The constructor compiles eagerly and throws on a bad
-         * expression, which is what the editors want when the user is saving. Stored rules cannot
-         * do that: the Android editor writes {@code from} straight onto the field, so an invalid
-         * expression does get persisted, and a pattern the desktop runtime accepted can still be
-         * rejected by Android's regex engine. Either one used to throw out of
-         * {@code getRedirectRules} and crash the redirects screen (and server start) before the
-         * rule could be edited or deleted. A rule restored here keeps its text and never matches.
-         */
-        public static RedirectRule restored(String from, String to, int code,
-                                            boolean enabled, String comment) {
-            RedirectRule rule = new RedirectRule();
-            rule.from = from == null ? "" : from;
-            rule.to = to == null ? "" : to;
-            rule.code = code;
-            rule.enabled = enabled;
-            rule.comment = comment == null ? "" : comment;
-            rule.pattern();
-            return rule;
-        }
-
         //compiles eagerly so that an invalid expression fails where the rule is created
         private void updatePattern() {
-            String from = this.from;
-            Pattern pattern = Pattern.compile(from == null ? "" : from);
-            fromPattern = pattern;
-            fromPatternSource = from;
-            patternBroken = false;
+            pattern();
         }
 
-        //null when the current 'from' cannot be compiled. does not throw: a request must keep
-        //going, and the field may have been assigned an expression the constructor would reject
         private Pattern pattern() {
             String from = this.from;
-            if (patternBroken && Objects.equals(from, fromPatternSource)) {
-                return null;
-            }
             Pattern pattern = fromPattern;
-            if (pattern != null && Objects.equals(from, fromPatternSource)) {
-                return pattern;
-            }
-            try {
-                pattern = Pattern.compile(from == null ? "" : from);
+            if (pattern == null || !from.equals(fromPatternSource)) {
+                pattern = Pattern.compile(from);
                 fromPattern = pattern;
                 fromPatternSource = from;
-                patternBroken = false;
-                return pattern;
-            } catch (PatternSyntaxException e) {
-                fromPattern = null;
-                fromPatternSource = from;
-                patternBroken = true;
-                return null;
             }
+            return pattern;
         }
 
         public void setFrom(String from) {
@@ -138,11 +94,7 @@ public class RedirectsMiddleware implements Middleware {
         }
 
         public Response tryApply(RequestContext context, Request request) {
-            Pattern pattern = pattern();
-            if (pattern == null) {
-                return null;
-            }
-            Matcher m = pattern.matcher(request.path);
+            Matcher m = pattern().matcher(request.path);
             if (m.matches()) {
                 //loop named groups and replace them in the 'to' string
                 String to = this.to;

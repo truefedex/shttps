@@ -115,11 +115,6 @@ function setupControlInput() {
   inputLayer.addEventListener("pointermove", onPointerMove);
   inputLayer.addEventListener("pointerup", onPointerUp);
   inputLayer.addEventListener("pointercancel", onPointerCancel);
-  inputLayer.addEventListener("pointerleave", function (e) {
-    if (e.pointerType === "mouse") {
-      noteLocalPointer(false);
-    }
-  });
   //a wheel over a remote desktop scrolls it, not this page
   inputLayer.addEventListener("wheel", onWheel, { passive: false });
   //clicking the picture is the natural way to start driving it
@@ -248,9 +243,6 @@ function setControlAvailable(available) {
   //the remote cursor is already drawn into the picture, so showing ours too gives two pointers
   //chasing each other across the screen
   inputLayer.classList.toggle("mouse-mode", inMouseMode());
-  //...unless the server keeps it out of the picture, in which case ours stands in for it
-  applyLocalCursor();
-  updateRemoteCursor();
 
   if (!available) {
     textField.value = "";
@@ -436,38 +428,19 @@ function onDocumentKeyDown(e) {
  * element and touches in the black bars around it belong to nothing.
  */
 function toNormalized(clientX, clientY) {
-  var area = pictureArea();
-  if (area === null) {
+  var rect = video.getBoundingClientRect();
+  if (!video.videoWidth || !video.videoHeight || !rect.width || !rect.height) {
     return null;
   }
-  var x = (clientX - area.left) / area.width;
-  var y = (clientY - area.top) / area.height;
+  var scale = Math.min(rect.width / video.videoWidth, rect.height / video.videoHeight);
+  var pictureWidth = video.videoWidth * scale;
+  var pictureHeight = video.videoHeight * scale;
+  var x = (clientX - (rect.left + (rect.width - pictureWidth) / 2)) / pictureWidth;
+  var y = (clientY - (rect.top + (rect.height - pictureHeight) / 2)) / pictureHeight;
   if (x < 0 || x > 1 || y < 0 || y > 1) {
     return null;
   }
   return { x: x, y: y };
-}
-
-/**
- * @return where on the page the picture itself is - the element minus the bars object-fit leaves
- * around it - in client coordinates, or null while there is no picture
- */
-function pictureArea() {
-  var rect = pictureElement().getBoundingClientRect();
-  var sourceWidth = pictureWidth();
-  var sourceHeight = pictureHeight();
-  if (!sourceWidth || !sourceHeight || !rect.width || !rect.height) {
-    return null;
-  }
-  var scale = Math.min(rect.width / sourceWidth, rect.height / sourceHeight);
-  var width = sourceWidth * scale;
-  var height = sourceHeight * scale;
-  return {
-    left: rect.left + (rect.width - width) / 2,
-    top: rect.top + (rect.height - height) / 2,
-    width: width,
-    height: height
-  };
 }
 
 /** Which mouse button an event is about, in the names the protocol uses. */
@@ -533,10 +506,6 @@ function onPointerMove(e) {
     return;
   }
   var point = toNormalized(e.clientX, e.clientY);
-  if (e.pointerType === "mouse") {
-    //a finger brings no pointer of its own for the remote one to be compared with
-    noteLocalPointer(point !== null);
-  }
   if (point !== null) {
     //only the newest position matters: sending every event would just queue up behind the device
     pendingMove = point;

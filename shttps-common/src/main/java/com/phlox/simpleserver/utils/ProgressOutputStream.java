@@ -12,9 +12,6 @@ public class ProgressOutputStream extends OutputStream {
 
     private long total = 0;
     private long nextTrigger = 0;
-    /** Bytes already handed to {@link WriteProgressListener#onChunkWritten}. */
-    private long reported = 0;
-    private boolean closed = false;
 
     public ProgressOutputStream(OutputStream out, long interval, WriteProgressListener listener) {
         if (interval <= 0) throw new IllegalArgumentException("interval must be > 0");
@@ -25,29 +22,11 @@ public class ProgressOutputStream extends OutputStream {
         this.nextTrigger = interval;
     }
 
-    /** Bytes written so far. */
-    public long getTotal() {
-        return total;
-    }
-
     private void checkIntervalTrigger() throws Exception {
         if (total >= nextTrigger) {
-            reportChunk();
+            listener.onChunkWritten(total, total - (nextTrigger - interval));
+            nextTrigger = total + interval;
         }
-    }
-
-    /**
-     * Hands the bytes written since the last report to the listener. The report point moves
-     * <b>before</b> the call: the quota listener records the chunk and then throws when the space
-     * has run out, and a point moved only after a successful call made {@link #close()} report
-     * the same chunk a second time - the user's used storage then stayed that much too high
-     * after the failed upload had been deleted.
-     */
-    private void reportChunk() throws Exception {
-        long chunk = total - reported;
-        reported = total;
-        nextTrigger = total + interval;
-        listener.onChunkWritten(total, chunk);
     }
 
     @Override
@@ -97,19 +76,14 @@ public class ProgressOutputStream extends OutputStream {
 
     @Override
     public void close() throws IOException {
-        //a second close must not settle the quota a second time: onStreamClosed subtracts sizes
-        if (closed) return;
-        closed = true;
-        Exception listenerError = null;
+        long lastIntervalPoint = nextTrigger - interval;
 
-        //the last chunk of an upload smaller than the interval is reported only here. Swallowing
-        //that failure is what let a quota rejection delete the file and still answer success.
-        if (total > reported) {
+        if (total > lastIntervalPoint) {
             try {
-                reportChunk();
+                listener.onChunkWritten(total, total - lastIntervalPoint);
             } catch (Exception e) {
                 listener.onException(e);
-                listenerError = e;
+                //ignoring exceptions from callback on stream close
             }
         }
 
@@ -117,18 +91,9 @@ public class ProgressOutputStream extends OutputStream {
             out.close();
         } catch (IOException e) {
             listener.onException(e);
-            if (listenerError == null) listenerError = e;
+            throw e;
         } finally {
             listener.onStreamClosed(total);
-        }
-        if (listenerError instanceof IOException) {
-            throw (IOException) listenerError;
-        }
-        if (listenerError instanceof RuntimeException) {
-            throw (RuntimeException) listenerError;
-        }
-        if (listenerError != null) {
-            throw new RuntimeException(listenerError);
         }
     }
 

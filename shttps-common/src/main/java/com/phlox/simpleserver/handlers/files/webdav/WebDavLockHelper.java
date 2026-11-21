@@ -3,7 +3,6 @@ package com.phlox.simpleserver.handlers.files.webdav;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.server.responses.Response;
-import com.phlox.server.responses.StandardResponses;
 import com.phlox.server.responses.TextResponse;
 import com.phlox.server.utils.docfile.DocumentFile;
 import com.phlox.server.utils.docfile.DocumentFileUtils;
@@ -19,9 +18,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
 public class WebDavLockHelper extends WebDavHelpersBase {
-    public static final String LOCK_OPERATION = "LOCK";
-    public static final String UNLOCK_OPERATION = "UNLOCK";
-
     public WebDavLockHelper(SHTTPSPlatformUtils platform, UserStore userStore, LockManager locks) {
         super(platform, userStore, locks);
     }
@@ -31,16 +27,10 @@ public class WebDavLockHelper extends WebDavHelpersBase {
         context.requestBodyReader.readRequestBody(req);
         byte[] body = req.body.asBytes();
 
-        //the same gate as PUT: creating a lock-null resource is CREATE, locking an existing one is UPDATE
-        if (filesRequestHandler.checkIsForbidden(user, req.path, LOCK_OPERATION, null,
-                target != null && target.exists() ? User.FileSystemRights.UPDATE : User.FileSystemRights.CREATE)) {
-            return StandardResponses.FORBIDDEN();
-        }
-
         // Option 1: updating the lock - the body is empty, the token is in If
         if (body == null || body.length == 0) {
             String token = extractLockTokenFromIf(req.headers.get("if"));
-            LockManager.Lock l = (token != null) ? locks.refresh(req.path, token, timeoutMs) : null;
+            LockManager.Lock l = (token != null) ? locks.refresh(token, timeoutMs) : null;
             if (l == null) return simpleStatus(412, "Precondition Failed");
             return lockResponse(l, 200, "OK");
         }
@@ -76,10 +66,6 @@ public class WebDavLockHelper extends WebDavHelpersBase {
     }
 
     public Response handleUnlockRequest(FilesRequestHandler filesRequestHandler, Request req, DocumentFile userRoot, DocumentFile file, User user) {
-        if (filesRequestHandler.checkIsForbidden(user, req.path, UNLOCK_OPERATION, null,
-                file != null && file.exists() ? User.FileSystemRights.UPDATE : User.FileSystemRights.CREATE)) {
-            return StandardResponses.FORBIDDEN();
-        }
         String hdr = req.headers.get("lock-token");   // "<urn:uuid:...>"
         if (hdr == null) return simpleStatus(400, "Bad Request");
         String token = hdr.trim();

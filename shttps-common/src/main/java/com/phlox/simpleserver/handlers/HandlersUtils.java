@@ -24,7 +24,7 @@ public class HandlersUtils {
         String from = json.optString("from", "");
         String to = json.optString("to", "");
         String comment = json.optString("comment", "");
-        return RedirectsMiddleware.RedirectRule.restored(
+        return new RedirectsMiddleware.RedirectRule(
                 from, to, code, enabled, comment);
     }
 }

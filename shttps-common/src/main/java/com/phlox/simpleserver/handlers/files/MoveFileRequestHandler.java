@@ -51,57 +51,32 @@ public class MoveFileRequestHandler extends BaseFileRequestHandler {
             operationParams.put("action", action);
             operationParams.put("files.size", jArr.length());
             operationParams.put("files[]", jArr.toString());
-            boolean move = "move".equals(action);
-            //CREATE is on the directory the files land in. Each source is checked for READ, and
-            //for DELETE only when the source itself is removed. Everything is checked before the
-            //first file is touched, so a refusal never leaves half of the batch done.
-            if (checkIsForbidden(user, destPath, COPY_MOVE_OPERATION, operationParams,
-                    User.FileSystemRights.CREATE))
+            if (checkIsForbidden(user, destPath,
+                    COPY_MOVE_OPERATION, operationParams,
+                    User.FileSystemRights.CREATE,
+                    User.FileSystemRights.DELETE,
+                    User.FileSystemRights.READ,
+                    User.FileSystemRights.UPDATE))
                 return StandardResponses.FORBIDDEN();
 
-            User.FileSystemRights[] sourceRights = move
-                    ? new User.FileSystemRights[]{User.FileSystemRights.READ, User.FileSystemRights.DELETE}
-                    : new User.FileSystemRights[]{User.FileSystemRights.READ};
-            DocumentFile[] sources = new DocumentFile[jArr.length()];
-            String[] sourcePaths = new String[jArr.length()];
+            String lockTokenProvided = extractLockTokenFromIf(request.headers.get("if"));
+            StorageQuota quota = new StorageQuota(user, userStore);
+
             for (int i = 0; i < jArr.length(); i++) {
                 String path = jArr.getString(i);
                 if (!path.startsWith("/")) {
                     path = "/" + path;
                 }
-                //the whole tree is read (and removed, for a move): a folder inside it that is
-                //denied to this user must not travel along to somewhere it can be read
-                if (checkIsSubtreeForbidden(user, path, COPY_MOVE_OPERATION, operationParams, sourceRights))
-                    return StandardResponses.FORBIDDEN();
                 DocumentFile file = DocumentFileUtils.findChildByPath(root, path, user);
                 if (file == null) {
                     return StandardResponses.NOT_FOUND();
                 }
-                if (destinationIsInsideSource(path, destPath)) {
-                    return StandardResponses.CONFLICT();
-                }
-                //copyTo/moveTo write over a file of the same name in the destination. That replaces
-                //its contents, which takes the rights an upload over it would take, not just CREATE
-                if (destFile.findFile(file.getName()) != null
-                        && checkIsSubtreeForbidden(user, Utils.joinPaths(destPath, file.getName()), COPY_MOVE_OPERATION,
-                        operationParams, User.FileSystemRights.UPDATE, User.FileSystemRights.DELETE))
-                    return StandardResponses.FORBIDDEN();
-                sources[i] = file;
-                sourcePaths[i] = path;
-            }
-
-            String lockTokenProvided = extractLockTokenFromIf(request.headers.get("if"));
-            StorageQuota quota = new StorageQuota(user, userStore);
-
-            for (int i = 0; i < sources.length; i++) {
-                DocumentFile file = sources[i];
-                String path = sourcePaths[i];
 
                 String destFilePath = Utils.joinPaths(destPath, file.getName());
-                if (move && !locks.mayRemove(path, lockTokenProvided)) {
+                if ("move".equals(action) && !locks.mayWrite(path, lockTokenProvided)) {
                     return new Response(423, "Locked");
                 }
-                if (!locks.mayRemove(destFilePath, lockTokenProvided)) {
+                if (!locks.mayWrite(destFilePath, lockTokenProvided)) {
                     return new Response(423, "Locked");
                 }
 
@@ -124,23 +99,5 @@ public class MoveFileRequestHandler extends BaseFileRequestHandler {
         } else {
             return StandardResponses.BAD_REQUEST("Unknown action");
         }
-    }
-
-    /**
-     * Copying or moving a directory into itself (or into one of its children) would walk the tree
-     * it is writing. A file is never inside a directory that merely shares its prefix:
-     * {@code /photo} does not contain {@code /photos}.
-     */
-    static boolean destinationIsInsideSource(String sourcePath, String destDir) {
-        String src = stripTrailingSlash(sourcePath);
-        String dest = stripTrailingSlash(destDir);
-        return src.equals(dest) || dest.startsWith(src + "/");
-    }
-
-    private static String stripTrailingSlash(String path) {
-        if (path.length() > 1 && path.endsWith("/")) {
-            return path.substring(0, path.length() - 1);
-        }
-        return path;
     }
 }

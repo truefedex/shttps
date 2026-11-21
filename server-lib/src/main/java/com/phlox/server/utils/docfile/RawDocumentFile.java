@@ -212,8 +212,6 @@ public class RawDocumentFile extends DocumentFile {
             }
         }
         for (File file : files) {
-            //links, junctions and special files are not part of the share; see Utils.isLinkOrSpecial
-            if (Utils.isLinkOrSpecial(file)) continue;
             results.add(new RawDocumentFile(this, file));
         }
         return results.toArray(new DocumentFile[0]);
@@ -248,16 +246,11 @@ public class RawDocumentFile extends DocumentFile {
     }
 
     private static boolean deleteContents(File dir) {
-        //a link is removed as the link: walking it would delete the target, which may sit
-        //outside the directory that was asked to be removed
-        if (Utils.isLinkOrSpecial(dir)) {
-            return true;
-        }
         File[] files = dir.listFiles();
         boolean success = true;
         if (files != null) {
             for (File file : files) {
-                if (!Utils.isLinkOrSpecial(file) && file.isDirectory()) {
+                if (file.isDirectory()) {
                     success &= deleteContents(file);
                 }
                 if (!file.delete()) {
@@ -307,10 +300,6 @@ public class RawDocumentFile extends DocumentFile {
             return null;
         }
         File file = new File(mFile, displayName);
-        //checked before exists(), which follows links: a dangling link must not look free either
-        if (Utils.isLinkOrSpecial(file)) {
-            throw new SecurityException("Invalid path");
-        }
         if (file.exists()) {
             return new RawDocumentFile(this, file);
         }

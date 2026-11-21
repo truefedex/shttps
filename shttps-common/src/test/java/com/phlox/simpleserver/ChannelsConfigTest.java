@@ -146,32 +146,6 @@ public class ChannelsConfigTest {
     }
 
     @Test
-    public void aFreshConfigIsStampedCurrent() {
-        SHTTPSConfig config = new TestDBEnvironment.Config();
-        assertEquals(0, config.getConfigVersion());
-
-        config.runMigrations();
-
-        assertEquals(SHTTPSConfig.CONFIG_VERSION, config.getConfigVersion());
-        assertTrue(config.getUsers() == null || config.getUsers().isEmpty());
-    }
-
-    @Test
-    public void aVersionZeroConfigWithALegacyUsernameStillImportsThatUser() {
-        SHTTPSConfig config = new TestDBEnvironment.Config();
-        config.setString(SHTTPSConfig.KEY_USERNAME, "admin");
-        config.setString(SHTTPSConfig.KEY_PASSWORD, "secret");
-
-        config.runMigrations();
-
-        assertEquals(SHTTPSConfig.CONFIG_VERSION, config.getConfigVersion());
-        List<com.phlox.simpleserver.auth.User> users = config.getUsers();
-        assertNotNull(users);
-        assertEquals(1, users.size());
-        assertEquals("admin", users.get(0).identity);
-    }
-
-    @Test
     public void migrationStampsTheNewConfigVersion() {
         SHTTPSConfig config = new TestDBEnvironment.Config();
         config.setConfigVersion(5);

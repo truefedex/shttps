@@ -25,10 +25,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code POST /api/channels} ({@link #createDynamic}), which are collected once they have been
  * empty for {@code getChannelIdleTimeoutMillis()} ({@link #collectIdleChannels}).
  * <p>
- * Creation, removal, collection and {@link #closeAll} are {@code synchronized} on the manager: the
- * cap on the number of dynamic channels, the duplicate-id check and the generation of a free id
- * are all check-then-act on the map. Nothing is <b>sent</b> under that lock - the methods hand
- * back the channels they took out, and the caller closes their sessions afterwards.
+ * Creation, removal and collection are {@code synchronized} on the manager: the cap on the number
+ * of dynamic channels, the duplicate-id check and the generation of a free id are all
+ * check-then-act on the map. Nothing is <b>sent</b> under that lock - the methods hand back the
+ * channels they took out, and the caller closes their sessions afterwards.
  */
 public class ChannelManager {
     /** Bounded because ids are random: a retry means a collision, not a full keyspace. */
@@ -222,23 +222,11 @@ public class ChannelManager {
         return count;
     }
 
-    /**
-     * Disconnects everybody and forgets every channel; used when the server stops.
-     * The map is emptied under the same lock as {@link #remove} and {@link #collectIdleChannels}.
-     * Sessions are closed afterwards, so a sweep that is inside this lock cannot be sending, and
-     * a close cannot iterate a map the sweep is mutating.
-     */
+    /** Disconnects everybody and forgets every channel; used when the server stops. */
     public void closeAll(int code, @NotNull String reason) {
-        List<Channel> taken = new ArrayList<>();
-        synchronized (this) {
-            for (Channel channel : channels.values()) {
-                channel.markRemoved();
-                taken.add(channel);
-            }
-            channels.clear();
-        }
-        for (Channel channel : taken) {
+        for (Channel channel : channels.values()) {
             channel.closeAllSessions(code, reason);
         }
+        channels.clear();
     }
 }

@@ -4,16 +4,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta charset="UTF-8">
   <title>Remote screen</title>
-  <link rel="stylesheet" href="/shttps-static-public/common.css?v={{v}}">
-  <link rel="stylesheet" href="/shttps-static-public/screen/screen.css?v={{v}}">
-  <link rel="icon" type="image/png" href="/shttps-static-public/icon.png?v={{v}}">
-  <script src="/shttps-static-public/common.js?v={{v}}"></script>
-  <script src="/shttps-static-public/screen/screen.js?v={{v}}"></script>
-  <script src="/shttps-static-public/screen/screen-media.js?v={{v}}"></script>
-  <script src="/shttps-static-public/screen/screen-webcodecs.js?v={{v}}"></script>
-  <script src="/shttps-static-public/screen/screen-recording.js?v={{v}}"></script>
-  <script src="/shttps-static-public/screen/screen-control.js?v={{v}}"></script>
-  <script src="/shttps-static-public/screen/screen-cursor.js?v={{v}}"></script>
+  <link rel="stylesheet" href="/shttps-static-public/common.css">
+  <link rel="stylesheet" href="/shttps-static-public/screen/screen.css">
+  <link rel="icon" type="image/png" href="/shttps-static-public/icon.png">
+  <script src="/shttps-static-public/common.js"></script>
+  <script src="/shttps-static-public/screen/screen.js"></script>
+  <script src="/shttps-static-public/screen/screen-media.js"></script>
+  <script src="/shttps-static-public/screen/screen-recording.js"></script>
+  <script src="/shttps-static-public/screen/screen-control.js"></script>
 </head>
 <body id="root" onload="onPageLoad();">
   <div class="header">
@@ -24,16 +22,8 @@
 
   <div id="screen-container">
     <video id="screen-video" muted playsinline autoplay disablepictureinpicture></video>
-    <!-- takes the video's place while frames are decoded by the page itself, see screen-webcodecs.js -->
-    <canvas id="screen-canvas" class="hidden"></canvas>
     <!-- catches pointer events while control is on: over the video, but under the message box -->
     <div id="screen-input" class="screen-input hidden"></div>
-    <!-- the remote mouse pointer, when the server sends its position instead of drawing it into
-         the picture - see screen-cursor.js. The tip of the arrow is the element's top left corner -->
-    <svg id="remote-cursor" class="remote-cursor hidden" width="20" height="28" viewBox="0 0 20 28">
-      <path d="M1 1 L1 22 L6.2 17.2 L9.8 26 L13.2 24.6 L9.6 16 L17 16 Z"
-            fill="#ffffff" stroke="#000000" stroke-width="1.5" stroke-linejoin="round"/>
-    </svg>
     <!-- the actual focus target, kept inside #screen-container (not the toolbar below) because
          the Fullscreen API only renders the requested element's own subtree - anything outside
          it, the toolbar included, is not part of the page while fullscreen is engaged and can't
@@ -111,15 +101,6 @@
         <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360Z"/>
       </svg>
     </button>
-    <!-- shown once the server says it can serve more than one picture; a phone, or a server from
-         before there was a choice, never does -->
-    <select id="quality-select" class="screen-select hidden" onchange="onQualityChange();"
-            title="Picture quality. Auto follows the connection: sharp on a local network, lighter when the link cannot keep up">
-      <option value="auto">QUALITY: AUTO</option>
-      <option value="high">QUALITY: HIGH</option>
-      <option value="medium">QUALITY: MEDIUM</option>
-      <option value="low">QUALITY: LOW</option>
-    </select>
     <div id="control-hint" class="control-hint"></div>
     <div id="screen-stats" class="screen-stats"></div>
   </div>

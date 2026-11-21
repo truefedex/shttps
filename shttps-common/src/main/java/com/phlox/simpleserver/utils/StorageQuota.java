@@ -46,21 +46,7 @@ public class StorageQuota {
     /** Pre-write check: can size bytes be written into dir, replacing previousSize
      *  bytes of an existing file (0 if creating a new one)? */
     public boolean hasSpaceFor(@NotNull DocumentFile dir, long size, long previousSize) {
-        return plusSaturated(freeSpace(dir), previousSize) >= size;
-    }
-
-    /**
-     * {@code a + b} that stops at {@link Long#MAX_VALUE} instead of wrapping. A filesystem that
-     * cannot tell its free space (SAF's TreeDocumentFile) answers Long.MAX_VALUE, and adding the
-     * size of the file being replaced to that used to turn "unlimited" into a negative number:
-     * every overwrite was refused as "no space left".
-     */
-    static long plusSaturated(long a, long b) {
-        long sum = a + b;
-        if (((a ^ sum) & (b ^ sum)) < 0) {
-            return a < 0 ? Long.MIN_VALUE : Long.MAX_VALUE;
-        }
-        return sum;
+        return freeSpace(dir) + previousSize >= size;
     }
 
     /** Record delta bytes as used (negative to free). No-op for anonymous access. */
@@ -106,7 +92,7 @@ public class StorageQuota {
                 if (storageLimit != null) {
                     // the overwritten content still counts in usedStorage until the
                     // upload completes, though truncation already released its bytes
-                    free = plusSaturated(free, previousSize);
+                    free += previousSize;
                 }
                 long leftToWrite = expectedSize > 0 ? (expectedSize - totalBytes) : 0;
                 if (free < leftToWrite) {

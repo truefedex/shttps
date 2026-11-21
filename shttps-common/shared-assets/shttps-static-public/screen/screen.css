@@ -68,13 +68,7 @@
     border-radius: 0;
 }
 
-#screen-video.hidden,
-#screen-canvas.hidden {
-    display: none;
-}
-
-#screen-video,
-#screen-canvas {
+#screen-video {
     display: block;
     width: 100%;
     height: 100%;
@@ -105,21 +99,6 @@
    which is why the crosshair above stays for that case. */
 .screen-input.mouse-mode {
     cursor: none;
-}
-
-/* The remote pointer when it is not in the picture: placed by screen-cursor.js, which also gives
-   the input layer above a cursor of its own in that case, overriding the rule above. Never in the
-   way of the pointer events the layer underneath is there to catch. */
-.remote-cursor {
-    position: absolute;
-    left: 0;
-    top: 0;
-    pointer-events: none;
-    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
-}
-
-.remote-cursor.hidden {
-    display: none;
 }
 
 /* the one thing on the video itself: a phone has no other obvious way to reach #control-text,
@@ -322,21 +301,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.screen-select {
-    background: #2d2d2d;
-    color: #e0e0e0;
-    border: 1px solid #3a3a3a;
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 0.9em;
-    font-family: inherit;
-    cursor: pointer;
-}
-
-.screen-select.hidden {
-    display: none;
 }
 
 .screen-stats {

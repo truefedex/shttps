@@ -1,13 +1,15 @@
 [versions]
-agp = "9.5.2"
+agp = "9.4.1"
 shadow = "9.6.1"
-kotlin = "2.4.21"
-compose = "1.12.2"
+kotlin = "2.4.10"
+compose = "1.11.1"
 
 proguard-annotations = "7.10.0"
 jetbrains-annotations = "26.1.0"
 
-junit-bom = "6.1.3"
+junit5 = "5.9.2"
+junit-platform5 = "1.9.2"
+junit-bom = "6.0.1"
 
 # instrumented Android tests run on a device, where the runner is JUnit 4 based
 junit4 = "4.13.2"
@@ -17,27 +19,19 @@ androidx-test-runner = "1.7.0"
 org-json = "20260814"
 kxml = "2.3.0"
 
-sqlite = "3.54.1.0"
+sqlite = "3.53.4.0"
 slf4j = "2.0.20"
 picocli = "4.7.7"
 qrcodegen = "1.8.0"
 
 # shttps-desktop (Compose Multiplatform)
-navigation-compose = "2.10.0"
+navigation-compose = "2.9.2"
 lifecycle-viewmodel-compose = "2.11.0"
-kotlinx-serialization = "1.13.0"
+kotlinx-serialization = "1.11.0"
 kotlinx-coroutines = "1.11.0"
-filekit = "0.17.0"
-#The tray library moved from io.github.kdroidfilter to dev.nucleusframework at 2.x and is now
-#two artifacts: the Tray composable in the core one, getTrayWindowPosition in -app. Anything
-#below 2.1.1 calls the Image.encodeToData overload that skiko 0.150 (Compose 1.12) dropped, and
-#crashes the app on startup with NoSuchMethodError - so this version and the compose one above
-#move together. SingleInstanceManager is no longer part of it at all, see nucleus below
-composenativetray = "2.1.7"
-#Carries SingleInstanceManager, which used to live in composenativetray. A "runtime" dependency
-#of the tray artifacts, so it has to be declared to be on our compile classpath
-nucleus = "2.5.5"
-auto-launch = "0.9.0"
+filekit = "0.11.0"
+composenativetray = "1.3.3"
+auto-launch = "0.8.0"
 
 compile-sdk = "37"
 min-sdk = "26"
@@ -55,6 +49,10 @@ compose = { id = "org.jetbrains.compose", version.ref = "compose" }
 [libraries]
 proguard-annotations = { module = "com.guardsquare:proguard-annotations", version.ref = "proguard-annotations" }
 jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "jetbrains-annotations" }
+
+junit5-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit5" }
+junit5-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit5" }
+junit5-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform5" }
 
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit-bom" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
@@ -87,7 +85,5 @@ kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-
 filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
 filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
-composenativetray = { module = "dev.nucleusframework:composenativetray", version.ref = "composenativetray" }
-composenativetray-app = { module = "dev.nucleusframework:composenativetray-app", version.ref = "composenativetray" }
-nucleus-core-runtime = { module = "dev.nucleusframework:nucleus.core-runtime", version.ref = "nucleus" }
+composenativetray = { module = "io.github.kdroidfilter:composenativetray", version.ref = "composenativetray" }
 auto-launch = { module = "io.github.vinceglb:auto-launch", version.ref = "auto-launch" }

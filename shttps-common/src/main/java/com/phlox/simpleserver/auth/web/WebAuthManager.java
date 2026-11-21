@@ -3,7 +3,6 @@ package com.phlox.simpleserver.auth.web;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.simpleserver.auth.AuthManager;
-import com.phlox.simpleserver.auth.GuestUserCache;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserRightsEvaluator;
 import com.phlox.simpleserver.auth.UserStore;
@@ -26,25 +25,14 @@ public class WebAuthManager implements AuthManager {
     private final @NotNull UserStore userStore;
     protected @NotNull SessionManager sessionManager;
 
+    private final @Nullable User guestUser;
     private final AtomicLong failedAttempts = new AtomicLong(0);
     private volatile long lastAttemptTime = 0;
 
-    private final @NotNull GuestUserCache guestCache;
-
     public WebAuthManager(@NotNull UserStore userStore, @NotNull SessionManager sessionManager) {
-        this(userStore, sessionManager, new GuestUserCache(userStore));
-    }
-
-    public WebAuthManager(@NotNull UserStore userStore, @NotNull SessionManager sessionManager,
-                          @NotNull GuestUserCache guestCache) {
         this.userStore = userStore;
         this.sessionManager = sessionManager;
-        this.guestCache = guestCache;
-    }
-
-    /** A guest added, removed or edited since the server started becomes visible within the cache's TTL. */
-    private @Nullable User guestUser() {
-        return guestCache.get();
+        this.guestUser = userStore.find(User.GUEST_IDENTITY);
     }
 
     @Override
@@ -63,8 +51,8 @@ public class WebAuthManager implements AuthManager {
                 user = userStore.find(username);
             }
         }
-        if (user == null) {
-            user = guestUser();
+        if (user == null && guestUser != null) {
+            user = guestUser;
         }
         if (user != null) {
             context.data.put(CONTEXT_KEY_WEB_AUTH_USER, user);
@@ -91,8 +79,7 @@ public class WebAuthManager implements AuthManager {
             //prevent brute force attacks: double the backoff time each time
             long backoffTime = Math.min(INITIAL_BACKOFF_MS * (1L << (failedAttempts.get() - 1)), MAX_BACKOFF_MS);
             if (timeSinceLastAttempt < backoffTime) {
-                throw new AuthenticationException("Too many failed attempts. Please try again later.",
-                        backoffTime - timeSinceLastAttempt);
+                throw new AuthenticationException("Too many failed attempts. Please try again later.");
             }
         }
 

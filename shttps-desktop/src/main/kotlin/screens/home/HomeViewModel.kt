@@ -356,8 +356,8 @@ class HomeViewModel(
             true
         } catch (e: Exception) {
             logger.e("Failed to start server", e)
-            //startServer already released a failed start; stopServer is what leaves a server that
-            //did come up, and then died on the way back here, in the stopped state the UI shows
+            //a start that failed part way through still leaves its rate limiters and the channel
+            //idle sweep behind, so release them and leave the app in a consistent stopped state
             shttpsApp.stopServer()
             config.runningState = false
             serverRunning.value = false

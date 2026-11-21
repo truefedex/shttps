@@ -315,7 +315,7 @@ function openInSQLEditor() {
     const sqlText = document.querySelector('.sql-preview-text');
     if (sqlText) {
         localStorage.setItem('sql-editor', sqlText.textContent);
-        window.open(pageUrl('sql-editor.html'), '_blank');
+        window.open('sql-editor.html', '_blank');
     }
 }
 
@@ -327,7 +327,7 @@ async function createTable() {
     document.getElementById('loader').style.display = 'block';
     try {
         await runSql(sql);
-        window.location.href = pageUrl('index.html');
+        window.location.href = 'index.html';
     } catch (error) {
         alert('Error creating table: ' + error);
     } finally {

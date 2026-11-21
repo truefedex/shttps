@@ -10,7 +10,6 @@ import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.channels.ChannelDefinition;
 import com.phlox.simpleserver.exec.CgiType;
 import com.phlox.simpleserver.handlers.HandlersUtils;
-import com.phlox.simpleserver.screenshare.ScreenStreamQuality;
 import com.phlox.simpleserver.utils.Utils;
 
 
@@ -77,7 +76,6 @@ public interface SHTTPSConfig {
     String KEY_DEFAULT_TEXT_CHARSET = "default_text_charset";
     String KEY_HEADERS_OVERRIDES = "headers_overrides";
     String KEY_WEBDAV_SUPPORT = "webdav_support";
-    String KEY_ATOMIC_UPLOADS = "atomic_uploads";
     String KEY_SCREEN_SHARE = "screen_share";
     String KEY_SCREEN_MONITOR = "screen_monitor";
     /**
@@ -86,7 +84,6 @@ public interface SHTTPSConfig {
      */
     String KEY_ALLOW_REMOTE_CONTROL = "allow_remote_control";
     String KEY_SCREEN_SHARE_CONFIRM = "screen_share_confirm";
-    String KEY_SCREEN_SHARE_MAX_QUALITY = "screen_share_max_quality";
 
     /** {@link #getScreenMonitor()} value meaning "whichever display is primary right now". */
     int SCREEN_MONITOR_PRIMARY = -1;
@@ -101,18 +98,6 @@ public interface SHTTPSConfig {
 
     default void runMigrations() {
         if (getConfigVersion() == CONFIG_VERSION) return;
-        //a file that never carried a version is a fresh install, unless it still has the
-        //pre-version-4 username. That one has to enter the version-3 branch below or the only
-        //account is dropped. Everything else is stamped current, so the next migration (the one
-        //that will be "if (getConfigVersion() == CONFIG_VERSION)") actually runs for it.
-        if (getConfigVersion() < 3) {
-            boolean legacyAccount = !getUsername().isEmpty() || getBoolean(KEY_USE_BASIC_AUTH, false);
-            if (!legacyAccount) {
-                setConfigVersion(CONFIG_VERSION);
-                return;
-            }
-            setConfigVersion(3);
-        }
         if (getConfigVersion() == 3) {
             if (getBoolean(KEY_USE_BASIC_AUTH, false)) {
                 setAuthMode(AuthMode.WEB);
@@ -896,21 +881,6 @@ public interface SHTTPSConfig {
     }
 
     /**
-     * Uploads (and WebDAV COPY/MOVE over an existing destination) write into a temporary sibling
-     * and replace the destination only after the whole body was received, so a failed or
-     * interrupted transfer leaves the previous file intact. <b>Off by default</b>: while it runs
-     * the old and the new copy both occupy the disk, and users expect a file to fit into exactly
-     * as much free space as it is large. No UI yet; read when the server starts.
-     */
-    default boolean isAtomicUploadsEnabled() {
-        return getBoolean(KEY_ATOMIC_UPLOADS, false);
-    }
-
-    default void setAtomicUploadsEnabled(boolean value) {
-        setBoolean(KEY_ATOMIC_UPLOADS, value);
-    }
-
-    /**
      * Whether the device screen may be watched through the web interface. Only platforms that
      * implement screen capture act on it; the rest simply never turn it on.
      */
@@ -966,21 +936,6 @@ public interface SHTTPSConfig {
 
     default void setScreenShareConfirmationEnabled(boolean value) {
         setBoolean(KEY_SCREEN_SHARE_CONFIRM, value);
-    }
-
-    /**
-     * The most a screen stream may carry, whatever a viewer asks for. The best level by default;
-     * lowering it is for a machine whose processor or uplink should not be spent on someone
-     * else's sharper picture. Anything unreadable in the stored value counts as no limit.
-     */
-    default ScreenStreamQuality getScreenShareMaxQuality() {
-        ScreenStreamQuality quality = ScreenStreamQuality.fromWireName(
-                getString(KEY_SCREEN_SHARE_MAX_QUALITY, ScreenStreamQuality.HIGH.wireName()));
-        return quality == null ? ScreenStreamQuality.HIGH : quality;
-    }
-
-    default void setScreenShareMaxQuality(ScreenStreamQuality value) {
-        setString(KEY_SCREEN_SHARE_MAX_QUALITY, value.wireName());
     }
 
     int getInt(String key, int defaultValue);
@@ -1174,12 +1129,10 @@ public interface SHTTPSConfig {
         //since they were introduced, which is exactly the kind of omission ChannelsConfigTest was
         //written to catch
         result.put(KEY_WEBDAV_SUPPORT, getWebDavSupport());
-        result.put(KEY_ATOMIC_UPLOADS, isAtomicUploadsEnabled());
         result.put(KEY_SCREEN_SHARE, isScreenShareEnabled());
         result.put(KEY_SCREEN_MONITOR, getScreenMonitor());
         result.put(KEY_ALLOW_REMOTE_CONTROL, isRemoteControlEnabled());
         result.put(KEY_SCREEN_SHARE_CONFIRM, isScreenShareConfirmationEnabled());
-        result.put(KEY_SCREEN_SHARE_MAX_QUALITY, getScreenShareMaxQuality().wireName());
 
         return result;
     }
@@ -1372,7 +1325,6 @@ public interface SHTTPSConfig {
         }
 
         if (json.has(KEY_WEBDAV_SUPPORT)) setWebDavSupport(json.optBoolean(KEY_WEBDAV_SUPPORT, false));
-        if (json.has(KEY_ATOMIC_UPLOADS)) setAtomicUploadsEnabled(json.optBoolean(KEY_ATOMIC_UPLOADS, false));
         if (json.has(KEY_SCREEN_SHARE)) setScreenShareEnabled(json.optBoolean(KEY_SCREEN_SHARE, false));
         if (json.has(KEY_SCREEN_MONITOR)) {
             setScreenMonitor(json.optInt(KEY_SCREEN_MONITOR, SCREEN_MONITOR_PRIMARY));
@@ -1382,13 +1334,6 @@ public interface SHTTPSConfig {
         }
         if (json.has(KEY_SCREEN_SHARE_CONFIRM)) {
             setScreenShareConfirmationEnabled(json.optBoolean(KEY_SCREEN_SHARE_CONFIRM, true));
-        }
-        if (json.has(KEY_SCREEN_SHARE_MAX_QUALITY)) {
-            ScreenStreamQuality maxQuality = ScreenStreamQuality.fromWireName(
-                    json.optString(KEY_SCREEN_SHARE_MAX_QUALITY, null));
-            if (maxQuality != null) {
-                setScreenShareMaxQuality(maxQuality);
-            }
         }
 
         // Apply config version last so any incompatible/old field shapes were already accepted with their

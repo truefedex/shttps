@@ -71,23 +71,6 @@ public class WebSocketSession {
         this.options = options;
         this.reader = new WebSocketFrameReader(input, options.maxFramePayloadLength, true);
         this.writer = new WebSocketFrameWriter(output);
-        disableSendCoalescing();
-    }
-
-    /**
-     * Switches Nagle's algorithm off. Every frame is written and flushed as a whole, so there are
-     * no small writes for it to merge - all it could still do is hold the last, partly filled
-     * segment of a message back until the peer acknowledges the one before, and a peer with
-     * delayed acknowledgements takes its time over that. For anything interactive pushed through
-     * a WebSocket - a live screen, the answer to an input event - that is delay with no gain.
-     */
-    private void disableSendCoalescing() {
-        try {
-            socket.setTcpNoDelay(true);
-        } catch (SocketException e) {
-            //only a missed optimisation; the connection works either way
-            logger.d("Could not disable Nagle's algorithm: " + e.getMessage());
-        }
     }
 
     /**

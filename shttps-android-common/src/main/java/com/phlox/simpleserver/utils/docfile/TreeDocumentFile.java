@@ -26,40 +26,14 @@ public class TreeDocumentFile extends DocumentFile {
     private Long mLastModified;
     private Long mLength;
 
-    /**
-     * A URI {@link android.content.Intent#ACTION_OPEN_DOCUMENT_TREE} handed back, or a document
-     * URI rewritten into the tree form. Null when the URI is neither: {@code getTreeDocumentId}
-     * throws {@link IllegalArgumentException} for anything whose first path segment is not
-     * {@code tree}, which is what a single-document pick and several file managers return.
-     */
-    public static Uri normalizeTreeUri(Context context, Uri uri) {
-        if (uri == null) return null;
-        if (DocumentsContract.isTreeUri(uri)) return uri;
-        try {
-            if (!DocumentsContract.isDocumentUri(context, uri)) return null;
-            String documentId = DocumentsContract.getDocumentId(uri);
-            String authority = uri.getAuthority();
-            if (documentId == null || authority == null) return null;
-            Uri treeUri = DocumentsContract.buildTreeDocumentUri(authority, documentId);
-            return DocumentsContract.isTreeUri(treeUri) ? treeUri : null;
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
-    }
-
     public static DocumentFile fromTreeUri(Context context, Uri treeUri) {
-        Uri uri = normalizeTreeUri(context, treeUri);
-        if (uri == null) return null;
-        try {
-            String documentId = DocumentsContract.getTreeDocumentId(uri);
-            if (DocumentsContract.isDocumentUri(context, uri)) {
-                documentId = DocumentsContract.getDocumentId(uri);
-            }
-            return new TreeDocumentFile(null, context,
-                    DocumentsContract.buildDocumentUriUsingTree(uri, documentId));
-        } catch (IllegalArgumentException e) {
-            return null;
+        String documentId = DocumentsContract.getTreeDocumentId(treeUri);
+        if (DocumentsContract.isDocumentUri(context, treeUri)) {
+            documentId = DocumentsContract.getDocumentId(treeUri);
         }
+        return new TreeDocumentFile(null, context,
+                DocumentsContract.buildDocumentUriUsingTree(treeUri,
+                        documentId));
     }
 
     TreeDocumentFile(DocumentFile parent, Context context, Uri uri) {
@@ -82,17 +56,7 @@ public class TreeDocumentFile extends DocumentFile {
     @Override
     public DocumentFile createFile(String mimeType, String displayName) {
         final Uri result = TreeDocumentFile.createFile(mContext, mUri, mimeType, displayName);
-        if (result == null) return null;
-        TreeDocumentFile created = new TreeDocumentFile(this, mContext, result);
-        //the extension is cut off above so the provider does not append a second one from the
-        //MIME type. It only appends one when it knows the type, so "data.bin" sent as
-        //application/octet-stream became "data", and a staging name like "a.txt.shttps-1" became
-        //"a.txt". Whatever came back, the name asked for is the name the file gets
-        if (!displayName.equals(created.getName()) && !created.renameTo(displayName)) {
-            created.delete();
-            return null;
-        }
-        return created;
+        return (result != null) ? new TreeDocumentFile(this, mContext, result) : null;
     }
 
     private static Uri createFile(Context context, Uri self, String mimeType,
@@ -264,7 +228,6 @@ public class TreeDocumentFile extends DocumentFile {
                     mContext.getContentResolver(), mUri, displayName);
             if (result != null) {
                 mUri = result;
-                mName = null;
                 return true;
             } else {
                 return false;
@@ -281,50 +244,25 @@ public class TreeDocumentFile extends DocumentFile {
 
     @Override
     public boolean moveTo(DocumentFile destDir) {
-        return moveTo(destDir, getName());
-    }
-
-    /**
-     * Moves this document into {@code destDir} under {@code destName}, replacing a file of that
-     * name. Within the same directory this is a rename: {@code moveDocument} refuses a move onto
-     * the source's own parent, and looking the destination up by name would find this very
-     * document - which the old code then deleted before the move failed.
-     */
-    @Override
-    public boolean moveTo(DocumentFile destDir, String destName) {
         ContentResolver contentResolver = mContext.getContentResolver();
-        DocumentFile parent = getParentFile();
-        if (parent == null) return false;
-        DocumentFile dst = destDir.findFile(destName);
-        if (dst != null) {
-            if (sameDocument(dst.getUri(), getUri())) {
-                return true;//already there
-            }
-            if (dst.isDirectory() || (isFile() && !dst.delete())) {
-                return false;
-            }
-        }
-        if (sameDocument(parent.getUri(), destDir.getUri())) {
-            return renameTo(destName);
-        }
-        try {
-            Uri movedDocUri = DocumentsContract.moveDocument(contentResolver, mUri,
-                    Uri.parse(parent.getUri()), Uri.parse(destDir.getUri()));
-            if (movedDocUri == null) return false;
-            mUri = movedDocUri;
-            mName = null;
-        } catch (FileNotFoundException | RuntimeException e) {
+        DocumentFile dst = destDir.findFile(getName());
+        if (dst != null &&
+                (dst.isDirectory() || (isFile() && !dst.delete()))) {
             return false;
         }
-        return destName.equals(getName()) || renameTo(destName);
+        try {
+            Uri movedDocUri = DocumentsContract.moveDocument(contentResolver, mUri, Uri.parse(getParentFile().getUri()), Uri.parse(destDir.getUri()));
+            return movedDocUri != null;
+        } catch (FileNotFoundException e) {
+            return false;
+        }
     }
 
-    private static boolean sameDocument(String a, String b) {
-        try {
-            return DocumentsContract.getDocumentId(Uri.parse(a)).equals(DocumentsContract.getDocumentId(Uri.parse(b)));
-        } catch (RuntimeException e) {
-            return a.equals(b);
-        }
+    @Override
+    public boolean moveTo(DocumentFile destDir, String destName) {
+        boolean moveResult = moveTo(destDir);
+        if (!moveResult) return false;
+        return renameTo(destName);
     }
 
     @Override
