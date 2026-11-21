@@ -43,6 +43,8 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
     private final Context ctx;
     private KeyStore keyStore;
     private final SHTTPSLoggerProxy.Logger logger = SHTTPSLoggerProxy.getLogger(getClass());
+    /** @see #getAssetLastModified(String) - 0 while unknown, -1 once asking has failed. */
+    private volatile long packageTime = 0;
 
     public PlatformUtilsAndroid(Context ctx) {
         this.ctx = ctx;
@@ -165,19 +167,33 @@ public class PlatformUtilsAndroid implements SHTTPSPlatformUtils {
         }
     }
 
+    /**
+     * The date every bundled asset is served with, and so the one a browser revalidates against.
+     * Installation time answers it because nothing in the package changes afterwards, and an
+     * update - which is what makes the assets different - moves it.
+     * <p>
+     * The answer is kept: it is asked once per asset per request, it costs a trip to the package
+     * manager, and an update of this package restarts the process that would be caching it.
+     */
     @Override
     public long getAssetLastModified(String fileName) {
-        //application package files are not modified after installation so return installation time
-        PackageManager pm = ctx.getPackageManager();
-        PackageInfo pi;
-        try {
-            pi = pm.getPackageInfo(ctx.getPackageName(), 0);
-        } catch (PackageManager.NameNotFoundException e) {
-            return -1;
+        long known = packageTime;
+        if (known != 0) {
+            return known;
         }
-        long firstInstallTime = pi.firstInstallTime;
-        long lastUpdateTime = pi.lastUpdateTime;
-        return Math.max(firstInstallTime, lastUpdateTime);
+        long computed = -1;
+        PackageManager pm = ctx.getPackageManager();
+        try {
+            PackageInfo pi = pm.getPackageInfo(ctx.getPackageName(), 0);
+            computed = Math.max(pi.firstInstallTime, pi.lastUpdateTime);
+            if (computed <= 0) {
+                computed = -1;
+            }
+        } catch (PackageManager.NameNotFoundException e) {
+            logger.e("Failed to read the package install time: " + e.getMessage());
+        }
+        packageTime = computed;
+        return computed;
     }
 
     /**

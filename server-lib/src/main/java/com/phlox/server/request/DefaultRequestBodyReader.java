@@ -114,7 +114,9 @@ public class DefaultRequestBodyReader implements RequestBodyReader {
             try (OutputStream output = requestBodyConsumer.prepareBinaryOutputForMultipartData(request, contentType, name, fileName, partHeaders)) {
                 boolean foundDelimiter = input.readUntilDelimiter(boundaryBytes, output);
                 if (!foundDelimiter) {
-                    return;
+                    //the body ended inside a part: the part is incomplete, and returning normally
+                    //would let a consumer take a truncated upload for a finished one
+                    throw new BadRequestException("Multipart body ended before its closing boundary");
                 }
 
                 // Check if this is the final boundary

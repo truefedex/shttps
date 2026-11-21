@@ -19,6 +19,8 @@ public class Response {
     public static final String HEADER_ACCEPT_RANGES = "Accept-Ranges";
     public static final String HEADER_CONTENT_RANGE = "Content-Range";
     public static final String HEADER_LAST_MODIFIED = "Last-Modified";
+    public static final String HEADER_ETAG = "ETag";
+    public static final String HEADER_CACHE_CONTROL = "Cache-Control";
     public static final String HEADER_WWW_AUTHENTICATE = "WWW-Authenticate";
     public static final String HEADER_LOCATION = "Location";
     public static final String HEADER_ALLOW = "Allow";

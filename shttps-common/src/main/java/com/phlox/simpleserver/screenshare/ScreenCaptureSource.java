@@ -58,4 +58,37 @@ public interface ScreenCaptureSource {
     default String getPlatform() {
         return null;
     }
+
+    /**
+     * @return whether {@link #setStreamProfile} does anything. A source that answers false serves
+     * one fixed picture, and the browser is then not offered a choice it could not be given.
+     */
+    default boolean supportsStreamQuality() {
+        return false;
+    }
+
+    /**
+     * Changes what the stream carries from here on. A source that is capturing restarts its
+     * pipeline and sends every subscriber a new initialization segment, which is how a client
+     * learns the picture changed size; one that is idle remembers it for the next start.
+     * <p>
+     * There is one stream for all viewers, so this is not a per-viewer setting: the caller is
+     * expected to have settled what everyone watching can live with.
+     * <p>
+     * Must not block on the pipeline: it is called while viewers are connecting, and from threads
+     * that deliver the stream. Both methods are {@code default} so that a platform with a fixed
+     * picture - and every implementation written before these existed - needs no change.
+     */
+    default void setStreamProfile(ScreenStreamProfile profile) {
+    }
+
+    /**
+     * @return whether this source can leave the mouse pointer out of the picture and report it
+     * through {@link ScreenStreamListener#onCursor} instead. One that answers false always draws
+     * the pointer, whatever {@link ScreenStreamProfile#cursorInPicture} says, and is never asked
+     * to do otherwise.
+     */
+    default boolean supportsCursorOverlay() {
+        return false;
+    }
 }

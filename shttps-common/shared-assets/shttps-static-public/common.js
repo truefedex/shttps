@@ -1,3 +1,43 @@
+/**
+ * The build the server is running, taken from the query the server stamped onto this script's
+ * own URL (common.js?v=...). A browser decides whether it may answer a request from its own
+ * cache by the URL, so this is what sends it to the server for the new files after an app
+ * update instead of leaving it on the scripts it kept from the build before - which, paired
+ * with the new markup, looks like a UI that has quietly stopped working.
+ */
+const ASSETS_VERSION = (function () {
+  let script = document.currentScript;
+  if (script == null) {
+    //defer, or a browser that does not set currentScript: find this file among the page's scripts
+    let scripts = document.getElementsByTagName("script");
+    for (let i = 0; i < scripts.length; i++) {
+      if (scripts[i].src.indexOf("/common.js") !== -1) {
+        script = scripts[i];
+        break;
+      }
+    }
+  }
+  let match = script == null ? null : /[?&]v=([^&]*)/.exec(script.src);
+  return match == null ? "" : match[1];
+})();
+
+/**
+ * The same token on a link to another page of the bundled UI, whose own markup names the scripts
+ * it needs: without it a cached copy of that page is what the browser opens, and a cached page
+ * asks for the scripts of its own build. Left alone are anything on another host, and the file
+ * listing itself, which the server renders afresh every time.
+ */
+function pageUrl(url) {
+  if (!ASSETS_VERSION || url.indexOf("://") !== -1) {
+    return url;
+  }
+  let path = url.split("?")[0];
+  if (path.indexOf("/shttps-static-public/") === -1 && !path.endsWith(".html")) {
+    return url;
+  }
+  return url + (url.indexOf("?") === -1 ? "?" : "&") + "v=" + ASSETS_VERSION;
+}
+
 let SMALL_UI_MAX_SCREEN_SIZE = 500;
 let smallScreen = window.innerWidth < SMALL_UI_MAX_SCREEN_SIZE;
 
@@ -342,7 +382,7 @@ function setupMainMenu(entries) {
     let item = document.getElementById(id);
     if (item == null) continue;
     let action = entries[id];
-    item.onclick = typeof action == "string" ? function () { window.location.href = action; } : action;
+    item.onclick = typeof action == "string" ? function () { window.location.href = pageUrl(action); } : action;
   }
   let menuButton = document.getElementById("menu-button");
   let mainMenu = document.getElementById("main-menu");

@@ -224,6 +224,11 @@ public class ChannelsIntegrationTest {
         try (WsTestClient alice = connect(); WsTestClient bob = connect(); WsTestClient rest = connect()) {
             alice.handshake(connectPath(CHANNEL));
             bob.handshake(connectPath(CHANNEL));
+            //the 101 is written before onOpen admits the connection to the channel, so a returned
+            //handshake does not yet mean a participant; the snapshot is queued by the admission
+            //itself, which makes reading it the moment both are certain to be counted
+            alice.readParticipantsSnapshot();
+            bob.readParticipantsSnapshot();
 
             HttpAnswer list = rest.get(ChannelsCollectionRequestHandler.PATH, Collections.emptyMap());
             assertEquals("HTTP/1.1 200 Ok", list.statusLine);

@@ -38,9 +38,18 @@ public class WebSocketFrameWriter {
             headerLength = 10;
         }
 
-        output.write(header, 0, headerLength);
+        //header and payload leave in one write. The stream underneath is buffered, and a buffered
+        //stream handed more than it holds first flushes what it has - here the few header bytes,
+        //as a TCP segment of their own - and then passes the payload straight through. On a socket
+        //with Nagle's algorithm on, the tail of the payload then waits for that tiny segment to be
+        //acknowledged, which the peer may put off for tens of milliseconds
         if (length > 0) {
-            output.write(payload, offset, length);
+            byte[] frame = new byte[headerLength + length];
+            System.arraycopy(header, 0, frame, 0, headerLength);
+            System.arraycopy(payload, offset, frame, headerLength, length);
+            output.write(frame, 0, frame.length);
+        } else {
+            output.write(header, 0, headerLength);
         }
         output.flush();
     }

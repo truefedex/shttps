@@ -40,8 +40,9 @@ public final class LockManager {
         Lock[] hit = { null };
         tree.visitPrefixes(path, (prefixKey, lock) -> {
             if (lock.isExpired()) return true;
-            boolean isSelf = prefixKey.equals(path);
-            if (isSelf || lock.depth == INFINITY) {
+            //an infinity lock on /a covers /a/b. It does not cover /ab: the next character has to
+            //be a segment boundary, same as a path prefix in the access rules.
+            if (prefixKey.equals(path) || (lock.depth == INFINITY && covers(prefixKey, path))) {
                 hit[0] = lock;
                 return false;
             }
@@ -50,15 +51,34 @@ public final class LockManager {
         return hit[0];
     }
 
+    /** {@code ancestor} is the path itself, or a strict directory prefix of it. */
+    static boolean covers(String ancestor, String path) {
+        if (ancestor.equals(path)) return true;
+        if ("/".equals(ancestor)) return path.startsWith("/");
+        String prefix = ancestor.endsWith("/") ? ancestor : ancestor + "/";
+        return path.startsWith(prefix);
+    }
+
     /** Is there a live lock in the subtree under prefix? To issue an infinity lock on a folder. */
     private boolean hasAnyLockInSubtree(String prefix) {
+        return hasBlockingDescendant(prefix, null, true);
+    }
+
+    /**
+     * A lock on a child blocks deleting or moving the parent, whichever token the caller showed,
+     * unless that token is the child's own. {@code anyTokenBlocks} is the infinity-lock check,
+     * which refuses the subtree even when the caller holds one of the tokens.
+     */
+    private boolean hasBlockingDescendant(String prefix, String providedToken, boolean anyTokenBlocks) {
         boolean[] found = { false };
-        // keys equal to or longer than prefix (i.e. descendants + the node itself)
         tree.visitPrefixesEqualOrLongerThan(prefix, (key, lock) -> {
             if (lock.isExpired()) return true;
-            if (key.equals(prefix)) return true;
-            found[0] = true;
-            return false;
+            if (!covers(prefix, key) || key.equals(prefix)) return true;
+            if (anyTokenBlocks || providedToken == null || !providedToken.equals(lock.token)) {
+                found[0] = true;
+                return false;
+            }
+            return true;
         });
         return found[0];
     }
@@ -67,6 +87,7 @@ public final class LockManager {
     Lock acquire(String path, boolean exclusive, int depth,
                  String ownerXml, long timeoutMs) {
         synchronized (mutex) {
+            sweepUnlocked();
             // 1. does the path itself or the infinity ancestor already hold the lock?
             if (effectiveLockUnlocked(path) != null) return null;
             // 2. if we are locking a subtree (infinity) - there should be no foreign locks inside
@@ -81,18 +102,17 @@ public final class LockManager {
         }
     }
 
-    /** Refresh the TTL by token (LOCK without body with If). null, if the token is not found/expired (→ 412). */
-    Lock refresh(String token, long timeoutMs) {
+    /**
+     * Refresh the TTL of the lock that covers {@code path}: the lock on the path itself, or an
+     * infinity lock on an ancestor (RFC 4918 lets the refresh name any resource in the lock's
+     * scope). A token of a lock elsewhere does not extend it. null if no live lock covering this
+     * path has that token (→ 412).
+     */
+    Lock refresh(String path, String token, long timeoutMs) {
         synchronized (mutex) {
-            Lock[] hit = { null };
-            tree.removeIf((key, lock) -> lock.isExpired());
-            // We search by token—we search through all of them; there are few locks, so it's cheap.
-            tree.visitPrefixesEqualOrLongerThan("", (key, lock) -> {
-                if (!lock.isExpired() && lock.token.equals(token)) { hit[0] = lock; return false; }
-                return true;
-            });
-            Lock l = hit[0];
-            if (l == null) return null;
+            sweepUnlocked();
+            Lock l = effectiveLockUnlocked(path);
+            if (l == null || !l.token.equals(token)) return null;
             l.expiresAt = System.currentTimeMillis() + timeoutMs;
             return l;
         }
@@ -113,16 +133,35 @@ public final class LockManager {
     /** Token validation when writing. Returns true if the operation at the path is allowed. */
     public boolean mayWrite(String path, String providedToken) {
         synchronized (mutex) {
-            Lock l = effectiveLockUnlocked(path);
-            if (l == null) return true;                         // not locked
-            return providedToken != null && providedToken.equals(l.token);
+            return mayWriteUnlocked(path, providedToken);
         }
     }
 
-    /** Lazy cleanup of expired locks (can be called by a timer or at the beginning of operations). In-memory, without IO. */
+    /**
+     * Writing, plus the locks on descendants. DELETE and MOVE remove the whole subtree, so a lock
+     * on a child has to agree too. A plain PUT does not, and keeps using {@link #mayWrite}.
+     */
+    public boolean mayRemove(String path, String providedToken) {
+        synchronized (mutex) {
+            return mayWriteUnlocked(path, providedToken)
+                    && !hasBlockingDescendant(path, providedToken, false);
+        }
+    }
+
+    private boolean mayWriteUnlocked(String path, String providedToken) {
+        Lock l = effectiveLockUnlocked(path);
+        if (l == null) return true;
+        return providedToken != null && providedToken.equals(l.token);
+    }
+
+    /** Lazy cleanup of expired locks. In-memory, without IO. */
     void sweep() {
         synchronized (mutex) {
-            tree.removeIf((key, lock) -> lock.isExpired());
+            sweepUnlocked();
         }
+    }
+
+    private void sweepUnlocked() {
+        tree.removeIf((key, lock) -> lock.isExpired());
     }
 }
