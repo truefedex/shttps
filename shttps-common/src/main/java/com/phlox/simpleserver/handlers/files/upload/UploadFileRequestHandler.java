@@ -55,12 +55,18 @@ public class UploadFileRequestHandler extends BaseFileRequestHandler {
                 ), User.FileSystemRights.CREATE,
                 User.FileSystemRights.UPDATE)) return StandardResponses.FORBIDDEN();
 
+        DirectUploadRequestDataConsumer consumer =
+                new DirectUploadRequestDataConsumer(config, user, quota, locks, lockTokenProvided);
         try {
-            //actual uploading
-            context.requestBodyReader.readRequestBody(request,
-                    new DirectUploadRequestDataConsumer(config, user, quota, locks, lockTokenProvided));
-        } catch (DirectUploadRequestDataConsumer.UploadException e) {
-            return new Response(e.code, e.reason);
+            //actual uploading. Staged uploads (atomic_uploads) are published only once the whole
+            //body is in: the reader closes each part's stream even when the client went away
+            context.requestBodyReader.readRequestBody(request, consumer);
+            consumer.commitStaged();
+        } catch (Exception e) {
+            consumer.discardStaged();
+            DirectUploadRequestDataConsumer.UploadException upload = uploadCause(e);
+            if (upload != null) return new Response(upload.code, upload.reason);
+            throw e;
         }
         //we need also handle empty directory creation here
         for (FormDataPart part : request.multipartData) {
@@ -91,5 +97,16 @@ public class UploadFileRequestHandler extends BaseFileRequestHandler {
             }
         }
         return StandardResponses.NO_CONTENT();
+    }
+
+    private static DirectUploadRequestDataConsumer.UploadException uploadCause(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof DirectUploadRequestDataConsumer.UploadException) {
+                return (DirectUploadRequestDataConsumer.UploadException) current;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 }

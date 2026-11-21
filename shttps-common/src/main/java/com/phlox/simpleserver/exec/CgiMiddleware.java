@@ -17,12 +17,14 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 public class CgiMiddleware implements Middleware {
     private final @Nullable String cgiPathPrefix;
-    private final @NotNull String cgiFolder;
+    private final @NotNull File cgiRoot;
     private final @NotNull List<CgiType> cgiTypes;
     private final @NotNull AuthManager authManager;
     private final SHTTPSConfig.AuthMode authMode;
@@ -51,16 +53,11 @@ public class CgiMiddleware implements Middleware {
         if (!cgiFolderFile.exists()) {
             throw new RuntimeException("CGI folder does not exist!: " + cgiFolder);
         }
-        cgiFolder = cgiFolderFile.getAbsolutePath();
-        if (!cgiFolder.endsWith("/") && !cgiFolder.endsWith("\\")) {
-            cgiFolder = cgiFolder + File.separator;
-        }
-        this.cgiFolder = cgiFolder;
+        this.cgiRoot = cgiFolderFile;
 
         List<CgiType> cgiTypes = config.getCGITypes();
         this.cgiTypes = cgiTypes != null ? cgiTypes : new ArrayList<>();
 
-        DocumentFile rootFolder = config.getRootDir();
         simplePl = new SimpleProcessLauncher(cgiFolderFile, config);
         cgiPl = new CgiProcessLauncher(cgiFolderFile, config);
     }
@@ -84,68 +81,9 @@ public class CgiMiddleware implements Middleware {
             }
         }
 
-        if (requestPath.contains("../") || requestPath.contains("..\\")) throw new SecurityException("Invalid path");
-
-        // Find the script file by walking the path
-        // We need to find the longest path that is a file with a valid CGI extension
-        // The remaining path after the script becomes PATH_INFO (calculated in launcher)
-        File cgiScriptFile = null;
-        CgiType cgiType = null;
-        
-        // Normalize path separators
-        String normalizedPath = requestPath.replace('\\', '/');
-        if (!normalizedPath.startsWith("/")) {
-            normalizedPath = "/" + normalizedPath;
-        }
-        
-        // Split path into segments
-        String[] pathSegments = normalizedPath.split("/");
-        StringBuilder currentPath = new StringBuilder();
-        
-        // Try to find a script file by progressively building the path
-        // This handles URLs like /cgi-bin/somesubdir/somescript.py/this/is/path/info
-        // where we need to find the script file and the remaining path is PATH_INFO
-        for (int i = 0; i < pathSegments.length; i++) {
-            if (pathSegments[i].isEmpty()) {
-                continue;
-            }
-            
-            // Decode URL-encoded path segment before using it for file path construction
-            String decodedSegment;
-            try {
-                decodedSegment = java.net.URLDecoder.decode(pathSegments[i], "UTF-8");
-            } catch (Exception e) {
-                // If decoding fails, use original segment
-                decodedSegment = pathSegments[i];
-            }
-            
-            if (currentPath.length() > 0) {
-                currentPath.append("/");
-            }
-            currentPath.append(decodedSegment);
-            
-            // Check if this path is a file with a valid CGI extension
-            File testFile = new File(cgiFolder + currentPath.toString());
-            if (testFile.exists() && testFile.isFile()) {
-                String extension = Utils.getFileExtensionFromFilename(testFile.getName());
-                if (extension != null) {
-                    extension = extension.toLowerCase();
-                    // Check if this extension is a valid CGI type
-                    for (CgiType c : cgiTypes) {
-                        if (c.extension.equals(extension)) {
-                            // Found a valid script file!
-                            cgiScriptFile = testFile;
-                            cgiType = c;
-                            // PATH_INFO will be calculated in the launcher from the remaining path
-                            break;
-                        }
-                    }
-                    if (cgiScriptFile != null) {
-                        break;
-                    }
-                }
-            }
-        }
+        ResolvedScript resolved = resolveScript(cgiRoot, requestPath, cgiTypes);
+        File cgiScriptFile = resolved == null ? null : resolved.script;
+        CgiType cgiType = resolved == null ? null : resolved.type;
         
         if (cgiScriptFile == null) {
             if (isCgiDirMixedWithStaticFilesDir) {
@@ -176,5 +114,63 @@ public class CgiMiddleware implements Middleware {
         }
         ExternalProcessLauncher pl = cgiType.mode.equals(CgiType.Mode.CGI) ? cgiPl : simplePl;
         return pl.launch(request, cgiType.executeWith, cgiScriptFile, user, cgiType.executionTimeout);
+    }
+
+    static final class ResolvedScript {
+        final @NotNull File script;
+        final @NotNull CgiType type;
+
+        ResolvedScript(@NotNull File script, @NotNull CgiType type) {
+            this.script = script;
+            this.type = type;
+        }
+    }
+
+    /**
+     * Walks {@code requestPath} one decoded segment at a time and returns the first file whose
+     * extension is a configured CGI type. A segment that is {@code ..} or that contains a slash
+     * or a backslash is rejected before it is appended, and no segment along the walk may
+     * be a link, a junction or a special file. Together that is what stops
+     * {@code %2e%2e%5c} from leaving the CGI folder on Windows, where {@code \} is a separator
+     * and the request parser only rejects {@code ..} between slashes.
+     *
+     * @return the script, or null when the path stays inside the folder but names no CGI file
+     */
+    static @Nullable ResolvedScript resolveScript(@NotNull File cgiRoot, @NotNull String requestPath,
+                                                   @NotNull List<CgiType> cgiTypes) {
+        String normalized = requestPath.replace('\\', '/');
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        File cursor = cgiRoot;
+        for (String rawSegment : normalized.split("/")) {
+            if (rawSegment.isEmpty()) continue;
+            String decoded;
+            try {
+                decoded = URLDecoder.decode(rawSegment, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException e) {
+                throw new SecurityException("Invalid path");
+            }
+            if (decoded.isEmpty() || ".".equals(decoded)) continue;
+            if (decoded.indexOf('/') >= 0 || decoded.indexOf('\\') >= 0
+                    || !DocumentFile.isValidChildName(decoded)) {
+                throw new SecurityException("Invalid path");
+            }
+            cursor = new File(cursor, decoded);
+            //the same rule as the file handlers: no link, junction or special file is followed
+            if (com.phlox.server.utils.Utils.isLinkOrSpecial(cursor)) {
+                throw new SecurityException("Invalid path");
+            }
+            if (!cursor.isFile()) continue;
+            String extension = Utils.getFileExtensionFromFilename(cursor.getName());
+            if (extension == null) continue;
+            extension = extension.toLowerCase();
+            for (CgiType type : cgiTypes) {
+                if (type.extension.equals(extension)) {
+                    return new ResolvedScript(cursor, type);
+                }
+            }
+        }
+        return null;
     }
 }

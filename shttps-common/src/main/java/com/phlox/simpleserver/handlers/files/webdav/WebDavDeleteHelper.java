@@ -21,7 +21,8 @@ public class WebDavDeleteHelper extends WebDavHelpersBase {
 
     public Response handleDeleteRequest(FilesRequestHandler filesRequestHandler, Request request,
                                         DocumentFile userRoot, DocumentFile file, User user) throws Exception {
-        if (filesRequestHandler.checkIsForbidden(user, request.path,
+        //DELETE on a collection removes everything in it, folders denied by a rule included
+        if (filesRequestHandler.checkIsSubtreeForbidden(user, request.path,
                 DeleteFileRequestHandler.DELETE_OPERATION, null,
                 User.FileSystemRights.DELETE))
             return StandardResponses.FORBIDDEN();
@@ -30,7 +31,7 @@ public class WebDavDeleteHelper extends WebDavHelpersBase {
         }
 
         String provided = extractLockTokenFromIf(request.headers.get("if"));
-        if (!locks.mayWrite(request.path, provided)) {
+        if (!locks.mayRemove(request.path, provided)) {
             return simpleStatus(423, "Locked");
         }
 

@@ -19,7 +19,12 @@ public class BasicAuthMiddleware implements Middleware {
 
     @Override
     public Response handle(RequestContext context, Request request, HandlerExecutionChain chain) throws Exception {
-        User user = authManager.authenticate(context, request);
+        User user;
+        try {
+            user = authManager.authenticate(context, request);
+        } catch (AuthenticationException e) {
+            return e.toResponse();
+        }
         if (user == null) {
             Response response = StandardResponses.UNAUTHORIZED();
             response.headers.add(Response.HEADER_WWW_AUTHENTICATE, "Basic realm=\"Authentication required\", charset=\"UTF-8\"");

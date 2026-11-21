@@ -81,6 +81,14 @@ public class ZipDownloadRequestHandler extends BaseFileRequestHandler {
         if (checkIsForbidden(user, destPath, ZIP_DOWNLOAD_OPERATION, operationParams,
                 User.FileSystemRights.READ))
             return StandardResponses.FORBIDDEN();
+        //the archive holds every file under each selected item: an item, or a folder inside one,
+        //that a rule keeps from this user must not be read through the folder above it
+        for (int i = 0; i < filesJArr.length(); i++) {
+            String name = filesJArr.getString(i);
+            if (checkIsSubtreeForbidden(user, com.phlox.simpleserver.utils.Utils.joinPaths(destPath, name), ZIP_DOWNLOAD_OPERATION,
+                    operationParams, User.FileSystemRights.READ))
+                return StandardResponses.FORBIDDEN();
+        }
 
         ZipDataStreamer streamer = new ZipDataStreamer(destFile, filesJArr, excludedExtensions, compressionLevel);
         streamer.startDataGenerationThread();

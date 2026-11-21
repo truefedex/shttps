@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
-import com.kdroid.composetray.utils.getTrayWindowPosition
 import com.phlox.simpleserver.screenshare.ScreenAccessRequest
 import com.phlox.simpleserver.shttps_desktop.generated.resources.Res
 import com.phlox.simpleserver.shttps_desktop.generated.resources.add_to_whitelist
@@ -38,6 +37,7 @@ import com.phlox.simpleserver.shttps_desktop.generated.resources.screen_access_v
 import com.phlox.simpleserver.shttps_desktop.generated.resources.screen_access_view_control
 import com.phlox.simpleserver.shttps_desktop.generated.resources.view_only
 import com.phlox.simpleserver.theme.AppTheme
+import dev.nucleusframework.composenativetray.trayapp.getTrayWindowPosition
 import org.jetbrains.compose.resources.stringResource
 import java.awt.Toolkit
 

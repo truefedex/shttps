@@ -61,6 +61,13 @@ public class DatabaseTransactionTest {
      * be woken, and once woken its work has to be gone and the write thread free.
      */
     @Test
+    public void executeReportsAFailedStatement() throws Exception {
+        try (Database db = newDatabase()) {
+            assertThrows(Exception.class, () -> db.execute("THIS IS NOT SQL"));
+        }
+    }
+
+    @Test
     public void abortEndsAScopeThatIsWaitingAndFreesTheWriteThread() throws Exception {
         try (Database db = newDatabase()) {
             TransactionAbortHandle handle = new TransactionAbortHandle();

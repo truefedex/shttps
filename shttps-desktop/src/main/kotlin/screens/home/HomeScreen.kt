@@ -110,6 +110,7 @@ import com.phlox.simpleserver.utils.openUrlInBrowser
 import io.github.vinceglb.filekit.FileKit
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.absolutePath
+import io.github.vinceglb.filekit.dialogs.FileKitDialogSettings
 import io.github.vinceglb.filekit.dialogs.FileKitType
 import io.github.vinceglb.filekit.dialogs.openDirectoryPicker
 import io.github.vinceglb.filekit.dialogs.openFilePicker
@@ -294,7 +295,8 @@ fun HomeScreen(
         scope.launch {
             val saved = FileKit.openFileSaver(
                 suggestedName = exportDefaultFileName.removeSuffix(".zip"),
-                extension = "zip",
+                defaultExtension = "zip",
+                allowedExtensions = setOf("zip"),
             ) ?: return@launch
             val targetFile = File(saved.absolutePath())
             showSnackbar(exportInProgressMsg, SnackbarDuration.Indefinite)
@@ -319,7 +321,7 @@ fun HomeScreen(
         scope.launch {
             val picked = FileKit.openFilePicker(
                 type = FileKitType.File(extension = "zip"),
-                title = selectBackupArchiveTitle
+                dialogSettings = FileKitDialogSettings(title = selectBackupArchiveTitle)
             ) ?: return@launch
             val sourceFile = File(picked.absolutePath())
             showSnackbar(importInProgressMsg, SnackbarDuration.Indefinite)
@@ -340,12 +342,16 @@ fun HomeScreen(
     LaunchedEffect(redirectsWasEdited) {
         if (redirectsWasEdited) {
             viewModel.refreshRedirects()
+            //the running server keeps the redirect list it copied at start
+            viewModel.restartServerIfRunning()
             savedStateHandle["redirectsWasEdited"] = false
         }
     }
     LaunchedEffect(corsRulesWasEdited) {
         if (corsRulesWasEdited) {
             viewModel.refreshCorsRules()
+            //the running server keeps the CORS list it copied at start
+            viewModel.restartServerIfRunning()
             savedStateHandle["corsRulesWasEdited"] = false
         }
     }
@@ -1018,7 +1024,7 @@ fun HomeScreen(
                                             type = FileKitType.File(
                                                 extension = "db"
                                             ),
-                                            title = selectSqliteDatabaseTitle
+                                            dialogSettings = FileKitDialogSettings(title = selectSqliteDatabaseTitle)
                                         )
                                         if (file != null) {
                                             viewModel.updateDatabasePath(file)
@@ -1342,7 +1348,7 @@ fun HomeScreen(
                                             type = FileKitType.File(
                                                 extensions = arrayOf("p12", "pfx")
                                             ),
-                                            title = selectTlsCertTitle
+                                            dialogSettings = FileKitDialogSettings(title = selectTlsCertTitle)
                                         )
                                          if (file != null) {
                                              tmpTlsKeyPath = file
@@ -1672,7 +1678,7 @@ fun HomeScreen(
                                 type = FileKitType.File(
                                     extension = "db"
                                 ),
-                                title = selectSqliteDatabaseTitle
+                                dialogSettings = FileKitDialogSettings(title = selectSqliteDatabaseTitle)
                             )
                             if (file != null) {
                                 viewModel.updateDatabasePath(file)

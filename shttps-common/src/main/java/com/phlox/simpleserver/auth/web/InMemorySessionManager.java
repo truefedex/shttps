@@ -6,6 +6,7 @@ import java.security.SecureRandom;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 
 public class InMemorySessionManager implements SessionManager {
     private static final long SESSION_TIMEOUT_MILLIS = 60 * 60 * 1000; // 1 hour
@@ -22,6 +23,18 @@ public class InMemorySessionManager implements SessionManager {
     }
 
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
+    private final long timeoutMillis;
+    private final LongSupplier clock;
+
+    public InMemorySessionManager() {
+        this(SESSION_TIMEOUT_MILLIS, System::currentTimeMillis);
+    }
+
+    /** @param clock wall-clock milliseconds, replaceable in tests */
+    public InMemorySessionManager(long timeoutMillis, LongSupplier clock) {
+        this.timeoutMillis = timeoutMillis;
+        this.clock = clock;
+    }
 
     private String generateSessionId() {
         byte[] randomBytes = new byte[24];
@@ -32,7 +45,7 @@ public class InMemorySessionManager implements SessionManager {
     @Override
     public String createSession(String username) {
         String sessionId = generateSessionId();
-        long expiresAt = System.currentTimeMillis() + SESSION_TIMEOUT_MILLIS;
+        long expiresAt = clock.getAsLong() + timeoutMillis;
         sessions.put(sessionId, new Session(username, expiresAt));
         return sessionId;
     }
@@ -42,12 +55,12 @@ public class InMemorySessionManager implements SessionManager {
         Session session = sessions.get(sessionId);
         if (session == null) return null;
 
-        long now = System.currentTimeMillis();
+        long now = clock.getAsLong();
         if (session.expiresAtMillis < now) {
             sessions.remove(sessionId);
             return null;
         }
-        session.expiresAtMillis = now + SESSION_TIMEOUT_MILLIS;
+        session.expiresAtMillis = now + timeoutMillis;
 
         return session.username;
     }
@@ -59,7 +72,7 @@ public class InMemorySessionManager implements SessionManager {
 
     @Override
     public void cleanupExpiredSessions() {
-        long now = System.currentTimeMillis();
+        long now = clock.getAsLong();
         //need Android API >= 24
         //sessions.entrySet().removeIf(entry -> entry.getValue().expiresAtMillis < now);
         for (Iterator<Map.Entry<String, Session>> it = sessions.entrySet().iterator(); it.hasNext(); ) {

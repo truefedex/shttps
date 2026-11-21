@@ -20,16 +20,47 @@ var STREAM_PATH = "/api/screen/stream";
  * as soon as it can be: this is a live view, not a recording, so there is nothing to gain from
  * holding a reserve - a hole in the stream is skipped rather than waited out anyway.
  */
-var TARGET_LATENCY_SECONDS = 0.15;
+var INITIAL_TARGET_LATENCY_SECONDS = 0.1;
+/**
+ * The target is not a constant: it follows how unevenly frames actually arrive, see
+ * updateTargetLatency. On a local network that is a few milliseconds and the target sits at the
+ * floor, about two frames; on a link that delivers in bursts it rises to what that link needs, and
+ * no further than the ceiling - beyond it the picture is smoother as a slide show than as video.
+ */
+var MIN_TARGET_LATENCY_SECONDS = 0.06;
+var MAX_TARGET_LATENCY_SECONDS = 0.4;
+/** Room on top of the measured unevenness, a little over one frame at 30 fps. */
+var TARGET_LATENCY_MARGIN_SECONDS = 0.04;
 /** Further behind than this and catching up by playing faster would take too long: jump instead. */
-var MAX_LATENCY_SECONDS = 0.6;
+var MAX_LATENCY_SECONDS = 0.5;
 /**
  * How much faster than real time to play while catching up. Small enough to be invisible - jumping
  * would be seen as a stutter, and drifting a whole second behind is what this avoids.
  */
-var CATCH_UP_PLAYBACK_RATE = 1.1;
-/** How much already played video to keep buffered before evicting it. */
-var MAX_BUFFER_BEHIND_SECONDS = 8.0;
+var CATCH_UP_PLAYBACK_RATE = 1.15;
+/**
+ * How far past the target playback may fall before it is sped up. More than a frame: the distance
+ * to the live edge moves by one frame with every arrival, and a threshold inside that would have
+ * the playback rate flipping ten times a second.
+ */
+var CATCH_UP_SLACK_SECONDS = 0.05;
+/**
+ * How much already played video to keep buffered before evicting it. Has to stay well above the
+ * server's key frame interval (GOP_SECONDS, 8 s): removing a range also removes everything up to
+ * the next key frame, since those frames can no longer be decoded, and that key frame must not be
+ * ahead of what is playing.
+ */
+var MAX_BUFFER_BEHIND_SECONDS = 20.0;
+/** The timescale FragmentedMp4Muxer writes: decode times in a segment are microseconds. */
+var MEDIA_TIMESCALE = 1000000;
+/** Arrivals the target latency is judged from - about ten seconds of a 30 fps stream. */
+var ARRIVAL_WINDOW = 300;
+/**
+ * A frame arriving this much later than the ones before it is not an uneven link, it is the stream
+ * having paused - a still Android screen produces no frames at all - and says nothing about how
+ * much reserve playback needs.
+ */
+var ARRIVAL_DISCONTINUITY_SECONDS = 0.5;
 var RECONNECT_DELAY_MIN_MS = 1000;
 var RECONNECT_DELAY_MAX_MS = 15000;
 var MAX_RECONNECT_ATTEMPTS = 10;
@@ -59,6 +90,22 @@ var reconnectTimer = null;
 /** Set when reconnecting makes no sense until the user asks for it. */
 var stoppedByServer = false;
 var playbackTimer = null;
+/** How far behind the newest frame playback aims to sit right now. */
+var targetLatency = INITIAL_TARGET_LATENCY_SECONDS;
+/** For each recent segment, when it arrived minus where it sits on the media timeline. */
+var arrivalOffsets = [];
+var arrivalsSinceUpdate = 0;
+
+var QUALITY_STORAGE_KEY = "shttps.screen.quality";
+var QUALITY_LEVELS = ["low", "medium", "high"];
+/** How long a window has to hold still before its new size is worth restarting an encoder for. */
+var VIEWPORT_SETTLE_MS = 1500;
+/** What this viewer asked for: "auto" or one of QUALITY_LEVELS. Remembered across visits. */
+var requestedQuality = loadQualityPreference();
+/** The last {"type":"stream"} frame, or null while the server has not said it offers a choice. */
+var streamStatus = null;
+var viewportTimer = null;
+var lastSentViewport = "";
 
 var receivedBytes = 0;
 var receivedSegments = 0;
@@ -73,6 +120,7 @@ function onPageLoad() {
     "mm-status": "/shttps-static-public/status/index.html"
   });
   video = document.getElementById("screen-video");
+  setupFrameDecoder();
 
   video.addEventListener("waiting", syncPlayback);
   video.addEventListener("timeupdate", syncPlayback);
@@ -87,9 +135,106 @@ function onPageLoad() {
     updateStats();
   }, 100);
 
+  window.addEventListener("resize", scheduleViewportReport);
+  //the arrow is placed in page coordinates, which a change of layout moves under it
+  window.addEventListener("resize", updateRemoteCursor);
+  document.addEventListener("fullscreenchange", updateRemoteCursor);
+  document.addEventListener("fullscreenchange", scheduleViewportReport);
+
   setupControlInput();
   updateRecordUi();
   connect();
+}
+
+// --- stream quality --------------------------------------------------------------------------
+
+function loadQualityPreference() {
+  try {
+    var stored = window.localStorage.getItem(QUALITY_STORAGE_KEY);
+    if (stored === "auto" || QUALITY_LEVELS.indexOf(stored) >= 0) {
+      return stored;
+    }
+  } catch (e) {
+    //storage can be switched off; the choice then simply lasts for this visit
+  }
+  return "auto";
+}
+
+/**
+ * How many pixels the picture can actually occupy here, which the server uses to avoid encoding a
+ * larger one than any window is there to show. Device pixels, not CSS ones: on a high density
+ * display a 1280 wide window has 2560 of them and a 1280 wide picture is visibly soft in it.
+ */
+function viewportPixels() {
+  var container = document.getElementById("screen-container");
+  var ratio = window.devicePixelRatio || 1;
+  var width = container ? container.clientWidth : window.innerWidth;
+  var height = container ? container.clientHeight : window.innerHeight;
+  return [Math.round(width * ratio), Math.round(height * ratio)];
+}
+
+function streamQuery() {
+  var size = viewportPixels();
+  lastSentViewport = size.join("x");
+  //cursor=1: this page can draw the remote mouse pointer itself, see screen-cursor.js
+  return "?quality=" + encodeURIComponent(requestedQuality) + "&vw=" + size[0] + "&vh=" + size[1] +
+    "&cursor=1";
+}
+
+function sendStreamRequest() {
+  //only to a server that has said it listens: an older one would take this for a malformed
+  //input command, harmlessly, but there is nothing to gain from sending it
+  if (streamStatus === null || socket === null || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  var size = viewportPixels();
+  lastSentViewport = size.join("x");
+  socket.send(JSON.stringify({ type: "stream", quality: requestedQuality, viewport: size }));
+}
+
+function scheduleViewportReport() {
+  if (viewportTimer !== null) {
+    clearTimeout(viewportTimer);
+  }
+  viewportTimer = setTimeout(function () {
+    viewportTimer = null;
+    if (viewportPixels().join("x") !== lastSentViewport) {
+      sendStreamRequest();
+    }
+  }, VIEWPORT_SETTLE_MS);
+}
+
+function onQualityChange() {
+  requestedQuality = document.getElementById("quality-select").value;
+  try {
+    window.localStorage.setItem(QUALITY_STORAGE_KEY, requestedQuality);
+  } catch (e) {
+    //see loadQualityPreference
+  }
+  sendStreamRequest();
+}
+
+/** The server said what the stream carries now, and with that, that there is a choice at all. */
+function onStreamStatus(info) {
+  streamStatus = info;
+  var select = document.getElementById("quality-select");
+  select.classList.remove("hidden");
+  //the server's own limit: levels above it would be accepted and then quietly not given
+  var max = QUALITY_LEVELS.indexOf(info.max);
+  for (var i = 0; i < select.options.length; i++) {
+    var level = QUALITY_LEVELS.indexOf(select.options[i].value);
+    select.options[i].disabled = max >= 0 && level > max;
+  }
+  if (info.requested) {
+    select.value = info.requested;
+  }
+}
+
+function hideQualityChoice() {
+  streamStatus = null;
+  //until a server says otherwise the pointer is part of the picture
+  setCursorOverlay(false);
+  document.getElementById("quality-select").classList.add("hidden");
 }
 
 // --- connection ------------------------------------------------------------------------------
@@ -106,13 +251,16 @@ function connect() {
   inputFamilies = {};
   inputFamiliesKnown = false;
   sawDesktopPlatform = false;
+  hideQualityChoice();
 
   setConnectionState("", "Connecting…");
   showMessage("Connecting…", "", false);
 
   var protocol = location.protocol === "https:" ? "wss:" : "ws:";
   try {
-    socket = new WebSocket(protocol + "//" + location.host + STREAM_PATH);
+    //what this viewer wants goes into the handshake, so that the stream starts as that rather
+    //than as the default and then restarts a moment later
+    socket = new WebSocket(protocol + "//" + location.host + STREAM_PATH + streamQuery());
   } catch (e) {
     onDisconnected(0, String(e));
     return;
@@ -158,11 +306,20 @@ function onSocketMessage(event) {
       //what the far end looks like, not what it accepts - the control frame says that. Remembered
       //only to make sense of an old server, which sends no family list at all.
       sawDesktopPlatform = info.platform === "desktop";
-      //after starting the new source, not before: tearing the old one down clears this flag
-      startMediaSource(info);
+      //whatever was playing belongs to the stream that just ended. Which of the two ways the new
+      //one is shown is decided when its initialization segment arrives, since the decoder's
+      //configuration is inside it
+      closeFrameDecoder();
+      releaseMediaSource();
+      //after the tear down, not before: it clears this flag
       expectInitSegment = true;
     } else if (info.type === "control") {
       onControlStatus(info);
+    } else if (info.type === "stream") {
+      onStreamStatus(info);
+      setCursorOverlay(info.cursor === "overlay");
+    } else if (info.type === "cursor") {
+      onRemoteCursor(info);
     } else if (info.type === "approval" && info.state === "pending") {
       //the connection stays open while the person at the device decides; the stream follows if
       //they say yes, and the message goes away with its first frame
@@ -180,22 +337,51 @@ function onSocketMessage(event) {
   statsBytes += data.length;
   if (expectInitSegment) {
     expectInitSegment = false;
+    //decoded here if the browser lets us, played by the video element otherwise. Starting the
+    //latter tears down what was there, which is why the segment is only remembered afterwards
+    var decoding = startFrameDecoder(streamInfo, data);
+    if (!decoding) {
+      startMediaSource(streamInfo);
+    }
     //kept so that recording can be started at any time, not only when a stream begins
     latestInitSegment = data.slice();
     updateRecordUi();
-  } else {
-    receivedSegments++;
-    statsSegments++;
-    if (recordState === RECORD_WAITING || recordState === RECORD_RUNNING) {
-      captureSegment(data);
+    if (!decoding) {
+      queueOperation({ type: "append", data: data });
+      pumpOperations();
     }
+    return;
   }
-  queueOperation({ type: "append", data: data });
-  pumpOperations();
+  receivedSegments++;
+  statsSegments++;
+  noteSegmentArrival(data);
+  if (recordState === RECORD_WAITING || recordState === RECORD_RUNNING) {
+    captureSegment(data);
+  }
+  if (usingFrameDecoder()) {
+    decodeSegment(data);
+  } else {
+    queueOperation({ type: "append", data: data });
+    pumpOperations();
+  }
+}
+
+/** The element the picture is in: the canvas while frames are decoded here, the video otherwise. */
+function pictureElement() {
+  return usingFrameDecoder() ? canvas : video;
+}
+
+function pictureWidth() {
+  return usingFrameDecoder() ? canvas.width : video.videoWidth;
+}
+
+function pictureHeight() {
+  return usingFrameDecoder() ? canvas.height : video.videoHeight;
 }
 
 function onDisconnected(code, reason) {
   closeSocket();
+  closeFrameDecoder();
   releaseMediaSource();
   //nothing can be controlled without a connection; the server re-announces control when we return
   setControlAvailable(false);
@@ -292,16 +478,27 @@ function updateStats() {
   }
 
   var parts = [];
-  if (video.videoWidth) {
-    parts.push(video.videoWidth + "×" + video.videoHeight);
+  if (pictureWidth()) {
+    parts.push(pictureWidth() + "×" + pictureHeight());
   } else if (streamInfo) {
     parts.push(streamInfo.width + "×" + streamInfo.height);
   }
+  if (streamStatus && streamStatus.requested === "auto" && streamStatus.quality) {
+    //on auto the menu says nothing about where it currently stands
+    parts.push(streamStatus.quality);
+  }
   parts.push(Math.round(statsSegments * 1000 / elapsed) + " fps");
   parts.push(formatBitrate(statsBytes * 8 * 1000 / elapsed));
-  if (video.buffered.length) {
+  if (usingFrameDecoder()) {
+    //there is no reserve of video to be behind in; what can pile up is undecoded frames
+    parts.push("direct" + (frameDecoder.decodeQueueSize ? ", " + frameDecoder.decodeQueueSize +
+      " queued" : ""));
+  } else if (video.buffered.length) {
     var behind = video.buffered.end(video.buffered.length - 1) - video.currentTime;
-    parts.push(Math.max(0, Math.round(behind * 1000)) + " ms behind");
+    //the target next to it is what tells "the link is uneven, so this is deliberate" apart from
+    //"playback has fallen behind"
+    parts.push(Math.max(0, Math.round(behind * 1000)) + " ms behind (target " +
+      Math.round(targetLatency * 1000) + ")");
   }
 
   statsWindowStart = now;
