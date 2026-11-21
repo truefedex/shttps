@@ -49,7 +49,8 @@ public class RenameFileRequestHandler extends BaseFileRequestHandler {
         if (newName.contains(File.separator)) {
             return StandardResponses.FORBIDDEN("Illegal name");
         }
-        if (checkIsForbidden(user, destPath, RENAME_OPERATION, Map.of(
+        //a renamed folder takes its whole subtree along, rules inside it included
+        if (checkIsSubtreeForbidden(user, destPath, RENAME_OPERATION, Map.of(
                 "name", newName
                 ), User.FileSystemRights.CREATE,
                 User.FileSystemRights.DELETE,
@@ -62,8 +63,16 @@ public class RenameFileRequestHandler extends BaseFileRequestHandler {
         }
         String newPath = Utils.joinPaths(parentPath, newName);
         String lockTokenProvided = extractLockTokenFromIf(request.headers.get("if"));
-        if (!locks.mayWrite(destPath, lockTokenProvided) || !locks.mayWrite(newPath, lockTokenProvided)) {
+        //a rename moves the whole subtree, so a lock on anything inside it has to agree too
+        if (!locks.mayRemove(destPath, lockTokenProvided) || !locks.mayWrite(newPath, lockTokenProvided)) {
             return new Response(423, "Locked");
+        }
+
+        //File.renameTo replaces an existing file on Linux and Android: renaming "a.txt" to
+        //"b.txt" silently destroyed b.txt, with no right on b.txt checked at all. A rename never
+        //overwrites; moving over a file is what /api/file/move is for
+        if (nameIsTakenBySomethingElse(destFile, newName)) {
+            return StandardResponses.CONFLICT();
         }
 
         if (destFile.renameTo(newName)) {
@@ -71,5 +80,23 @@ public class RenameFileRequestHandler extends BaseFileRequestHandler {
         } else {
             return StandardResponses.INTERNAL_SERVER_ERROR();
         }
+    }
+
+    /**
+     * Whether a sibling other than {@code file} itself is called exactly {@code newName}. Exact
+     * names from the listing, not {@code findFile}: on a case-insensitive volume findFile("a.txt")
+     * finds "A.txt" itself, so changing only the case would be refused, while on Linux "A.txt"
+     * and "a.txt" are two files and the second must not be overwritten.
+     */
+    static boolean nameIsTakenBySomethingElse(DocumentFile file, String newName) {
+        if (newName.equals(file.getName())) return false;
+        DocumentFile parent = file.getParentFile();
+        if (parent == null) return false;
+        DocumentFile[] siblings = parent.listFiles();
+        if (siblings == null) return false;
+        for (DocumentFile sibling : siblings) {
+            if (newName.equals(sibling.getName())) return true;
+        }
+        return false;
     }
 }

@@ -4,6 +4,7 @@ import com.phlox.server.platform.Base64;
 import com.phlox.server.request.Request;
 import com.phlox.server.request.RequestContext;
 import com.phlox.simpleserver.auth.AuthManager;
+import com.phlox.simpleserver.auth.GuestUserCache;
 import com.phlox.simpleserver.auth.User;
 import com.phlox.simpleserver.auth.UserRightsEvaluator;
 import com.phlox.simpleserver.auth.UserStore;
@@ -23,12 +24,22 @@ public class BasicAuthManager implements AuthManager {
     
     private volatile long lastAttemptTime = 0;
     private final UserStore userStore;
-    private final User guestUser;
     private final AtomicLong failedAttempts = new AtomicLong(0);
 
+    private final GuestUserCache guestCache;
+
     public BasicAuthManager(UserStore userStore) {
+        this(userStore, new GuestUserCache(userStore));
+    }
+
+    public BasicAuthManager(UserStore userStore, GuestUserCache guestCache) {
         this.userStore = userStore;
-        this.guestUser = userStore.find(User.GUEST_IDENTITY);
+        this.guestCache = guestCache;
+    }
+
+    /** A guest added or removed since the server started becomes visible within the cache's TTL. */
+    private @Nullable User guestUser() {
+        return guestCache.get();
     }
 
     @Override
@@ -46,6 +57,7 @@ public class BasicAuthManager implements AuthManager {
     public User authenticate(RequestContext context, Request request) {
         String authorization = request.headers.get(Request.HEADER_AUTHORIZATION);
         if (authorization == null || !authorization.toLowerCase().startsWith("basic")) {
+            User guestUser = guestUser();
             if (guestUser != null) {
                 context.data.put(CONTEXT_KEY_BASIC_AUTH_USER, guestUser);
                 return guestUser;
@@ -63,7 +75,8 @@ public class BasicAuthManager implements AuthManager {
             //prevent brute force attacks: double the backoff time each time
             long backoffTime = Math.min(INITIAL_BACKOFF_MS * (1L << (failedAttempts.get() - 1)), MAX_BACKOFF_MS);
             if (timeSinceLastAttempt < backoffTime) {
-                throw new AuthenticationException("Too many failed attempts. Please try again later.");
+                throw new AuthenticationException("Too many failed attempts. Please try again later.",
+                        backoffTime - timeSinceLastAttempt);
             }
         }
 

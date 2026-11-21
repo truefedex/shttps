@@ -53,7 +53,7 @@ public class UserRightsEvaluator {
         }
     }
 
-    private @Nullable DBAccessRule findMatchingDBAccessRule(@NotNull DatabaseOperations db, @NotNull User user, String subject, String operation) {
+    private @Nullable DBAccessRule findMatchingDBAccessRule(@NotNull DatabaseOperations db, @NotNull User user, String subject, String operation) throws Exception {
         //try to find specific rule for this user role and subject+operation
         //if not found for specific subject, try to find for wildcard subject '*'
         try (TableData data = db.query("SELECT * FROM " + DBAccessRule.DB_ACCESS_RULES_TABLE_NAME +
@@ -65,28 +65,63 @@ public class UserRightsEvaluator {
             } else {
                 return null;
             }
-        } catch (Exception e) {
-            logger.stackTrace(e);
-            return null;
         }
     }
 
-    private @Nullable FSAccessRule findMatchingFSAccessRule(@NotNull DatabaseOperations db, @NotNull User user, String subject, String operation) {
-        //Try to find specific rule for this user role and subject+operation
-        //As incoming subject is file or directory path and rule subject is always directory so we can use LIKE operator for matching
-        //If found several matching rules, the most specific (longest) rule will be used
+    /**
+     * Collapses a filesystem subject the same way {@code DocumentFileUtils.findChildByPath} walks
+     * it: backslashes become slashes, and empty segments and {@code "."} disappear. {@code ".."} is
+     * left in place, so a path the file lookup will reject cannot be rewritten into a rule that
+     * covers a different file.
+     */
+    public static @NotNull String normalizeFsPath(@Nullable String path) {
+        if (path == null || path.isEmpty()) return "/";
+        StringBuilder normalized = new StringBuilder();
+        for (String part : path.replace('\\', '/').split("/")) {
+            if (part.isEmpty() || ".".equals(part)) continue;
+            normalized.append('/').append(part);
+        }
+        return normalized.length() == 0 ? "/" : normalized.toString();
+    }
+
+    /**
+     * Whether a stored rule subject covers {@code path}. Both sides are normalized first.
+     * A subject matches itself and its descendants, and nothing that merely shares a string
+     * prefix ({@code /secret} does not cover {@code /secrets}). {@code _} and {@code %} in the
+     * subject are literal characters. Comparison is case-insensitive, which is what the previous
+     * SQL {@code LIKE} did for ASCII and what a Windows volume does for the file itself.
+     * The root subject {@code /} covers every path.
+     */
+    public static boolean fsSubjectCovers(@Nullable String subject, @Nullable String path) {
+        String rule = normalizeFsPath(subject);
+        String target = normalizeFsPath(path);
+        if ("/".equals(rule)) return true;
+        if (rule.equalsIgnoreCase(target)) return true;
+        return target.length() > rule.length()
+                && target.charAt(rule.length()) == '/'
+                && target.regionMatches(true, 0, rule, 0, rule.length());
+    }
+
+    private @Nullable FSAccessRule findMatchingFSAccessRule(@NotNull DatabaseOperations db, @NotNull User user, String subject, String operation) throws Exception {
+        //Every rule for this role and operation, then the longest subject that actually covers the
+        //path. Doing the match here, rather than with "LIKE subject || '%'", keeps "_" and "%"
+        //literal and requires a path-segment boundary after the subject.
+        String normalized = normalizeFsPath(subject);
         try (TableData data = db.query("SELECT * FROM " + FSAccessRule.FS_ACCESS_RULES_TABLE_NAME +
-                        " WHERE role_name=? AND ? LIKE subject || '%' AND operation=? " +
-                        " ORDER BY LENGTH(subject) DESC LIMIT 1",
-                new Object[]{user.role, subject, operation}, false)) {
-            if (data.next()) {
-                return FSAccessRule.deserialize(data.currentRowToJsonObject());
-            } else {
-                return null;
+                        " WHERE role_name=? AND operation=?",
+                new Object[]{user.role, operation}, false)) {
+            FSAccessRule best = null;
+            int bestLength = -1;
+            while (data.next()) {
+                FSAccessRule rule = FSAccessRule.deserialize(data.currentRowToJsonObject());
+                if (rule == null || !fsSubjectCovers(rule.subject, normalized)) continue;
+                int length = normalizeFsPath(rule.subject).length();
+                if (length > bestLength) {
+                    best = rule;
+                    bestLength = length;
+                }
             }
-        } catch (Exception e) {
-            logger.stackTrace(e);
-            return null;
+            return best;
         }
     }
 
@@ -164,7 +199,15 @@ public class UserRightsEvaluator {
                                              User.DBRights... requestedRights) {
         //first we trying to find specific rule for this user role because it has higher priority
         if (checkRules) {
-            DBAccessRule rule = findMatchingDBAccessRule(db, user, subject, operation);
+            DBAccessRule rule;
+            try {
+                rule = findMatchingDBAccessRule(db, user, subject, operation);
+            } catch (Exception e) {
+                //a failed lookup must not fall through to the role bitmask: that turns a deny
+                //the query could not read into an allow
+                logger.stackTrace(e);
+                return false;
+            }
             if (rule != null) {
                 if (rule.expression != null && !rule.expression.isEmpty()) {
                     //evaluate expression
@@ -187,19 +230,69 @@ public class UserRightsEvaluator {
         return dbRights.containsAll(List.of(requestedRights));
     }
 
+    /**
+     * Paths strictly inside {@code subject} that a rule for {@code operation} denies to this
+     * user's role, normalized. Empty when rules are not in use.
+     * <p>
+     * Rules are set on folders and match their whole subtree, and every other check asks about the
+     * one path an operation names. An operation that works on a whole tree - deleting, moving,
+     * renaming or copying a folder, zipping it, searching in it - therefore never consulted a deny
+     * rule placed on a folder further down, and a subfolder kept from a user was deleted, copied
+     * somewhere readable or zipped through its parent. One query covers the whole subtree.
+     * <p>
+     * A rule with an expression is evaluated with its own subject. A lookup that fails throws, so
+     * that the caller refuses rather than allows.
+     */
+    public @NotNull List<String> findDeniedDescendants(@NotNull User user, boolean checkRules,
+                                                       @NotNull String subject, @NotNull String operation,
+                                                       @Nullable Map<String, Object> operationParams) throws Exception {
+        Database db = dbHolder.get();
+        if (!checkRules || db == null || user.role == null) return new ArrayList<>();
+        String normalized = normalizeFsPath(subject);
+        return db.runTransaction(db1 -> {
+            List<String> denied = new ArrayList<>();
+            try (TableData data = db1.query("SELECT * FROM " + FSAccessRule.FS_ACCESS_RULES_TABLE_NAME +
+                            " WHERE role_name=? AND operation=?",
+                    new Object[]{user.role, operation}, false)) {
+                while (data.next()) {
+                    FSAccessRule rule = FSAccessRule.deserialize(data.currentRowToJsonObject());
+                    if (rule == null) continue;
+                    String ruleSubject = normalizeFsPath(rule.subject);
+                    if (ruleSubject.equalsIgnoreCase(normalized) || !fsSubjectCovers(normalized, ruleSubject)) {
+                        continue;//not strictly inside: the ordinary check already decided it
+                    }
+                    boolean allowed = rule.expression != null && !rule.expression.isEmpty()
+                            ? evaluateRuleExpression(rule.expression, db1, user, ruleSubject, operation, operationParams)
+                            : rule.allow;
+                    if (!allowed) denied.add(ruleSubject);
+                }
+            }
+            return denied;
+        });
+    }
+
     public boolean checkIsFileOperationAllowed(@NotNull User user, boolean checkRules, @NotNull String subject,
                          @NotNull String operation, @Nullable Map<String, Object> operationParams,
                          User.FileSystemRights... requestedRights) throws Exception {
         //first we trying to find specific rule for this user role because it has higher priority
         Database db = dbHolder.get();
         if (db != null) {
+            String normalizedSubject = normalizeFsPath(subject);
             return db.runTransaction(db1 -> {
                 if (checkRules) {
-                    FSAccessRule rule = findMatchingFSAccessRule(db1, user, subject, operation);
+                    FSAccessRule rule;
+                    try {
+                        rule = findMatchingFSAccessRule(db1, user, normalizedSubject, operation);
+                    } catch (Exception e) {
+                        //a failed lookup must not fall through to the role bitmask: that turns a
+                        //deny the query could not read into an allow
+                        logger.stackTrace(e);
+                        return false;
+                    }
                     if (rule != null) {
                         if (rule.expression != null && !rule.expression.isEmpty()) {
                             //evaluate expression
-                            return evaluateRuleExpression(rule.expression, db1, user, subject, operation, operationParams);
+                            return evaluateRuleExpression(rule.expression, db1, user, normalizedSubject, operation, operationParams);
                         } else {
                             return rule.allow;
                         }

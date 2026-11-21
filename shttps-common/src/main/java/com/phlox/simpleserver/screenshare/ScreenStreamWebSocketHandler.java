@@ -15,12 +15,17 @@ import com.phlox.simpleserver.remotecontrol.RemoteInputTarget;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.ArrayDeque;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -115,6 +120,19 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
     /** Set when the person at the device let this client watch but not control. */
     private static final String ATTRIBUTE_VIEW_ONLY = "screenViewOnly";
     private static final String ATTRIBUTE_STATE = "screenConnectionState";
+    /** This connection's say in what the stream carries; absent for a source with one fixed picture. */
+    private static final String ATTRIBUTE_VIEWER = "screenQualityViewer";
+    /** Query parameters of the handshake a page uses to say what it wants before the stream starts. */
+    private static final String PARAMETER_QUALITY = "quality";
+    private static final String PARAMETER_VIEWPORT_WIDTH = "vw";
+    private static final String PARAMETER_VIEWPORT_HEIGHT = "vh";
+    /** {@code cursor=1}: this page draws the mouse pointer itself and does not need it in the picture. */
+    private static final String PARAMETER_CURSOR = "cursor";
+    private static final String QUALITY_AUTO = "auto";
+    /** No window is larger than this; anything beyond is a client making numbers up. */
+    private static final int MAX_VIEWPORT = 16384;
+    /** How often a viewer on "auto" is considered for the next level up. */
+    private static final long QUALITY_TICK_MILLIS = 1000;
     /**
      * Frames a client may fall behind before its backlog is thrown away. Everything queued here is
      * delay the viewer will see, and on a live view stale frames are worth less than catching up:
@@ -146,6 +164,12 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
     private final Supplier<RemoteInputTarget> remoteInputTargetSupplier;
     private final @Nullable ScreenAccessApprover accessApprover;
     private final AccessGrants accessGrants = new AccessGrants();
+    private final ScreenStreamQualityController quality = new ScreenStreamQualityController();
+    /** Which pump serves which viewer, to tell each of them what the stream became. */
+    private final Map<ScreenStreamQualityController.Viewer, StreamPump> viewerPumps =
+            new ConcurrentHashMap<>();
+    /** Serialises settling on a profile and handing it to the source, so the last word wins. */
+    private final Object profileLock = new Object();
 
     /** Where answers are carried out. Package-private so tests can run them inline. */
     Executor decisionExecutor = task -> {
@@ -382,14 +406,18 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
             if (state.closed) {
                 return;
             }
-            pump = new StreamPump(session, source);
+            pump = new StreamPump(this, session, source);
             //publish and start before subscribing: an exception after the manager holds a reference
             //would leave the encoder running for a connection nobody will ever close
             session.getAttributes().put(ATTRIBUTE_PUMP, pump);
             pump.start();
+            //settled before subscribing, not after: a stream that restarts for this viewer the
+            //moment it has joined would open on one picture and immediately switch to another
+            registerViewer(session, pump, source);
             if (!source.addStreamListener(pump)) {
                 //the capture stopped between the check above and here
                 session.getAttributes().remove(ATTRIBUTE_PUMP);
+                unregisterViewer(session, false);
                 pump.shutdown();
                 session.close(WebSocketCloseCodes.POLICY_VIOLATION, "Screen sharing is not active");
                 return;
@@ -407,6 +435,184 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
         boolean controlAvailable = mayControl && target != null;
         sendControlStatus(pump, controlAvailable, controlAvailable ? REASON_OK :
                 (mayControl ? REASON_DISABLED : notAllowedReason(session)), target);
+    }
+
+    // --- stream quality ------------------------------------------------------------------------
+
+    /**
+     * Gives the connection its say in what the stream carries, read from the query of the
+     * handshake so that it is known before the first frame is produced.
+     * <p>
+     * A client that names no level at all gets {@link ScreenStreamQuality#LOW}: that is a page
+     * from before there was a choice, and it must go on receiving what it always did.
+     */
+    private void registerViewer(WebSocketSession session, StreamPump pump, ScreenCaptureSource source) {
+        if (!source.supportsStreamQuality()) {
+            return;
+        }
+        Request handshake = session.handshakeRequest;
+        String wanted = handshake.queryParams.get(PARAMETER_QUALITY);
+        ScreenStreamQuality requested = wanted == null ? ScreenStreamQuality.LOW
+                : ScreenStreamQuality.fromWireName(wanted);
+        int viewport = Math.max(parseViewport(handshake.queryParams.get(PARAMETER_VIEWPORT_WIDTH)),
+                parseViewport(handshake.queryParams.get(PARAMETER_VIEWPORT_HEIGHT)));
+        boolean overlaysCursor = "1".equals(handshake.queryParams.get(PARAMETER_CURSOR));
+        ScreenStreamQualityController.Viewer viewer = quality.register(source,
+                isLocalNetwork(session.getRemoteAddress()), requested, viewport, overlaysCursor,
+                clock.getAsLong());
+        pump.viewer = viewer;
+        viewerPumps.put(viewer, pump);
+        session.getAttributes().put(ATTRIBUTE_VIEWER, viewer);
+        applyProfile(source);
+    }
+
+    /**
+     * @param reconsider whether those still watching should be looked at again - they may have
+     *                   been held to the level of the one who just left
+     */
+    private void unregisterViewer(WebSocketSession session, boolean reconsider) {
+        ScreenStreamQualityController.Viewer viewer = (ScreenStreamQualityController.Viewer)
+                session.getAttributes().remove(ATTRIBUTE_VIEWER);
+        if (viewer == null) {
+            return;
+        }
+        viewerPumps.remove(viewer);
+        quality.unregister(viewer);
+        if (reconsider) {
+            applyProfileLater(viewer.source);
+        }
+    }
+
+    /**
+     * Works out what everyone watching this source can live with, hands it to the source and
+     * tells each viewer. Cheap when nothing changed: the source compares, and the status frame is
+     * not repeated.
+     */
+    private void applyProfile(ScreenCaptureSource source) {
+        synchronized (profileLock) {
+            ScreenStreamQuality ceiling = config == null
+                    ? ScreenStreamQuality.HIGH : config.getScreenShareMaxQuality();
+            ScreenStreamProfile profile = quality.profileFor(source, ceiling);
+            if (profile == null) {
+                //nobody is watching; whoever comes next brings their own answer
+                return;
+            }
+            if (!source.supportsCursorOverlay()) {
+                //it draws the pointer whatever it is told, so the profile must not claim otherwise:
+                //the page hides its own pointer handling on the strength of what is announced below
+                profile = profile.withCursorInPicture();
+            }
+            try {
+                source.setStreamProfile(profile);
+            } catch (Exception e) {
+                //a source that can not switch keeps serving what it has, which beats no picture
+                logger.stackTrace(e);
+                return;
+            }
+            for (ScreenStreamQualityController.Viewer viewer : quality.viewersOf(source)) {
+                StreamPump pump = viewerPumps.get(viewer);
+                if (pump != null) {
+                    pump.limitSendBuffer(profile.quality);
+                    pump.sendStreamStatus("{\"type\":\"stream\",\"requested\":\"" +
+                            quality.requestedName(viewer) + "\",\"quality\":\"" +
+                            profile.quality.wireName() + "\",\"max\":\"" + ceiling.wireName() +
+                            "\",\"dimension\":" + profile.maxDimension + ",\"cursor\":\"" +
+                            (profile.cursorInPicture ? "picture" : "overlay") + "\"}");
+                }
+            }
+        }
+    }
+
+    /**
+     * The same, from a thread that must not be held up: the ones delivering the stream, which a
+     * restarting source is about to stop.
+     */
+    private void applyProfileLater(ScreenCaptureSource source) {
+        TIMEOUTS.execute(() -> applyProfile(source));
+    }
+
+    /** {@code {"type":"stream","quality":"auto|low|medium|high","viewport":[w,h]}} from the page. */
+    private boolean handleStreamRequest(WebSocketSession session, String message) {
+        JSONObject json;
+        try {
+            json = new JSONObject(message);
+        } catch (Exception e) {
+            return false;
+        }
+        if (!"stream".equals(json.optString("type"))) {
+            return false;
+        }
+        ScreenStreamQualityController.Viewer viewer = (ScreenStreamQualityController.Viewer)
+                session.getAttributes().get(ATTRIBUTE_VIEWER);
+        if (viewer == null) {
+            //a source with one fixed picture, or a connection still waiting to be let in
+            return true;
+        }
+        String wanted = json.optString("quality", QUALITY_AUTO);
+        int viewport = 0;
+        JSONArray size = json.optJSONArray("viewport");
+        if (size != null && size.length() >= 2) {
+            viewport = clampViewport(Math.max(size.optInt(0, 0), size.optInt(1, 0)));
+        }
+        quality.request(viewer, ScreenStreamQuality.fromWireName(wanted), viewport, clock.getAsLong());
+        applyProfile(viewer.source);
+        return true;
+    }
+
+    void onPumpFellBehind(StreamPump pump) {
+        ScreenStreamQualityController.Viewer viewer = pump.viewer;
+        if (viewer != null && quality.onFellBehind(viewer, clock.getAsLong())) {
+            logger.i("Screen viewer " + pump.session.getRemoteAddress() +
+                    " keeps falling behind, lowering the stream quality");
+            applyProfileLater(viewer.source);
+        }
+    }
+
+    void onPumpTick(StreamPump pump) {
+        ScreenStreamQualityController.Viewer viewer = pump.viewer;
+        if (viewer != null && quality.onTick(viewer, clock.getAsLong())) {
+            applyProfileLater(viewer.source);
+        }
+    }
+
+    private static int parseViewport(@Nullable String value) {
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return clampViewport(Integer.parseInt(value.trim()));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private static int clampViewport(int value) {
+        return Math.max(0, Math.min(MAX_VIEWPORT, value));
+    }
+
+    /**
+     * Whether the client is on this machine or its own network, which is where a large picture at
+     * a high bit rate is a safe first guess. An address that can not be read is not.
+     */
+    static boolean isLocalNetwork(@Nullable String address) {
+        if (address == null || address.isEmpty()) {
+            return false;
+        }
+        //only literals: a name would send this off to a resolver, on a connection's own thread
+        if (!(address.indexOf(':') >= 0 || address.matches("[0-9.]+"))) {
+            return false;
+        }
+        try {
+            InetAddress parsed = InetAddress.getByName(address);
+            if (parsed.isLoopbackAddress() || parsed.isSiteLocalAddress() || parsed.isLinkLocalAddress()) {
+                return true;
+            }
+            byte[] raw = parsed.getAddress();
+            //fc00::/7, the IPv6 unique local range, which isSiteLocalAddress does not cover
+            return raw.length == 16 && (raw[0] & 0xFE) == 0xFC;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** Why a client that may not control was told so: its account, or the person at the device. */
@@ -436,6 +642,10 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
             if (pump != null) {
                 pump.source.requestKeyFrame();
             }
+            return;
+        }
+        //checked for cheaply first: this runs for every pointer move
+        if (message.contains("\"stream\"") && handleStreamRequest(session, message)) {
             return;
         }
         RemoteInputCommand command = RemoteInputCommand.parse(message);
@@ -699,6 +909,7 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
         if (pump != null) {
             pump.detach();
         }
+        unregisterViewer(session, true);
         //a client that disappears mid-stroke would otherwise leave a finger pressed on the device -
         //or, on a desktop, a Ctrl key held, which is enough to make the machine unusable - and lock
         //every other viewer out of control for good.
@@ -837,8 +1048,23 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
          * connection thread, which is where all the incoming messages are handled.
          */
         String lastControlStatus;
+        /** This connection's say in the stream's quality, null for a source with a fixed picture. */
+        volatile ScreenStreamQualityController.Viewer viewer;
+        final WebSocketSession session;
 
-        private final WebSocketSession session;
+        private final ScreenStreamWebSocketHandler owner;
+        /** Last stream status frame sent, to suppress repeats and to survive a new init. Guarded by the queue. */
+        private String lastStreamStatus;
+        /** Whether this client has been sent an init frame yet. Guarded by the queue. */
+        private boolean initQueued;
+        /**
+         * The newest pointer position not sent yet, and the last one that was. Kept apart from
+         * the queue: only the latest position is worth anything, so a newer one replaces an unsent
+         * older one instead of lining up behind it. Both guarded by the queue.
+         */
+        private String pendingCursor;
+        private String lastCursor;
+        private long lastQualityTick;
         private final Thread thread;
         //guards the queue and all the flags below
         private final ArrayDeque<Message> queue = new ArrayDeque<>();
@@ -847,7 +1073,9 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
         //set after dropping a backlog: segments before the next key frame are of no use anymore
         private boolean waitingForKeyFrame = false;
 
-        StreamPump(WebSocketSession session, ScreenCaptureSource source) {
+        StreamPump(ScreenStreamWebSocketHandler owner, WebSocketSession session,
+                   ScreenCaptureSource source) {
+            this.owner = owner;
             this.session = session;
             this.source = source;
             this.thread = new Thread(this, "ScreenStream-" + session.getRemoteAddress());
@@ -883,13 +1111,51 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
             }
         }
 
+        /**
+         * Tells the client what the stream carries now. Kept, because the init segment of a
+         * restarted stream clears the queue and this frame has to follow it again.
+         */
+        void sendStreamStatus(String status) {
+            synchronized (queue) {
+                if (!running || stopRequested || status.equals(lastStreamStatus)) {
+                    return;
+                }
+                lastStreamStatus = status;
+                if (!initQueued) {
+                    //settled before subscribing, so there is no picture yet for this to follow.
+                    //onInitSegment sends it; queueing it here as well would put it in front of
+                    //the init frame, or twice on the wire, depending on how the threads fall
+                    return;
+                }
+                queue.add(Message.text(status));
+                queue.notifyAll();
+            }
+        }
+
+        /**
+         * Keeps the kernel's send buffer small enough that a link falling behind shows up in this
+         * pump's queue, where it is noticed and acted on. Left to itself the system buffers
+         * hundreds of milliseconds of video before the first write ever blocks, and all of that
+         * is delay the viewer sits through before anything here knows the link is too slow.
+         * Sized to roughly a fifth of a second of the level's peak bit rate.
+         */
+        void limitSendBuffer(ScreenStreamQuality quality) {
+            int bytes = quality == ScreenStreamQuality.LOW ? 64 * 1024
+                    : quality == ScreenStreamQuality.MEDIUM ? 192 * 1024 : 512 * 1024;
+            try {
+                session.getSocket().setSendBufferSize(bytes);
+            } catch (Exception e) {
+                //a hint the system is free to ignore, and so are we when it refuses
+            }
+        }
+
         @Override
         public void run() {
             try {
                 while (true) {
                     Message message;
                     synchronized (queue) {
-                        while (running && !stopRequested && queue.isEmpty()) {
+                        while (running && !stopRequested && queue.isEmpty() && pendingCursor == null) {
                             queue.wait();
                         }
                         if (!running) {
@@ -898,7 +1164,15 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
                         if (stopRequested) {
                             break;
                         }
-                        message = queue.poll();
+                        if (pendingCursor != null) {
+                            //ahead of whatever video is waiting: it is a few bytes, and it is the
+                            //one thing here that is worth less with every millisecond
+                            lastCursor = pendingCursor;
+                            message = Message.text(pendingCursor);
+                            pendingCursor = null;
+                        } else {
+                            message = queue.poll();
+                        }
                     }
                     if (message.text != null) {
                         session.sendText(message.text);
@@ -934,11 +1208,15 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
                 if (!running) {
                     return;
                 }
-                //an init segment starts a new stream, anything still queued belongs to the old one
-                queue.clear();
+                //an init segment starts a new stream, anything still queued belongs to the old one.
+                //the control frame is not part of that stream: it tells the page which input this
+                //machine accepts, and lastControlStatus would suppress sending it again
                 waitingForKeyFrame = false;
-                queue.add(Message.text(info));
-                queue.add(Message.binary(initSegment, false));
+                queueInit(queue, info, initSegment, lastControlStatus);
+                initQueued = true;
+                if (lastStreamStatus != null) {
+                    queue.add(Message.text(lastStreamStatus));
+                }
                 queue.notifyAll();
             }
         }
@@ -976,6 +1254,35 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
                 if (needKeyFrame) {
                     source.requestKeyFrame();
                 }
+                owner.onPumpFellBehind(this);
+            } else if (viewer != null) {
+                //only ever called from the encoder thread, so the plain field is safe
+                long now = System.currentTimeMillis();
+                if (now - lastQualityTick >= QUALITY_TICK_MILLIS) {
+                    lastQualityTick = now;
+                    owner.onPumpTick(this);
+                }
+            }
+        }
+
+        @Override
+        public void onCursor(float x, float y, String shape, boolean visible) {
+            StringBuilder text = new StringBuilder(80);
+            text.append("{\"type\":\"cursor\",\"x\":").append(roundCoordinate(x))
+                    .append(",\"y\":").append(roundCoordinate(y))
+                    .append(",\"shape\":\"").append(safeShape(shape))
+                    .append("\",\"visible\":").append(visible).append('}');
+            String rendered = text.toString();
+            synchronized (queue) {
+                //nothing before the picture it belongs to; the source repeats itself soon enough
+                if (!running || stopRequested || !initQueued) {
+                    return;
+                }
+                if (rendered.equals(pendingCursor) || (pendingCursor == null && rendered.equals(lastCursor))) {
+                    return;
+                }
+                pendingCursor = rendered;
+                queue.notifyAll();
             }
         }
 
@@ -990,7 +1297,44 @@ public class ScreenStreamWebSocketHandler extends WebSocketRequestHandler {
         }
     }
 
-    private static final class Message {
+    /** Four decimals: a tenth of a pixel on the widest screen, and no exponent notation in the JSON. */
+    private static String roundCoordinate(float value) {
+        if (Float.isNaN(value) || Float.isInfinite(value)) {
+            return "0";
+        }
+        float clamped = Math.max(-10f, Math.min(10f, value));
+        return String.valueOf(Math.round(clamped * 10000f) / 10000.0);
+    }
+
+    /** The shape ends up in a page's style; nothing but a plain keyword is let through. */
+    private static String safeShape(String shape) {
+        if (shape == null || shape.isEmpty() || shape.length() > 32) {
+            return "default";
+        }
+        for (int i = 0; i < shape.length(); i++) {
+            char c = shape.charAt(i);
+            if (!((c >= 'a' && c <= 'z') || c == '-')) {
+                return "default";
+            }
+        }
+        return shape;
+    }
+
+    /**
+     * Drops whatever belonged to the previous stream and queues the new init. The last control
+     * frame goes back on the end, because clearing the queue is what would otherwise lose it
+     * while {@code lastControlStatus} still says it was already sent.
+     */
+    static void queueInit(ArrayDeque<Message> queue, String info, byte[] initSegment, String lastControlStatus) {
+        queue.clear();
+        queue.add(Message.text(info));
+        queue.add(Message.binary(initSegment, false));
+        if (lastControlStatus != null) {
+            queue.add(Message.text(lastControlStatus));
+        }
+    }
+
+    static final class Message {
         final String text;
         final byte[] binary;
         /** Media segments may be thrown away when a client falls behind, nothing else may. */

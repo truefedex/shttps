@@ -2,6 +2,7 @@ package com.phlox.server.request;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.phlox.server.utils.ScannerInputStream;
@@ -99,7 +100,8 @@ public class DefaultRequestBodyReaderTest {
         request.contentType = Request.CONTENT_TYPE_MULTIPART_FORM;
         request.boundary = boundary;
 
-        new DefaultRequestBodyReader().readRequestBody(request);
+        //a part cut off before its boundary is an error, not a short but finished part
+        assertThrows(BadRequestException.class, () -> new DefaultRequestBodyReader().readRequestBody(request));
 
         //parsing gives up at body EOF instead of consuming the next request's bytes
         assertTrue(request.bodyStream.isFullyConsumed());

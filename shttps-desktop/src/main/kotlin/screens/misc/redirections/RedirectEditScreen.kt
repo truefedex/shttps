@@ -39,6 +39,7 @@ import com.phlox.simpleserver.theme.SuccessGreen
 import com.phlox.simpleserver.shttps_desktop.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import com.phlox.server.handlers.router.middleware.impl.RedirectsMiddleware.RedirectRule
+import java.util.regex.PatternSyntaxException
 
 @Composable
 fun RedirectEditScreen(
@@ -48,6 +49,8 @@ fun RedirectEditScreen(
     onSave: (RedirectRule, Int) -> Unit
 ) {
     var fromPattern by remember { mutableStateOf(rule?.from ?: "") }
+    var patternError by remember { mutableStateOf<String?>(null) }
+    val invalidRegexFmt = stringResource(Res.string.regex_invalid)
     var toDestination by remember { mutableStateOf(rule?.to ?: "") }
     var httpCode by remember { mutableStateOf(rule?.code?.toString() ?: "302") }
     var comment by remember { mutableStateOf(rule?.comment ?: "") }
@@ -105,16 +108,26 @@ fun RedirectEditScreen(
                     // From Pattern Field
                     OutlinedTextField(
                         value = fromPattern,
-                        onValueChange = { fromPattern = it },
+                        onValueChange = {
+                            fromPattern = it
+                            patternError = null
+                        },
                         label = { Text(stringResource(Res.string.from_pattern_regex)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         placeholder = { Text(stringResource(Res.string.from_pattern_hint)) },
-                        isError = showValidationError && fromPattern.isEmpty()
+                        isError = patternError != null || (showValidationError && fromPattern.isEmpty())
                     )
                     if (showValidationError && fromPattern.isEmpty()) {
                         Text(
                             text = stringResource(Res.string.from_pattern_required),
+                            color = MaterialTheme.colors.error,
+                            style = MaterialTheme.typography.caption
+                        )
+                    }
+                    patternError?.let { error ->
+                        Text(
+                            text = error,
                             color = MaterialTheme.colors.error,
                             style = MaterialTheme.typography.caption
                         )
@@ -199,7 +212,12 @@ fun RedirectEditScreen(
                             onClick = {
                                 if (validateInput(fromPattern, toDestination, httpCode)) {
                                     val redirectCode = httpCode.toIntOrNull() ?: 302
-                                    val newRule = RedirectRule(fromPattern, toDestination, redirectCode, true, comment)
+                                    val newRule = try {
+                                        RedirectRule(fromPattern, toDestination, redirectCode, true, comment)
+                                    } catch (e: PatternSyntaxException) {
+                                        patternError = invalidRegexFmt.replace("%1\$s", e.description ?: "")
+                                        return@Button
+                                    }
                                     onSave(newRule, ruleIndex)
                                 } else {
                                     showValidationError = true

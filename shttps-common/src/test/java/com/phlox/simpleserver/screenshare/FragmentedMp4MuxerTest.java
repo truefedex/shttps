@@ -197,6 +197,74 @@ public class FragmentedMp4MuxerTest {
         assertEquals(20_000, sampleDuration(muxer.addFrame(frame(4, 32), 110_000L, false).data));
     }
 
+    @Test
+    public void immediateFramesAreNotHeldBack() {
+        FragmentedMp4Muxer muxer = new FragmentedMp4Muxer();
+        muxer.createInitSegment(SPS, PPS, WIDTH, HEIGHT);
+
+        byte[] frame1 = frame(1, 100);
+        FragmentedMp4Muxer.Segment first = muxer.addFrameImmediately(frame1, 5_000_000L, true, 100_000L);
+        assertNotNull(first, "the whole point is that the first frame comes straight back");
+        assertTrue(first.keyFrame);
+        assertEquals(5_000_000L, first.presentationTimeUs);
+        assertEquals(0, baseMediaDecodeTime(first.data), "the media timeline starts at zero");
+        assertEquals(frame1.length, Mp4BoxReader.sampleSize(first.data), "and it is this frame, not an earlier one");
+    }
+
+    /**
+     * Each frame is given the gap before it, because the gap after it is not known yet. What has to
+     * hold is that the timeline stays contiguous and tracks the capture clock: the declared
+     * durations must add up to the real elapsed time, give or take one frame.
+     */
+    @Test
+    public void immediateFramesKeepTheTimelineContiguousAndOnTheClock() {
+        FragmentedMp4Muxer muxer = new FragmentedMp4Muxer();
+        muxer.createInitSegment(SPS, PPS, WIDTH, HEIGHT);
+
+        long[] timestamps = {0L, 30_000L, 90_000L, 120_000L, 160_000L};
+        long expectedDecodeTime = 0;
+        long declared = 0;
+        for (int i = 0; i < timestamps.length; i++) {
+            FragmentedMp4Muxer.Segment segment =
+                    muxer.addFrameImmediately(frame(i, 64), timestamps[i], i == 0, 100_000L);
+            assertNotNull(segment);
+            assertEquals(i + 1, sequenceNumber(segment.data));
+            assertEquals(expectedDecodeTime, baseMediaDecodeTime(segment.data), "a gap in the timeline would stall MSE playback");
+            long duration = sampleDuration(segment.data);
+            if (i > 0) {
+                assertEquals(timestamps[i] - timestamps[i - 1], duration, "a frame is given the gap before it");
+            }
+            expectedDecodeTime += duration;
+            declared += duration;
+        }
+        long elapsed = timestamps[timestamps.length - 1] - timestamps[0];
+        //the first frame has no gap before it and gets the fallback, which is the one frame of slack
+        assertEquals(elapsed + sampleDurationOfFirstFrame(), declared);
+    }
+
+    private static long sampleDurationOfFirstFrame() {
+        FragmentedMp4Muxer muxer = new FragmentedMp4Muxer();
+        muxer.createInitSegment(SPS, PPS, WIDTH, HEIGHT);
+        return sampleDuration(muxer.addFrameImmediately(frame(0, 8), 0L, true, 0L).data);
+    }
+
+    /**
+     * A stall in capture must not be declared as one long sample: that would schedule everything
+     * after it into the future, and the viewer would be looking at a delayed screen from then on.
+     */
+    @Test
+    public void immediateFramesDoNotBelieveALongGap() {
+        FragmentedMp4Muxer muxer = new FragmentedMp4Muxer();
+        muxer.createInitSegment(SPS, PPS, WIDTH, HEIGHT);
+
+        muxer.addFrameImmediately(frame(1, 32), 0L, true, 100_000L);
+        assertEquals(33_000, sampleDuration(muxer.addFrameImmediately(frame(2, 32), 33_000L, false, 100_000L).data));
+        assertEquals(100_000, sampleDuration(muxer.addFrameImmediately(frame(3, 32), 2_033_000L, false, 100_000L).data), "two seconds of nothing are capped");
+        //and neither a repeated nor a backwards timestamp produces an empty or negative sample
+        assertEquals(100_000, sampleDuration(muxer.addFrameImmediately(frame(4, 32), 2_033_000L, false, 100_000L).data));
+        assertEquals(100_000, sampleDuration(muxer.addFrameImmediately(frame(5, 32), 2_000_000L, false, 100_000L).data));
+    }
+
     private static byte[] frame(int seed, int size) {
         byte[] frame = new byte[size];
         for (int i = 0; i < size; i++) {

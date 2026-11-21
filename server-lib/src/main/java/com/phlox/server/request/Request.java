@@ -28,6 +28,7 @@ public class Request {
     public static final String METHOD_UNLOCK = "UNLOCK";
 
     public static final String HEADER_IF_MODIFIED_SINCE = "if-modified-since";
+    public static final String HEADER_IF_NONE_MATCH = "if-none-match";
     public static final String HEADER_AUTHORIZATION = "authorization";
     public static final String HEADER_RANGE = "range";
     public static final String HEADER_CONTENT_TYPE = "content-type";

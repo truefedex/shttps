@@ -61,6 +61,10 @@ public class FragmentedMp4Muxer {
     private long pendingPresentationTimeUs;
     private boolean pendingKeyFrame;
 
+    /** Timestamp of the last frame that went through {@link #addFrameImmediately}. */
+    private long lastImmediatePresentationTimeUs;
+    private boolean hasImmediateFrame;
+
     private String codecString;
 
     /**
@@ -111,6 +115,44 @@ public class FragmentedMp4Muxer {
         pendingPresentationTimeUs = presentationTimeUs;
         pendingKeyFrame = keyFrame;
         return ready;
+    }
+
+    /**
+     * Turns a frame into its media segment at once, without holding it back for the next one.
+     * <p>
+     * {@link #addFrame} costs every frame one whole frame interval of delay, which on a live view
+     * that is being controlled remotely is felt directly. This variant declares as the frame's
+     * duration the gap to the frame <i>before</i> it, which is the only one known at this point.
+     * Each sample is therefore off by the difference between two neighbouring gaps, but the errors
+     * telescope: the declared durations add up to the real elapsed time minus one gap, so the media
+     * timeline stays contiguous - which is what MSE needs - and never drifts from the capture clock
+     * by more than a frame.
+     * <p>
+     * Meant for a pipeline that keeps producing frames at a steady rate while the screen is still.
+     * One that goes quiet should stay with {@link #addFrame} and {@link #flushPendingFrame}: there
+     * the gap before a frame says nothing about how long that frame will be on screen.
+     * <p>
+     * Not to be mixed with {@link #addFrame} on the same muxer.
+     *
+     * @param maxDurationUs upper bound for the declared duration. A duration that is too short only
+     *                      makes the player wait for the next frame with this one on screen; one
+     *                      that is too long pushes every following frame into the future and shows
+     *                      up as delay. So after a hiccup in capture the gap must not be believed.
+     */
+    public synchronized Segment addFrameImmediately(byte[] avccFrame, long presentationTimeUs,
+                                                    boolean keyFrame, long maxDurationUs) {
+        long durationUs = hasImmediateFrame
+                ? presentationTimeUs - lastImmediatePresentationTimeUs : lastSampleDurationUs;
+        if (durationUs <= 0) {
+            durationUs = lastSampleDurationUs;
+        }
+        if (maxDurationUs > 0 && durationUs > maxDurationUs) {
+            durationUs = maxDurationUs;
+        }
+        lastSampleDurationUs = durationUs;
+        hasImmediateFrame = true;
+        lastImmediatePresentationTimeUs = presentationTimeUs;
+        return buildMediaSegment(avccFrame, durationUs, keyFrame, presentationTimeUs);
     }
 
     /**

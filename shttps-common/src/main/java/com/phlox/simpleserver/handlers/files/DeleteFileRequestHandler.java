@@ -55,6 +55,10 @@ public class DeleteFileRequestHandler extends BaseFileRequestHandler {
         String lockTokenProvided = extractLockTokenFromIf(request.headers.get("if"));
         StorageQuota quota = new StorageQuota(user, userStore);
 
+        //the check above is on the folder the files sit in. Access rules are set per folder, so a
+        //subfolder denied to this user was deleted through its parent. Every item is checked on
+        //its own path too, all of them before the first one is removed
+        DocumentFile[] files = new DocumentFile[jArr.length()];
         for (int i = 0; i < jArr.length(); i++) {
             String name = jArr.getString(i);
             DocumentFile file = destFile.findFile(name);
@@ -62,12 +66,21 @@ public class DeleteFileRequestHandler extends BaseFileRequestHandler {
                 return StandardResponses.NOT_FOUND("Cannot find file: " + name);
             }
             String filePath = Utils.joinPaths(destPath, name);
-            if (!locks.mayWrite(filePath, lockTokenProvided)) {
+            if (checkIsSubtreeForbidden(user, filePath, DELETE_OPERATION, operationParams,
+                    User.FileSystemRights.DELETE)) {
+                return StandardResponses.FORBIDDEN();
+            }
+            if (!locks.mayRemove(filePath, lockTokenProvided)) {
                 return new Response(423, "Locked");
             }
+            files[i] = file;
+        }
+
+        for (int i = 0; i < files.length; i++) {
+            DocumentFile file = files[i];
             long fileSize = StorageQuota.sizeOf(file);
             if (!file.delete()) {
-                return StandardResponses.INTERNAL_SERVER_ERROR("Cannot delete file: " + name);
+                return StandardResponses.INTERNAL_SERVER_ERROR("Cannot delete file: " + file.getName());
             } else {
                 quota.addUsed(-fileSize);
             }

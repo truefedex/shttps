@@ -10,6 +10,7 @@ import com.phlox.simpleserver.SHTTPSApp;
 import com.phlox.simpleserver.SHTTPSConfig;
 import com.phlox.simpleserver.auth.AuthManager;
 import com.phlox.simpleserver.auth.User;
+import com.phlox.simpleserver.auth.UserRightsEvaluator;
 import com.phlox.simpleserver.auth.UserStore;
 import com.phlox.simpleserver.handlers.files.webdav.LockManager;
 import com.phlox.simpleserver.utils.DocumentFileUtils;
@@ -21,7 +22,10 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 public class FileListRequestHandler extends BaseFileRequestHandler {
@@ -34,6 +38,20 @@ public class FileListRequestHandler extends BaseFileRequestHandler {
     public static JSONArray prepareFileListJson(String path, String sort, String sortReversedParam,
                                                 String searchPattern,
                                                 User user, SHTTPSConfig config) throws JSONException {
+        return prepareFileListJson(path, sort, sortReversedParam, searchPattern, user, config,
+                Collections.emptyList());
+    }
+
+    /**
+     * @param deniedDirs folders under {@code path} whose contents this user may not list (see
+     *                   {@code UserRightsEvaluator.findDeniedDescendants}); a recursive search
+     *                   leaves out everything inside them. The folders themselves stay visible, as
+     *                   they are in their parent's listing
+     */
+    public static JSONArray prepareFileListJson(String path, String sort, String sortReversedParam,
+                                                String searchPattern,
+                                                User user, SHTTPSConfig config,
+                                                List<String> deniedDirs) throws JSONException {
         if (sort == null) {
             sort = "default";
         }
@@ -46,6 +64,15 @@ public class FileListRequestHandler extends BaseFileRequestHandler {
         if (searchPattern != null && !searchPattern.isEmpty()) {
             ArrayList<DocumentFile> searchResults = DocumentFileUtils.searchRecursive(
                     destFile, searchPattern, 0);
+            if (!deniedDirs.isEmpty()) {
+                for (Iterator<DocumentFile> it = searchResults.iterator(); it.hasNext(); ) {
+                    String relative = destFile.getRelativePath(it.next());
+                    //a result whose place cannot be told is left out rather than shown
+                    if (relative == null || isInsideAny(deniedDirs, Utils.joinPaths(path, relative))) {
+                        it.remove();
+                    }
+                }
+            }
             files = new DocumentFile[searchResults.size()];
             searchResults.toArray(files);
         } else {
@@ -169,6 +196,16 @@ public class FileListRequestHandler extends BaseFileRequestHandler {
         return json;
     }
 
+    private static boolean isInsideAny(List<String> dirs, String path) {
+        String normalized = UserRightsEvaluator.normalizeFsPath(path);
+        for (String dir : dirs) {
+            if (!dir.equalsIgnoreCase(normalized) && UserRightsEvaluator.fsSubjectCovers(dir, normalized)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public Response handleRequest(RequestContext context, Request request) throws Exception {
         if (!request.method.equals(Request.METHOD_GET)) {
@@ -192,7 +229,12 @@ public class FileListRequestHandler extends BaseFileRequestHandler {
         ), User.FileSystemRights.LIST_CONTENTS))
             return StandardResponses.FORBIDDEN();
 
-        JSONArray json = prepareFileListJson(path, sort, sortReversedParam, searchPattern, user, config);
+        //a recursive search reads folders below this one, and a rule may keep some of them closed
+        List<String> deniedDirs = searchPattern != null && !searchPattern.isEmpty()
+                ? deniedDescendants(user, path, LIST_CONTENTS_OPERATION, null)
+                : Collections.emptyList();
+        JSONArray json = prepareFileListJson(path, sort, sortReversedParam, searchPattern, user, config,
+                deniedDirs);
 
         if (json == null) {
             return StandardResponses.NOT_FOUND();
