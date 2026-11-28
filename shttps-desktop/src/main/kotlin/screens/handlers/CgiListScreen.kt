@@ -47,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phlox.simpleserver.exec.CgiType
+import com.phlox.simpleserver.dialogs.MessageDialog
+import com.phlox.simpleserver.dialogs.MessageDialogData
 import com.phlox.simpleserver.shttps_desktop.generated.resources.*
 import io.github.vinceglb.filekit.FileKit
 import io.github.vinceglb.filekit.absolutePath
@@ -66,6 +68,18 @@ fun CgiListScreen(
     val scope = rememberCoroutineScope()
     
     var urlPathPrefixText by remember { mutableStateOf(uiState.cgiPathPrefix ?: "") }
+
+    //hoisted out of the picker coroutine, where stringResource cannot be called
+    val notAllowedFolderMsg = stringResource(Res.string.folder_not_allowed_app_storage)
+    val errorTitle = stringResource(Res.string.error)
+    var folderRefusedMessage by remember { mutableStateOf<String?>(null) }
+    folderRefusedMessage?.let { message ->
+        MessageDialog(MessageDialogData(
+            title = errorTitle,
+            message = message,
+            onDismiss = { folderRefusedMessage = null }
+        ))
+    }
     
     // Update text field when state changes
     LaunchedEffect(uiState.cgiPathPrefix) {
@@ -124,8 +138,11 @@ fun CgiListScreen(
                     } else {
                         scope.launch {
                             val directory = FileKit.openDirectoryPicker()
-                            if (directory != null) {
-                                viewModel.updateCgiFolder(directory.absolutePath())
+                            if (directory != null &&
+                                !viewModel.updateCgiFolder(directory.absolutePath())
+                            ) {
+                                //the folder holds the app's own data - see ServedFolderGuard
+                                folderRefusedMessage = notAllowedFolderMsg
                             }
                         }
                     }

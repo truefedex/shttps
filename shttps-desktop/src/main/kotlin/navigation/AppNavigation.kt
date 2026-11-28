@@ -58,6 +58,9 @@ import com.phlox.simpleserver.exec.CgiType
 import io.github.vinceglb.autolaunch.AutoLaunch
 import androidx.compose.runtime.State
 import kotlinx.coroutines.flow.MutableSharedFlow
+import com.phlox.simpleserver.screens.profiles.ProfilesScreen
+import com.phlox.simpleserver.screens.profiles.ProfilesViewModel
+import com.phlox.simpleserver.profiles.ConfigProfiles
 import java.io.File
 
 @Composable
@@ -65,8 +68,12 @@ fun AppNavigationGraph(
     navController: NavHostController,
     appScope: ApplicationScope,
     window: ComposeWindow,
+    //only to build HomeViewModel; everything else reads homeViewModel.config, which follows a
+    //config profile switch
     config: AppConfig,
     appSettingsDir: File,
+    //null when an explicit config path was given on the command line
+    profiles: ConfigProfiles?,
     onHideAppToTrayValueChange: () -> Unit,
     mainWindowEvents: MutableSharedFlow<MainWindowEvents>,
     serverRunning: MutableState<Boolean>,
@@ -78,7 +85,7 @@ fun AppNavigationGraph(
 ) {
     val homeViewModel: HomeViewModel = viewModel { HomeViewModel(
         appScope, config, appSettingsDir, mainWindowEvents, serverRunning, autoLaunch,
-        approvalController, screenAccessController
+        approvalController, screenAccessController, profiles
     ) }
     val redirectionsListViewModel: RedirectionsListViewModel = viewModel { RedirectionsListViewModel() }
     val corsRulesListViewModel: CORSRulesListViewModel = viewModel { CORSRulesListViewModel() }
@@ -121,15 +128,54 @@ fun AppNavigationGraph(
                 },
                 onNavigateToChannelsList = {
                     navController.navigate(ChannelsListScreenRoute)
+                },
+                onNavigateToProfiles = profiles?.let {
+                    { navController.navigate(ProfilesRoute) }
                 }
             )
+        }
+
+        composable<ProfilesRoute> {
+            //unreachable without a registry: the menu entry that leads here is left out entirely
+            //when an explicit config path was given
+            val registry = profiles
+            if (registry != null) {
+                val profilesViewModel: ProfilesViewModel = viewModel {
+                    ProfilesViewModel(registry)
+                }
+                ProfilesScreen(
+                    viewModel = profilesViewModel,
+                    onNavigateBack = {
+                        //a rename or a new profile changes the home screen's label without any
+                        //switch having happened
+                        homeViewModel.refreshActiveProfileName()
+                        navController.popBackStack()
+                    },
+                    onSwitch = { profileId, onResult ->
+                        //HomeViewModel owns the live SHTTPSApp, so the switch happens there. Only
+                        //the home screen is left on the stack afterwards, so no screen is holding
+                        //the config of the profile that was just replaced.
+                        homeViewModel.switchProfile(profileId) { error ->
+                            if (error == null) {
+                                //these three are hoisted here and survive the switch, so they
+                                //still hold the rules they read from the previous profile - and
+                                //an edit would then write that list into the new one
+                                redirectionsListViewModel.reload()
+                                corsRulesListViewModel.reload()
+                                headersOverridesViewModel.reload()
+                            }
+                            onResult(error)
+                        }
+                    }
+                )
+            }
         }
 
         composable<ChannelsListScreenRoute> {
             val channelsListViewModel: ChannelsListViewModel = viewModel {
                 //the predefined channels and the idle sweep are built when the server starts, so a
                 //change to any of these settings needs it restarted
-                ChannelsListViewModel(config) { homeViewModel.restartServerIfRunning() }
+                ChannelsListViewModel(homeViewModel.config) { homeViewModel.restartServerIfRunning() }
             }
             ChannelsListScreen(
                 viewModel = channelsListViewModel,
@@ -148,7 +194,7 @@ fun AppNavigationGraph(
 
             val channelDetailsViewModel: ChannelDetailsViewModel = viewModel {
                 ChannelDetailsViewModel(
-                    config = config,
+                    config = homeViewModel.config,
                     channelId = route.channelId
                 ) { homeViewModel.restartServerIfRunning() }
             }
@@ -168,7 +214,7 @@ fun AppNavigationGraph(
         }
         
         composable<CgiListScreenRoute> {
-            val cgiListViewModel: CgiListViewModel = viewModel { CgiListViewModel(config) }
+            val cgiListViewModel: CgiListViewModel = viewModel { CgiListViewModel(homeViewModel.config, profiles) }
             CgiListScreen(
                 viewModel = cgiListViewModel,
                 onNavigateBack = {
@@ -203,7 +249,7 @@ fun AppNavigationGraph(
             
             val cgiTypeDetailsViewModel: CgiTypeDetailsViewModel = viewModel {
                 CgiTypeDetailsViewModel(
-                    config = config,
+                    config = homeViewModel.config,
                     initialIndex = if (route.cgiTypeIndex >= 0) route.cgiTypeIndex else null,
                     initialCgiType = cgiType
                 )
@@ -306,7 +352,7 @@ fun AppNavigationGraph(
         
         composable<VersionInfoRoute> {
             VersionInfoScreen(
-                config = config,
+                config = homeViewModel.config,
                 onNavigateBack = {
                     navController.popBackStack()
                 },
@@ -420,7 +466,7 @@ fun AppNavigationGraph(
                 onNavigateToRoles = {
                     navController.navigate(RolesListRoute)
                 },
-                config = config,
+                config = homeViewModel.config,
                 shttpsApp = homeViewModel.getSHTTPSApp()
             )
         }
@@ -439,7 +485,7 @@ fun AppNavigationGraph(
                     onNavigateToRoles = {
                         navController.navigate(RolesListRoute)
                     },
-                    config = config,
+                    config = homeViewModel.config,
                     shttpsApp = shttpsApp,
                     user = user
                 )
@@ -459,7 +505,7 @@ fun AppNavigationGraph(
                     )
                     navController.navigate(route)
                 },
-                config = config,
+                config = homeViewModel.config,
                 shttpsApp = homeViewModel.getSHTTPSApp()
             )
         }
@@ -512,7 +558,7 @@ fun AppNavigationGraph(
                         val route = RulesListRoute(ruleType = ruleType, roleName = roleName)
                         navController.navigate(route)
                     },
-                    config = config,
+                    config = homeViewModel.config,
                     shttpsApp = shttpsApp,
                     role = role
                 )
@@ -567,7 +613,7 @@ fun AppNavigationGraph(
                 },
                 ruleType = route.ruleType,
                 roleName = route.roleName,
-                config = config,
+                config = homeViewModel.config,
                 shttpsApp = shttpsApp
             )
         }
@@ -586,7 +632,7 @@ fun AppNavigationGraph(
                 operation = route.operation,
                 allow = route.allow,
                 expression = route.expression,
-                config = config,
+                config = homeViewModel.config,
                 shttpsApp = shttpsApp
             )
         }

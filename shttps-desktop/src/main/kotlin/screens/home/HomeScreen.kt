@@ -48,13 +48,16 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.TextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.CopyAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.primarySurface
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -187,6 +190,9 @@ fun HomeScreen(
     onNavigateToAuthDetails: () -> Unit,
     onNavigateToCgiList: () -> Unit,
     onNavigateToChannelsList: () -> Unit,
+    //null when the app was started with an explicit config path: there is nothing to switch
+    //between then, so the menu entry is left out entirely
+    onNavigateToProfiles: (() -> Unit)?,
     window: ComposeWindow,
     onHideAppToTrayValueChange: () -> Unit,
     //whether the main window is actually on screen right now. The update prompt waits for it -
@@ -410,13 +416,22 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = stringResource(Res.string.app_title),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colors.onBackground,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                    Column(modifier = Modifier.padding(bottom = 8.dp)) {
+                        Text(
+                            text = stringResource(Res.string.app_title),
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colors.onBackground
+                        )
+                        //only while more than one profile exists - see HomeState.activeProfileName
+                        uiState.activeProfileName?.let { name ->
+                            Text(
+                                text = stringResource(Res.string.active_profile_fmt, name),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
 
                     var expanded by remember { mutableStateOf(false) }
                     
@@ -460,6 +475,16 @@ fun HomeScreen(
                                 }
                             ) {
                                 Text(stringResource(Res.string.menu_import))
+                            }
+                            if (onNavigateToProfiles != null) {
+                                DropdownMenuItem(
+                                    onClick = {
+                                        expanded = false
+                                        onNavigateToProfiles()
+                                    }
+                                ) {
+                                    Text(stringResource(Res.string.menu_config_profiles))
+                                }
                             }
                             DropdownMenuItem(
                                 onClick = {
@@ -711,6 +736,12 @@ fun HomeScreen(
                             modifier = Modifier.weight(0.5f),
                             onClick = { viewModel.toggleServer() },
                         ) {
+                            Icon(
+                                imageVector = if (uiState.serverRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(ButtonDefaults.IconSize)
+                            )
+                            Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                             Text(if (uiState.serverRunning) stringResource(Res.string.stop) else stringResource(Res.string.start))
                         }
 
@@ -720,6 +751,12 @@ fun HomeScreen(
                             modifier = Modifier.weight(0.5f),
                             onClick = { onNavigateToLogs() },
                         ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Article,
+                                contentDescription = null,
+                                modifier = Modifier.size(ButtonDefaults.IconSize)
+                            )
+                            Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                             Text(stringResource(Res.string.logs))
                         }
                     }

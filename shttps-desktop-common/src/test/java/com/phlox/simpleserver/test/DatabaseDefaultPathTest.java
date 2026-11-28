@@ -91,6 +91,28 @@ public class DatabaseDefaultPathTest {
         }
     }
 
+    /**
+     * Two configs in two directories, which is what a config profile is: each one has to get its
+     * own database file. Two profiles landing on one SQLite file would share one WAL and one users
+     * table, and this config-relative default is the whole reason they do not.
+     */
+    @Test
+    void twoConfigsInSubdirectoriesGetTheirOwnDatabases(@TempDir Path tempDir) throws Exception {
+        Path first = Files.createDirectories(tempDir.resolve("profiles/pa"));
+        Path second = Files.createDirectories(tempDir.resolve("profiles/pb"));
+
+        SHTTPSConfigImpl configA = configWithDatabaseEnabled(first);
+        assertDatabaseOpenedNextToConfig(configA, first);
+        String pathA = app.getDatabase().getPath();
+        SHTTPSApp.destroy();
+        app = null;
+
+        SHTTPSConfigImpl configB = configWithDatabaseEnabled(second);
+        assertDatabaseOpenedNextToConfig(configB, second);
+
+        assertNotEquals(pathA, app.getDatabase().getPath());
+    }
+
     private SHTTPSConfigImpl configWithDatabaseEnabled(Path tempDir) throws Exception {
         SHTTPSConfigImpl config = new SHTTPSConfigImpl(tempDir.resolve("config.json").toFile());
         //set before SHTTPSApp.init(), or it would fall back to the real ~/.shttps/www

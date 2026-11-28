@@ -17,9 +17,23 @@ class RedirectionsListViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(RedirectionsListState())
     val uiState: StateFlow<RedirectionsListState> = _uiState.asStateFlow()
 
-    private val config: SHTTPSConfig = SHTTPSApp.getInstance().config
+    //Resolved on every use, not captured once: this view model is hoisted to the navigation
+    //graph and outlives a config profile switch, which replaces the SHTTPSApp underneath it.
+    private val config: SHTTPSConfig get() = SHTTPSApp.getInstance().config
 
     init {
+        reload()
+    }
+
+    /**
+     * Re-reads everything from the live config.
+     *
+     * Needed because this view model is hoisted to the navigation graph and survives a config
+     * profile switch: the lazy [config] getter sends writes to the new profile, so without this
+     * the screen would show the previous profile's rules and then write that list into the new
+     * one. Called from the switch in `AppNavigationGraph`.
+     */
+    fun reload() {
         loadRedirectRules()
         loadRedirectToIndex()
     }

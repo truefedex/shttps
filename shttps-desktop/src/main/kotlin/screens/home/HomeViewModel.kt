@@ -9,6 +9,8 @@ import com.phlox.server.handlers.router.Router
 import com.phlox.server.database.DatabaseFabricImpl
 import com.phlox.server.utils.HTTPUtils.parseHttpHeaders
 import com.phlox.server.utils.PlatformUtilsImpl
+import com.phlox.simpleserver.profiles.ConfigProfiles
+import com.phlox.simpleserver.profiles.DesktopStorageLayout
 import com.phlox.server.utils.SHTTPSLoggerProxy
 import com.phlox.server.utils.docfile.DocumentFile
 import com.phlox.simpleserver.AppConfig
@@ -43,6 +45,8 @@ import com.phlox.simpleserver.shttps_desktop.generated.resources.failed_to_creat
 import com.phlox.simpleserver.shttps_desktop.generated.resources.failed_to_create_directory
 import com.phlox.simpleserver.shttps_desktop.generated.resources.failed_to_disable_autostart
 import com.phlox.simpleserver.shttps_desktop.generated.resources.failed_to_enable_autostart
+import com.phlox.simpleserver.shttps_desktop.generated.resources.failed_to_switch_profile
+import com.phlox.simpleserver.shttps_desktop.generated.resources.folder_not_allowed_app_storage
 import com.phlox.simpleserver.shttps_desktop.generated.resources.failed_to_load_tls_certificate
 import com.phlox.simpleserver.shttps_desktop.generated.resources.failed_to_open_database
 import com.phlox.simpleserver.shttps_desktop.generated.resources.failed_to_start_server
@@ -139,6 +143,11 @@ data class HomeState(
     //set when the startup update check found a newer release than this build, and the user has
     //neither skipped that version nor dismissed the prompt yet
     val availableUpdate: LatestRelease? = null,
+    /**
+     * Name of the config profile being served, or null while there is only one - switching is
+     * otherwise invisible, and a single profile install should look exactly as it did.
+     */
+    val activeProfileName: String? = null,
 )
 
 class HomeViewModel(
@@ -149,14 +158,23 @@ class HomeViewModel(
     val serverRunning: MutableState<Boolean>,
     val autoLaunch: AutoLaunch,
     val approvalController: ClientApprovalController,
-    val screenAccessController: ScreenAccessApprovalController
+    val screenAccessController: ScreenAccessApprovalController,
+    //null when the app was started with an explicit config path: that mode is one file by
+    //definition, so there is nothing to switch between and no manager to offer
+    val profiles: ConfigProfiles? = null,
 ): ViewModel(), SHTTPSApp.Callback {
     private val logger = SHTTPSLoggerProxy.getLogger("HomeViewModel")
     private val _uiState = MutableStateFlow(HomeState())
     val uiState: StateFlow<HomeState> = _uiState.asStateFlow()
     private var shttpsApp: SHTTPSApp
-    private val configPath = appSettingsDir.absolutePath + File.separator + "config.json"
-    private val newDatabasesPath = appSettingsDir.absolutePath + File.separator + "databases"
+    /**
+     * Where a database created from this screen goes: the active profile's own folder, so that two
+     * profiles never end up sharing one SQLite file, one WAL and one users table. For the profile
+     * that came before profiles this is the `~/.shttps/databases` it always was.
+     */
+    private val newDatabasesPath: String
+        get() = (profiles?.activeDatabasesDir()
+            ?: File(appSettingsDir, DesktopStorageLayout.DATABASES_DIR_NAME)).absolutePath
 
     /**
      * The screen capture implementation this build ships, or null if it ships none - which is the
@@ -183,7 +201,9 @@ class HomeViewModel(
 
     init {
         val platformUtils: SHTTPSPlatformUtils = PlatformUtilsImpl()
-        val databaseFabric = DatabaseFabricImpl()
+        //the fabric decides where an imported database lands, so it gets the live profile's
+        //folder rather than a path fixed for the whole process
+        val databaseFabric = DatabaseFabricImpl(File(newDatabasesPath))
         shttpsApp = SHTTPSApp.init(config, platformUtils, databaseFabric)
         shttpsApp.serverVersionInfo = SHTTPSApp.ServerVersionInfo(
             "SHTTPS Desktop",
@@ -195,6 +215,7 @@ class HomeViewModel(
         approvalController.onWhiteListPersisted = { refreshWhiteListFromConfig() }
         _uiState.value = _uiState.value.copy(
             serverRunning = shttpsApp.isServerRunning,
+            activeProfileName = activeProfileNameOrNull(),
             usableNetworkInterfaces = getUsableNetworkInterfaces(),
             port = config.port,
             rootDirectory = config.rootDir,
@@ -374,6 +395,97 @@ class HomeViewModel(
         }
     }
 
+
+    /**
+     * Makes another config profile the one being served.
+     *
+     * The order matters at both ends. The new [AppConfig] is built and validated *before* anything
+     * is torn down, because a hand-edited config file throws and an exception after
+     * [SHTTPSApp.destroy] would leave every later `getInstance()` crashing with no config at all.
+     * And the active id is recorded only once the switch has gone through, so a profile that fails
+     * to open is not the one the next launch tries.
+     *
+     * The capture and input providers are shut down on the way: both cache a source or a target
+     * built from the config they first saw, so without this the new profile would stream with the
+     * previous one's monitor and quality settings.
+     *
+     * @param onResult called on the main dispatcher with null on success or a message to show
+     */
+    fun switchProfile(profileId: String, onResult: (String?) -> Unit) {
+        val registry = profiles
+        if (registry == null) {
+            onResult("Config profiles are not available for an explicitly given config file")
+            return
+        }
+        val profile = registry.byId(profileId)
+        if (profile == null) {
+            onResult("No such profile: $profileId")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val newConfig = try {
+                registry.openConfig(profile)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                val message = getString(
+                    Res.string.failed_to_switch_profile, e.message ?: e::class.java.simpleName)
+                withContext(Dispatchers.Main) { onResult(message) }
+                return@launch
+            }
+
+            approvalController.detach()
+            screenCaptureProvider?.shutdown()
+            remoteInputProvider?.shutdown()
+            if (shttpsApp.isServerRunning) shttpsApp.stopServer()
+            shttpsApp.callback = null
+            SHTTPSApp.destroy()
+
+            config = newConfig
+            //newDatabasesPath follows the registry, which is updated below, so the directory is
+            //resolved from the profile being switched to
+            shttpsApp = SHTTPSApp.init(
+                newConfig,
+                PlatformUtilsImpl(),
+                DatabaseFabricImpl(registry.databasesDir(profileId)))
+            shttpsApp.serverVersionInfo = SHTTPSApp.ServerVersionInfo(
+                "SHTTPS Desktop",
+                BuildConfig.VERSION_NAME,
+            )
+            shttpsApp.setShutdownTimeout(newConfig.shutdownTimeout)
+            shttpsApp.callback = this@HomeViewModel
+            approvalController.attach(shttpsApp, viewModelScope)
+            //detach() clears this, so it has to be set again rather than relying on the init block
+            approvalController.onWhiteListPersisted = { refreshWhiteListFromConfig() }
+            try {
+                newConfig.runMigrations()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            shttpsApp.initIO()
+
+            registry.setActiveProfile(profileId)
+            serverRunning.value = false
+            reloadUiStateFromConfig()
+            withContext(Dispatchers.Main) { onResult(null) }
+        }
+    }
+
+
+    /**
+     * Re-reads the name shown on the home screen. A rename or a new profile changes it - and
+     * whether it is shown at all - without any switch having happened.
+     */
+    fun refreshActiveProfileName() {
+        _uiState.value = _uiState.value.copy(activeProfileName = activeProfileNameOrNull())
+    }
+
+    /** See [HomeState.activeProfileName]. */
+    private fun activeProfileNameOrNull(): String? {
+        val registry = profiles ?: return null
+        if (registry.count <= 1) return null
+        return registry.active().name
+    }
+
     override fun onCleared() {
         super.onCleared()
         approvalController.detach()
@@ -522,6 +634,7 @@ class HomeViewModel(
         val current = _uiState.value
         _uiState.value = current.copy(
             serverRunning = shttpsApp.isServerRunning,
+            activeProfileName = activeProfileNameOrNull(),
             port = config.port,
             rootDirectory = config.rootDir,
             renderFolderContent = config.renderFolders,
@@ -555,6 +668,9 @@ class HomeViewModel(
             rateLimiterTrustToIPHeaders = config.getRateLimiterTrustToIPHeaders(),
             whiteListMode = config.getWhiteListMode(),
             whiteList = config.getWhiteList(),
+            //a per-profile server setting, unlike the app-level ones around it, so it has to be
+            //re-read here - a switch or an import would otherwise leave the old value on screen
+            shutdownTimeout = config.shutdownTimeout,
         )
         updateDisplayedIpAddressAndUrl()
     }
@@ -661,7 +777,18 @@ class HomeViewModel(
     }
 
     fun updateRootDirectory(directory: PlatformFile) {
-        config.setRootDir(directory.absolutePath())
+        val path = directory.absolutePath()
+        //The profile layout only holds while no profile directory sits inside the served root, and
+        //the user picks this folder freely - so it is checked here. See ServedFolderGuard.
+        if (profiles?.isFolderAllowedToServe(File(path)) == false) {
+            viewModelScope.launch {
+                showMessageDialog(
+                    getString(Res.string.error),
+                    getString(Res.string.folder_not_allowed_app_storage))
+            }
+            return
+        }
+        config.setRootDir(path)
         _uiState.value = _uiState.value.copy(rootDirectory = config.rootDir)
     }
 

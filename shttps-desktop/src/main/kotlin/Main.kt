@@ -8,10 +8,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import androidx.navigation.compose.rememberNavController
@@ -29,17 +33,23 @@ import com.phlox.simpleserver.shttps_desktop.generated.resources.stop_server
 import com.phlox.simpleserver.shttps_desktop.generated.resources.tray
 import com.phlox.simpleserver.shttps_desktop.generated.resources.window_icon
 import com.phlox.simpleserver.theme.AppTheme
+import com.phlox.simpleserver.tray.trayAnchoredWindowPosition
 import dev.nucleusframework.composenativetray.tray.api.Tray
-import dev.nucleusframework.composenativetray.trayapp.getTrayWindowPosition
 import dev.nucleusframework.core.runtime.SingleInstanceManager
 import io.github.vinceglb.autolaunch.AutoLaunch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import java.awt.GraphicsEnvironment
+import com.phlox.simpleserver.profiles.ConfigProfiles
+import com.phlox.simpleserver.profiles.DesktopStorageLayout
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import kotlin.math.roundToInt
 
 /**
  * Emitted by the [SingleInstanceManager] watcher thread when another launch of this app (with the
@@ -54,9 +64,41 @@ private val restoreRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
  */
 private val trayToggleRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
-//the same numbers as the window size, in the AWT logical units that getTrayWindowPosition() expects
-private const val WINDOW_WIDTH_DP = 500
-private const val WINDOW_HEIGHT_DP = 580
+//The smallest remembered size the main window will be restored at, in AWT logical units. Only a
+//floor against a hand-edited or truncated config - the window itself stays freely resizable (there
+//is no minimumSize), and a size the user dragged to is honoured as it is as long as it clears this.
+private const val MIN_WINDOW_WIDTH_DP = 360
+private const val MIN_WINDOW_HEIGHT_DP = 400
+
+//How long the window has to sit still before its new size is written to the config. Every setter of
+//SHTTPSConfigImpl rewrites the whole file, so saving on each resize event would mean one write per
+//frame of a drag. The cost is that a resize less than this before quitting is lost.
+private const val WINDOW_SIZE_SAVE_DELAY_MS = 500L
+
+/**
+ * The size the main window opens at: what the user left it at last time, or [AppConfig]'s default
+ * on a first run.
+ *
+ * Clamped to the screen, because the usual way a remembered size breaks is a laptop that was last
+ * used with a larger external monitor - the window would come back taller than the built-in screen
+ * with its title bar above the top edge, where it cannot be grabbed. The position is deliberately
+ * not remembered, so the window lands on the primary screen, which is the one maximumWindowBounds
+ * describes. Both it and [androidx.compose.ui.window.WindowState.size] are in AWT logical units, so
+ * there is nothing to convert between them.
+ */
+private fun initialWindowSize(config: AppConfig): DpSize {
+    val screen = runCatching {
+        GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
+    }.getOrNull()
+    //coerceIn throws if the ceiling ends up under the floor, which a screen smaller than the
+    //minimum would do
+    val maxWidth = (screen?.width ?: Int.MAX_VALUE).coerceAtLeast(MIN_WINDOW_WIDTH_DP)
+    val maxHeight = (screen?.height ?: Int.MAX_VALUE).coerceAtLeast(MIN_WINDOW_HEIGHT_DP)
+    return DpSize(
+        config.windowWidth.coerceIn(MIN_WINDOW_WIDTH_DP, maxWidth).dp,
+        config.windowHeight.coerceIn(MIN_WINDOW_HEIGHT_DP, maxHeight).dp
+    )
+}
 
 fun main(args: Array<String>) {
     SHTTPSLoggerProxy.setFactory { tag: String? ->
@@ -69,28 +111,77 @@ fun main(args: Array<String>) {
     val logger = SHTTPSLoggerProxy.getLogger("Main")
 
     val appSettingsDir = File(System.getProperty("user.home") + File.separator + ".shttps")
-    val configPath = if (args.isEmpty()) {
-        appSettingsDir.absolutePath + File.separator + "config.json"
-    } else {
-        args[0]
-    }
     if (!appSettingsDir.exists() && !appSettingsDir.mkdirs()) {
         logger.e("Can't create directory " + appSettingsDir.absolutePath)
         return
-    } else {
-        if (!acquireSingleInstanceLock(configPath, appSettingsDir, logger)) {
-            return
-        }
-
-        val config = try {
-            AppConfig(File(configPath))
-        } catch (_: Exception) {
-            logger.e("Can't create config file at $configPath")
-            return
-        }
-
-        AppNavigation(config, appSettingsDir)
     }
+
+    //An explicit config path still means what it always did: this one file, no profile management.
+    val explicitConfigPath = args.firstOrNull()
+    val legacyConfigFile =
+        DesktopStorageLayout.configFile(appSettingsDir, DesktopStorageLayout.MAIN_PROFILE_ID)
+
+    //The lock is keyed on the *legacy* config path whichever profile is active, not on the active
+    //profile's own. Keying it on the active one would mean that after a switch a second launch
+    //computes a different, unheld identifier - and then two processes rewrite one config file,
+    //which SHTTPSConfigImpl does in full on every setter. The constant is also exactly what
+    //versions before profiles compute, so an old instance and a new one still exclude each other.
+    //
+    //Must happen before any config file is opened, so the instance that loses the race never
+    //touches one.
+    val lockKeyPath = explicitConfigPath ?: legacyConfigFile.absolutePath
+    if (!acquireSingleInstanceLock(lockKeyPath, appSettingsDir, logger)) {
+        return
+    }
+
+    if (explicitConfigPath != null) {
+        val explicitConfigFile = File(explicitConfigPath).absoluteFile
+        val explicitDir = explicitConfigFile.parentFile ?: File(".").absoluteFile
+        //Its own app.json beside its config rather than the shared ~/.shttps/app.json.
+        //DesktopAppState rewrites the whole file from an in-memory snapshot, so sharing it with
+        //the default instance would let this one's window resize erase a profile the other had
+        //created meanwhile. Globals are imported from this config, since that is where they used
+        //to live for this instance. Databases go beside this config too, for the same reason
+        //SHTTPSConfigImpl.getDefaultDatabasePath() puts them there.
+        //Said out loud because this mode silently removes a feature: there is no profile manager
+        //in the menu, and nothing on screen explains why. A run configuration that was set up
+        //before profiles existed still passes a path, and then the entry is simply missing.
+        logger.i("Started with an explicit config path ($explicitConfigPath), so config profiles " +
+                "are off: this mode serves exactly that one file. Launch without an argument to " +
+                "manage profiles.")
+        val explicitState = DesktopAppState(File(explicitDir, DesktopAppState.FILE_NAME))
+        explicitState.importLegacyGlobalsOnce(explicitConfigFile)
+        val config = try {
+            AppConfig(explicitConfigFile, explicitState)
+        } catch (_: Exception) {
+            logger.e("Can't create config file at $explicitConfigPath")
+            return
+        }
+        AppNavigation(config, explicitDir, profiles = null)
+        return
+    }
+
+    val appState = DesktopAppState(File(appSettingsDir, DesktopAppState.FILE_NAME))
+    appState.importLegacyGlobalsOnce(legacyConfigFile)
+
+    val profiles = ConfigProfiles(appSettingsDir, appState)
+    //A hand-edited config throws here. Falling back to the legacy profile rather than returning,
+    //because returning would leave the app unlaunchable with no UI to fix it from.
+    val config = try {
+        profiles.openActiveConfig()
+    } catch (e: Exception) {
+        logger.e("Can't open the config of profile ${profiles.activeProfileId}, " +
+                "falling back to the default one", e)
+        profiles.setActiveProfile(DesktopStorageLayout.MAIN_PROFILE_ID)
+        try {
+            profiles.openActiveConfig()
+        } catch (_: Exception) {
+            logger.e("Can't open ${legacyConfigFile.absolutePath} either")
+            return
+        }
+    }
+
+    AppNavigation(config, appSettingsDir, profiles)
 }
 
 /**
@@ -153,9 +244,13 @@ private fun acquireSingleInstanceLock(
     return true
 }
 
-fun AppNavigation(config: AppConfig, appSettingsDir: File) {
+fun AppNavigation(
+    config: AppConfig,
+    appSettingsDir: File,
+    profiles: ConfigProfiles?,
+) {
     application {
-        AppContent(this, config, appSettingsDir)
+        AppContent(this, config, appSettingsDir, profiles)
     }
 }
 
@@ -164,12 +259,19 @@ sealed class MainWindowEvents {
 }
 
 @Composable
-fun ApplicationScope.AppContent(appScope: ApplicationScope, config: AppConfig, appSettingsDir: File) {
+fun ApplicationScope.AppContent(
+    appScope: ApplicationScope,
+    config: AppConfig,
+    appSettingsDir: File,
+    //null when an explicit config path was given on the command line: that mode is one file by
+    //definition, so there is nothing to switch between
+    profiles: ConfigProfiles?,
+) {
     val navController = rememberNavController()
 
     val autoLaunch = remember { AutoLaunch(appPackageName = "com.phlox.simpleserver") }
 
-    val windowState = rememberWindowState(width = WINDOW_WIDTH_DP.dp, height = WINDOW_HEIGHT_DP.dp)
+    val windowState = rememberWindowState(size = remember { initialWindowSize(config) })
 
     val closeToTray = remember { mutableStateOf(config.closeToTray) }
 
@@ -193,8 +295,30 @@ fun ApplicationScope.AppContent(appScope: ApplicationScope, config: AppConfig, a
     val serverRunning = remember { mutableStateOf(config.runningState) }
     //lives here rather than in HomeViewModel so that the prompts it drives can be shown while the
     //main window is hidden in the tray - which is where a running server normally sits
-    val approvalController = remember { ClientApprovalController(config) }
+    val approvalController = remember { ClientApprovalController() }
     val screenAccessController = remember { ScreenAccessApprovalController() }
+
+    //Remember the size the user leaves the window at. The placement and minimized flags are read
+    //again *after* the wait rather than filtered upstream: the size arrives from AWT's
+    //componentResized, which on maximizing can land before placement flips to Maximized, and on
+    //Windows a minimize reports the tiny iconic size - either would otherwise be saved as the
+    //window's own size. collectLatest restarts the wait on every emission, which is what debounces
+    //the drag without needing the @FlowPreview debounce() operator.
+    LaunchedEffect(windowState) {
+        snapshotFlow { Triple(windowState.size, windowState.placement, windowState.isMinimized) }
+            .collectLatest {
+                delay(WINDOW_SIZE_SAVE_DELAY_MS)
+                val size = windowState.size
+                if (windowState.placement == WindowPlacement.Floating &&
+                    !windowState.isMinimized && size.isSpecified
+                ) {
+                    config.setWindowSize(
+                        size.width.value.roundToInt(),
+                        size.height.value.roundToInt()
+                    )
+                }
+            }
+    }
 
     //someone launched the app again while we were already running (typically from a shortcut, while
     //we sit hidden in the tray). The request arrives on the SingleInstanceManager watcher thread,
@@ -214,9 +338,14 @@ fun ApplicationScope.AppContent(appScope: ApplicationScope, config: AppConfig, a
                 //show the window next to the tray icon instead of wherever it was left. Only for
                 //this path: showing it any other way (the single instance restore, for example)
                 //must not drag it away from where the user put it.
-                //The library refreshes the icon position on this very click before calling us,
-                //so what we read here is up to date.
-                windowState.position = getTrayWindowPosition(WINDOW_WIDTH_DP, WINDOW_HEIGHT_DP)
+                //Where the anchor comes from differs per platform - Linux records this very click
+                //before calling us, Windows polled the notification area at startup (see
+                //trayIconPoint). A null answer means it is not known at all, and then leaving the
+                //window where the user last had it beats guessing.
+                trayAnchoredWindowPosition(
+                    windowState.size.width.value.roundToInt(),
+                    windowState.size.height.value.roundToInt()
+                )?.let { windowState.position = it }
                 windowState.isMinimized = false
                 isVisible.value = true
             }
@@ -259,6 +388,7 @@ fun ApplicationScope.AppContent(appScope: ApplicationScope, config: AppConfig, a
                     window = this@Window.window,
                     config = config,
                     appSettingsDir = appSettingsDir,
+                    profiles = profiles,
                     onHideAppToTrayValueChange = {
                         if (config.closeToTray != closeToTray.value) {
                             closeToTray.value = config.closeToTray

@@ -11,12 +11,33 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 
 public class DatabaseFabricAndroid implements SHTTPSDatabaseFabric {
+    /** Where databases go when the caller names no directory of its own. */
+    public static final String DEFAULT_DATABASES_DIR_NAME = "databases";
+
     private final Context context;
     private final SHTTPSPlatformUtils platformUtils;
+    private final File databasesDir;
 
+    /**
+     * Puts imported databases in {@code filesDir/databases}, which is where this class always put
+     * them. An app that keeps several server configurations needs the directory of whichever one
+     * is live and should use {@link #DatabaseFabricAndroid(Context, SHTTPSPlatformUtils, File)}
+     * instead - two configurations sharing one SQLite file would share one users table with it.
+     */
     public DatabaseFabricAndroid(Context context, SHTTPSPlatformUtils platformUtils) {
+        this(context, platformUtils, new File(context.getFilesDir(), DEFAULT_DATABASES_DIR_NAME));
+    }
+
+    /**
+     * @param databasesDir where {@link #importDatabase(InputStream)} puts the file it creates.
+     *                     {@link SHTTPSDatabaseFabric#importDatabase(InputStream)} takes no target
+     *                     path, so the fabric is the only place that can be told.
+     */
+    public DatabaseFabricAndroid(Context context, SHTTPSPlatformUtils platformUtils,
+                                 File databasesDir) {
         this.context = context;
         this.platformUtils = platformUtils;
+        this.databasesDir = databasesDir;
     }
 
     @Override
@@ -34,19 +55,18 @@ public class DatabaseFabricAndroid implements SHTTPSDatabaseFabric {
 
     @Override
     public Database importDatabase(InputStream inputStream) {
-        File databaseDirectory = new File(context.getFilesDir(), "databases");
-        if (!databaseDirectory.exists()) {
-            databaseDirectory.mkdirs();
+        if (!databasesDir.exists()) {
+            databasesDir.mkdirs();
         }
         String uniqueDatabaseName = "database" + System.currentTimeMillis() + ".db";
-        File databaseFile = new File(databaseDirectory, uniqueDatabaseName);
+        File databaseFile = new File(databasesDir, uniqueDatabaseName);
         try (FileOutputStream fileOutputStream = new FileOutputStream(databaseFile); inputStream) {
             Utils.copyStream(inputStream, fileOutputStream);
         } catch (Exception e) {
             e.printStackTrace();
         }
 
-        return new DatabaseAndroid(context, databaseDirectory, uniqueDatabaseName);
+        return new DatabaseAndroid(context, databasesDir, uniqueDatabaseName);
     }
 
     @Override

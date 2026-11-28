@@ -37,11 +37,14 @@ import com.phlox.simpleserver.shttps_desktop.generated.resources.screen_access_v
 import com.phlox.simpleserver.shttps_desktop.generated.resources.screen_access_view_control
 import com.phlox.simpleserver.shttps_desktop.generated.resources.view_only
 import com.phlox.simpleserver.theme.AppTheme
-import dev.nucleusframework.composenativetray.trayapp.getTrayWindowPosition
+import com.phlox.simpleserver.tray.trayAnchoredWindowPosition
+import com.phlox.simpleserver.tray.trayLessCornerOnDefaultScreen
+import com.phlox.simpleserver.tray.workAreaCentreYOnDefaultScreen
 import org.jetbrains.compose.resources.stringResource
 import java.awt.Toolkit
 
-//in the AWT logical units that getTrayWindowPosition() expects, like the main window size in Main.kt
+//in the AWT logical units that trayAnchoredWindowPosition() expects. Fixed, unlike the main window,
+//whose size the user can change and which remembers it in AppConfig
 private const val PROMPT_WIDTH = 340
 private const val PROMPT_HEIGHT = 230
 private const val PROMPT_GAP = 8
@@ -266,15 +269,21 @@ private fun AllowDenyRow(onAllow: () -> Unit, onDeny: () -> Unit) {
 }
 
 /**
- * Places prompt number [slot] near the tray icon, falling back to the bottom right corner of the
- * screen when the tray position can not be determined (no tray icon, unsupported desktop).
- * Stacking goes away from the edge the first prompt landed on, so prompts never walk off screen.
+ * Places prompt number [slot] near the tray icon, falling back to the end of the taskbar when the
+ * icon's position is not known. Stacking goes away from the edge the first prompt landed on, so
+ * prompts never walk off screen.
+ *
+ * That fallback is a real path, not a theoretical one: a prompt is raised by a client connecting, and
+ * on a server that started with the system nobody has clicked the tray icon - which on Linux is the
+ * only thing that records an anchor. Both it and the stacking work off the *work area* rather than
+ * the full screen; using the screen size put the Allow/Deny row under the taskbar.
  */
 private fun promptPosition(slot: Int): WindowPosition {
     val screenSize = Toolkit.getDefaultToolkit().screenSize
-    val base = runCatching { getTrayWindowPosition(PROMPT_WIDTH, PROMPT_HEIGHT) }
-        .getOrNull() as? WindowPosition.Absolute
+    val base = trayAnchoredWindowPosition(PROMPT_WIDTH, PROMPT_HEIGHT)
+        ?: trayLessCornerOnDefaultScreen(PROMPT_WIDTH, PROMPT_HEIGHT, SCREEN_MARGIN)
         ?: WindowPosition.Absolute(
+            //headless, which a running UI is not - here so the expression has an answer at all
             x = (screenSize.width - PROMPT_WIDTH - SCREEN_MARGIN).dp,
             y = (screenSize.height - PROMPT_HEIGHT - SCREEN_MARGIN).dp
         )
@@ -282,7 +291,7 @@ private fun promptPosition(slot: Int): WindowPosition {
     val step = slot * (PROMPT_HEIGHT + PROMPT_GAP)
     //a tray at the top of the screen (a macOS menu bar, a top panel) puts the first prompt there,
     //and the stack has to grow downwards instead
-    val growsDown = base.y.value < screenSize.height / 2f
+    val growsDown = base.y.value < (workAreaCentreYOnDefaultScreen() ?: (screenSize.height / 2f))
     return WindowPosition.Absolute(
         x = base.x,
         y = (base.y.value + if (growsDown) step else -step).dp
