@@ -52,13 +52,19 @@ public class Main implements Callable<Integer> {
 
         System.out.println("Loading config from " + configPath);
         File configFile = new File(configPath);
-        File parent = configFile.getParentFile();
+        //absolute first: a bare relative --config has no parent, and this line used to NPE on it
+        //- the very case SHTTPSConfigImpl.getDefaultDatabasePath() was written to survive
+        File parent = configFile.getAbsoluteFile().getParentFile();
+        if (parent == null) parent = new File(".");
         if (!parent.exists() && !parent.mkdirs()) {
             System.err.println("Can't create directory " + parent.getAbsolutePath());
             return 1;
         }
         SHTTPSConfigImpl config = new SHTTPSConfigImpl(configFile);
-        DatabaseFabricImpl databaseFabric = new DatabaseFabricImpl();
+        //next to the config file, for the same reason SHTTPSConfigImpl.getDefaultDatabasePath()
+        //is: two servers started from two configs must not end up sharing one SQLite file
+        DatabaseFabricImpl databaseFabric = new DatabaseFabricImpl(
+                new File(parent, DatabaseFabricImpl.DEFAULT_DATABASES_DIR_NAME));
 
         startServer(config, platformUtils, databaseFabric);
         return 0;

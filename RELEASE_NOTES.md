@@ -1,2 +1,1 @@
-* Remote screen control optimizations
-* Bug fixes
+* Config profiles: The ability to create multiple configs and switch between them

@@ -16,9 +16,19 @@ class HeadersOverridesViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(HeadersOverridesState())
     val uiState: StateFlow<HeadersOverridesState> = _uiState.asStateFlow()
 
-    private val config: SHTTPSConfig = SHTTPSApp.getInstance().config
+    //Resolved on every use, not captured once: this view model is hoisted to the navigation
+    //graph and outlives a config profile switch, which replaces the SHTTPSApp underneath it.
+    private val config: SHTTPSConfig get() = SHTTPSApp.getInstance().config
 
     init {
+        reload()
+    }
+
+    /**
+     * Re-reads the rules from the live config. See `RedirectionsListViewModel.reload` for why a
+     * hoisted view model needs this after a config profile switch.
+     */
+    fun reload() {
         load()
     }
 

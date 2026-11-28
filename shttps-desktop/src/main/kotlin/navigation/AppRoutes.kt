@@ -34,6 +34,9 @@ data class CORSEditRoute(
 )
 
 @Serializable
+data object ProfilesRoute
+
+@Serializable
 data object VersionInfoRoute
 
 @Serializable

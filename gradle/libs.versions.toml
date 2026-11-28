@@ -1,5 +1,5 @@
 [versions]
-agp = "9.5.2"
+agp = "9.5.3"
 shadow = "9.6.1"
 kotlin = "2.4.21"
 compose = "1.12.2"
@@ -29,10 +29,13 @@ kotlinx-serialization = "1.13.0"
 kotlinx-coroutines = "1.11.0"
 filekit = "0.17.0"
 #The tray library moved from io.github.kdroidfilter to dev.nucleusframework at 2.x and is now
-#two artifacts: the Tray composable in the core one, getTrayWindowPosition in -app. Anything
-#below 2.1.1 calls the Image.encodeToData overload that skiko 0.150 (Compose 1.12) dropped, and
-#crashes the app on startup with NoSuchMethodError - so this version and the compose one above
-#move together. SingleInstanceManager is no longer part of it at all, see nucleus below
+#two artifacts; we take the core one only, see shttps-desktop/build.gradle. Anything below 2.1.1
+#calls the Image.encodeToData overload that skiko 0.150 (Compose 1.12) dropped, and crashes the app
+#on startup with NoSuchMethodError - so this version and the compose one above move together.
+#SingleInstanceManager is no longer part of it at all, see nucleus below.
+#Pinned rather than floating for one more reason: tray/TrayWindowPosition.kt reads TrayClickTracker
+#and MacTrayInitializer, which the library documents as the seam its -app artifact uses rather than
+#as public API, so a version bump has to re-check that both are still there
 composenativetray = "2.1.7"
 #Carries SingleInstanceManager, which used to live in composenativetray. A "runtime" dependency
 #of the tray artifacts, so it has to be declared to be on our compile classpath
@@ -88,6 +91,5 @@ filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "file
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
 filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
 composenativetray = { module = "dev.nucleusframework:composenativetray", version.ref = "composenativetray" }
-composenativetray-app = { module = "dev.nucleusframework:composenativetray-app", version.ref = "composenativetray" }
 nucleus-core-runtime = { module = "dev.nucleusframework:nucleus.core-runtime", version.ref = "nucleus" }
 auto-launch = { module = "io.github.vinceglb:auto-launch", version.ref = "auto-launch" }

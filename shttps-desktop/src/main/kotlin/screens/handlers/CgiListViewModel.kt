@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.phlox.simpleserver.AppConfig
 import com.phlox.simpleserver.SHTTPSApp
 import com.phlox.simpleserver.exec.CgiType
+import com.phlox.simpleserver.profiles.ConfigProfiles
+import com.phlox.simpleserver.profiles.ServedFolderGuard
+import java.io.File
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +23,10 @@ data class CgiListState(
 )
 
 class CgiListViewModel(
-    private val config: AppConfig
+    private val config: AppConfig,
+    //null when an explicit config path was given on the command line, in which case there are no
+    //profile directories to protect
+    private val profiles: ConfigProfiles? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CgiListState())
     val uiState: StateFlow<CgiListState> = _uiState.asStateFlow()
@@ -45,9 +51,17 @@ class CgiListViewModel(
         )
     }
 
-    fun updateCgiFolder(folder: String?) {
+    /**
+     * @return false when the folder would serve the app's own data - see [ServedFolderGuard]. The
+     * screen reports that; a CGI folder is served like the document root, so the same rule holds.
+     */
+    fun updateCgiFolder(folder: String?): Boolean {
+        if (folder != null && profiles?.isFolderAllowedToServe(File(folder)) == false) {
+            return false
+        }
         config.setCGIFolder(folder)
         _uiState.value = _uiState.value.copy(cgiFolder = folder)
+        return true
     }
 
     fun updateCgiPathPrefix(prefix: String) {

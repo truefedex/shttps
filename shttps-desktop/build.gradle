@@ -37,17 +37,16 @@ dependencies {
     implementation libs.filekit.dialogs.compose
 
     implementation libs.json
+    //The core tray artifact only - the Tray composable, the menu DSL and TrayClickTracker. Its
+    //other half, composenativetray-app, is deliberately not here: it exists for TrayApp (still
+    //alpha, and requiring a nucleusApplication { } we do not use) and reaches its screen geometry
+    //through nucleus.decorated-window-tao, an 11 MB windowing backend. Excluding that backend while
+    //keeping the artifact is what silently broke tray positioning, since the library catches the
+    //resulting NoClassDefFoundError and falls back to a hardcoded 1920x1080 screen; we now compute
+    //the position ourselves in tray/TrayWindowPosition.kt from AWT geometry.
     implementation libs.composenativetray
-    //taken for getTrayWindowPosition() alone. Its other half, TrayApp, drags in the whole Nucleus
-    //application framework (decorated windows, spellcheck, SF Symbols, the GraalVM/AOT runtimes -
-    //about 11 MB in the installer) and we never call it, so those are cut. The position helper
-    //itself only touches the tray core and nucleus.core-runtime, both of which stay
-    implementation(libs.composenativetray.app) {
-        exclude group: 'dev.nucleusframework', module: 'nucleus.nucleus-application'
-        exclude group: 'dev.nucleusframework', module: 'nucleus.decorated-window-tao'
-    }
     //SingleInstanceManager lives here since the tray library split; it is a "runtime" dependency
-    //of the artifacts above, so without this line it is not on our compile classpath
+    //of the artifact above, so without this line it is not on our compile classpath
     implementation libs.nucleus.core.runtime
     implementation libs.auto.launch
 

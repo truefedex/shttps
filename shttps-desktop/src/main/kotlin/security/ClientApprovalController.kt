@@ -2,7 +2,6 @@ package com.phlox.simpleserver.security
 
 import androidx.compose.runtime.mutableStateListOf
 import com.phlox.server.utils.SHTTPSLoggerProxy
-import com.phlox.simpleserver.AppConfig
 import com.phlox.simpleserver.SHTTPSApp
 import com.phlox.simpleserver.SHTTPSConfig
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +26,19 @@ import java.util.concurrent.ConcurrentHashMap
  * Lives above the navigation graph (created in `AppContent`) rather than inside [com.phlox.simpleserver.screens.home.HomeViewModel],
  * because the prompt windows must be able to appear while the main window sits hidden in the tray.
  */
-class ClientApprovalController(private val config: AppConfig) {
+class ClientApprovalController {
+    /**
+     * The configuration of whatever profile is being served, resolved on every use rather than
+     * captured.
+     *
+     * This object is created in `AppContent`, above the navigation graph, so it outlives a config
+     * profile switch - and a switch replaces the [SHTTPSApp] and its config. Held as a field, an
+     * approval given after a switch would be written into the previous profile's whitelist, where
+     * the settings screen would never find it and the server being asked about would never apply
+     * it. [SHTTPSConfig] is enough here: the whitelist accessors are all on the interface.
+     */
+    private val config: SHTTPSConfig get() = SHTTPSApp.getInstance().config
+
     private val logger = SHTTPSLoggerProxy.getLogger("ClientApprovalController")
 
     /**
